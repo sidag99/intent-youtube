@@ -5,7 +5,12 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
  const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1440,height:1100}});context.setDefaultTimeout(20000);
  const texts={W:['Ship a tiny app this weekend','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],M:['Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.'],S:['Why the sky changes colour','An accessible explanation of scattering and wavelengths from sunlight.']};
  const ids={};const renderers=[];
- for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'}}});}
+ for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:prefix==='S'?'Curious Minds':'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'}}});}
+ ids.Q0000000000={title:'Python programming tutorial in sixty seconds',description:'Build useful software with Python programming.'};
+ ids.R0000000000={title:'Jazz piano improvisation in sixty seconds',description:'A quick piano jazz music performance.'};
+ renderers.push({reelShelfRenderer:{items:[{reelItemRenderer:{videoId:'Q0000000000',headline:{simpleText:ids.Q0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/Q0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'Q0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/Q0000000000'}}}}},{reelItemRenderer:{videoId:'R0000000000',headline:{simpleText:ids.R0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/R0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'R0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/R0000000000'}}}}}]}});
+ const masthead='<ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form></div><div id="end">Account</div></ytd-masthead>';
+ const mastheadCSS='ytd-masthead{display:flex;height:56px;align-items:center;padding:0 16px;gap:24px}ytd-masthead #center{display:flex;flex:1;min-width:0;align-items:center;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}';
  const search='<script>var ytInitialData = '+JSON.stringify({contents:{twoColumnSearchResultsRenderer:{primaryContents:{sectionListRenderer:{contents:[{itemSectionRenderer:{contents:renderers}}]}}}}})+';</script>';
  try{
   await context.route('https://www.youtube.com/**',async route=>{
@@ -15,9 +20,9 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
     const videoId=url.searchParams.get('v');
     const metadata='<script>var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:videoId,title:ids[videoId]?.title,shortDescription:ids[videoId]?.description}})+';</script>';
     if(!route.request().isNavigationRequest())return route.fulfill({contentType:'text/html',body:metadata});
-    return route.fulfill({contentType:'text/html',body:'<!doctype html><html dark><meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.top{padding:18px 30px;border-bottom:1px solid #333}ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px}#player{height:440px;background:#080808}#related{display:block}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}}</style><div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-watch-flexy><main><div id="player"><video id="playing-video"></video></div><h2>'+ids[videoId].title+'</h2><p>'+ids[videoId].description+'</p></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related">Original unrelated recommendations</ytd-watch-next-secondary-results-renderer></div></aside></ytd-watch-flexy>'+metadata+'<script>window.testPlayer=document.querySelector("#playing-video");window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;</script></html>'});
+    return route.fulfill({contentType:'text/html',body:'<!doctype html><html dark><meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #333}ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px}#player{height:440px;background:#080808}#related{display:block}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-watch-flexy><main><div id="player"><video id="playing-video"></video></div><h2>'+ids[videoId].title+'</h2><p>'+ids[videoId].description+'</p></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related">Original unrelated recommendations</ytd-watch-next-secondary-results-renderer></div></aside></ytd-watch-flexy>'+metadata+'<script>window.testPlayer=document.querySelector("#playing-video");window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;</script></html>'});
    }
-   return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#f8f8f2;color:#283b30;font-family:system-ui}.top{padding:18px 30px;border-bottom:1px solid #dfe2d7}ytd-browse{display:block}#primary{max-width:1500px;margin:auto}</style><div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-grid-renderer id="native">Original unrelated recommendations</ytd-rich-grid-renderer></div></ytd-browse>'});
+   return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#f8f8f2;color:#283b30;font-family:system-ui}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #dfe2d7}ytd-browse{display:block}#primary{width:100%;margin:0}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-grid-renderer id="native">Original unrelated recommendations</ytd-rich-grid-renderer></div></ytd-browse>'});
   });
   await context.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#d8dfc8"/><circle cx="490" cy="230" r="160" fill="#c0cdae"/><path d="M60 240h220M60 190h150" stroke="#718465" stroke-width="12" stroke-linecap="round"/></svg>'}));
   const ext=await context.newPage();await ext.goto('chrome://extensions');await ext.locator('extensions-item').waitFor();const id=await ext.locator('extensions-item').getAttribute('id');
@@ -27,10 +32,27 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length>=12,null,{timeout:60000});
   const titles=await feed.locator('.title').allTextContents();assert.ok(titles.every(t=>t.startsWith('Ship a tiny app')));assert.equal(await yt.locator('#native').isVisible(),false);
   console.log('PASS real offscreen model and background search produce a filled semantic Work feed');
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{mode:'music'}}));
+  const toolbar=yt.locator('#intent-toolbar');
+  await yt.locator('ytd-masthead #center #intent-toolbar').waitFor();
+  assert.equal(await feed.locator('header').isVisible(),false,'intent controls are in the masthead rather than a separate banner');
+  const width=await feed.evaluate(el=>({actual:el.getBoundingClientRect().width,available:el.parentElement.getBoundingClientRect().width}));
+  assert.ok(Math.abs(width.actual-width.available)<2,'feed fills native content width without side bars');
+  assert.equal(await feed.locator('[data-video-id="Q0000000000"]').count(),0,'Shorts hidden by default');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:false}}));
+  await feed.locator('[data-video-id="Q0000000000"]').waitFor({timeout:60000});
+  assert.equal(await feed.locator('[data-video-id="Q0000000000"] .title').getAttribute('href'),'https://www.youtube.com/shorts/Q0000000000');
+  assert.equal(await feed.locator('[data-video-id="R0000000000"]').count(),0,'unrelated Shorts remain filtered by intent');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:true}}));
+  await yt.waitForFunction(()=>!document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('[data-video-id="Q0000000000"]'));
+  console.log('PASS installed extension includes relevant Shorts only when Hide Shorts is disabled');
+
+  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('music');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Blue notes'),null,{timeout:60000});
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   console.log('PASS switching modes refreshes the filled feed using description-based semantic classification');
+  await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
+  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length>=12,null,{timeout:60000});
+  assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
   await settings.locator('#blocked-terms').fill('unsaved appearance draft');
   await settings.evaluate(()=>{window.draftField=document.querySelector('#blocked-terms');});
@@ -46,7 +68,7 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   assert.equal(await settings.locator('#blocked-terms').inputValue(),'unsaved appearance draft');
   assert.equal(await settings.evaluate(()=>draftField===document.querySelector('#blocked-terms')),true,'appearance changes preserve the current settings form and draft');
   await yt.screenshot({path:path.join(shots,'intent-watch-dark.png'),fullPage:true});
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{mode:'work'}}));
+  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('work');
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
   assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.startsWith('Ship a tiny app')));
   assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
@@ -55,19 +77,57 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   await settings.waitForFunction(()=>document.documentElement.dataset.theme==='light');
   assert.equal(await settings.locator('#blocked-terms').inputValue(),'unsaved appearance draft');
   await yt.screenshot({path:path.join(shots,'intent-watch-light.png'),fullPage:true});
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{mode:'off'}}));
-  await watchFeed.waitFor({state:'detached'});assert.equal(await yt.locator('#native-related').isVisible(),true);
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{mode:'music'}}));
+  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('off');
+  await watchFeed.waitFor({state:'detached'});assert.equal(await yt.locator('#native-related').isVisible(),true);assert.equal(await toolbar.count(),0,'mode off removes toolbar and restores native recommendations');
+  await settings.evaluate(async()=>{const [tab]=await chrome.tabs.query({url:'https://www.youtube.com/watch?v=M0000000000'});return chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',targetTabId:tab.id,patch:{mode:'music'}});});
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
   console.log('PASS real installed extension replaces watch recommendations, excludes current video, follows YouTube appearance and preserves playback during mode changes');
+  // Each tab remembers its own intent, including reloads and configurable new-tab defaults.
+  const second=await context.newPage();await second.goto('https://www.youtube.com/?intent-test=second');
+  await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('study');
+  await second.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Why the sky'),null,{timeout:60000});
+  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','a second tab never changes the first tab intent');
+  await yt.reload();await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
+  assert.equal(await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','reloading restores this tab intent');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'work'}}));
+  const third=await context.newPage();await third.goto('https://www.youtube.com/?intent-test=third');
+  await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
+  assert.equal(await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'work','fixed new-tab policy is applied');
+  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'study');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'last'}}));
+  await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('music');
+  const followed=await context.newPage();await followed.goto('https://www.youtube.com/?intent-test=followed');
+  await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
+  assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','follow-last policy uses the latest chosen intent');
+  console.log('PASS independent per-tab intents survive reload and respect fixed/follow-last new-tab policies');
+  // Create a custom intent through the actual UI and use its packaged semantic profile.
+  await settings.locator('#custom-intent-name').fill('Build apps');
+  await settings.locator('#custom-intent-description').fill('Build useful software applications and tools for clients, programming and delivering finished digital products.');
+  await settings.getByRole('button',{name:'Create intent',exact:true}).click();
+  await settings.getByRole('button',{name:'Build apps Your custom intent',exact:true}).waitFor();
+  const customId=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return Object.keys(state.settings.customIntents)[0];});
+  await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption(customId);
+  await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
+  assert.ok((await third.locator('#intent-home-feed .title').allTextContents()).every(t=>t.startsWith('Ship a tiny app')));
+  console.log('PASS custom intents created in settings classify video meaning with the bundled model');
   const worker=context.serviceWorkers()[0];assert.ok(worker);
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1}}));
-  await yt.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(yt.url(),`chrome-extension://${id}/blocked.html`);
-  const newTab=await context.newPage();await newTab.goto('https://www.youtube.com/').catch(error=>{if(!error.message.includes('ERR_ABORTED'))throw error;});await newTab.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(newTab.url(),`chrome-extension://${id}/blocked.html`);
-  console.log('PASS real exhaustion redirects existing tabs and DNR redirects new visits');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1,newTabMode:'music'}}));
+  await second.getByRole('heading',{name:'There’s a whole world'}).waitFor();
+  await third.getByRole('heading',{name:'There’s a whole world'}).waitFor();
+  assert.equal(yt.url(),'https://www.youtube.com/watch?v=M0000000000','Music remains available after the counted budget is exhausted');
+  await yt.reload();await yt.locator('#intent-toolbar').waitFor();assert.ok(yt.url().includes('youtube.com/watch'));
+  const exemptNew=await context.newPage();await exemptNew.goto('https://www.youtube.com/?intent-test=exempt');await exemptNew.locator('#intent-toolbar').waitFor();
+  assert.equal(await exemptNew.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music');
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'work'}}));
+  const newTab=await context.newPage();await newTab.goto('https://www.youtube.com/').catch(error=>{if(!error.message.includes('ERR_ABORTED'))throw error;});
+  await newTab.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(newTab.url(),`chrome-extension://${id}/blocked.html`);
+  await newTab.getByRole('button',{name:'Continue on YouTube',exact:false}).click();
+  await newTab.locator('#intent-toolbar').waitFor();assert.equal(await newTab.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music');
+  console.log('PASS counted intents are blocked while existing/new exempt modes and break-page exemption controls remain accessible');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:60}}));
-  await newTab.goto('https://www.youtube.com/');await newTab.locator('#intent-home-feed').waitFor();
-  console.log('PASS increasing the budget removes the real network block');
+  await second.goto('https://www.youtube.com/?intent-test=second');await second.locator('#intent-toolbar').waitFor();
+  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'study');
+  console.log('PASS increasing the budget removes the real network block without losing tab intent');
  }finally{await context.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -38,6 +38,17 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.equal(result.study[4].accepted,true,'hashtags and tags identify an opaque title');
   assert.equal(result.work[1].accepted,false,'music excluded from work');
   assert.equal(result.music[0].accepted,false,'app building excluded from music');
+  const focusedExamples=[
+   {title:'Convert an extra pawn into a win',channel:'Board Lessons',description:'King and pawn endgame techniques, opposition and promotion in chess.'},
+   examples[0], examples[1]
+  ];
+  const description='Chess endgame training: king and pawn endings, rook endgames, checkmates and pawn promotion.';
+  const custom=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:focusedExamples,settings:{...IntentCore.defaults(),mode:'custom-chess',customIntents:{'custom-chess':{name:'Chess practice',description}}}});
+  assert.equal(custom[0].accepted,true,'custom intent understands a related title using its description');
+  assert.equal(custom[1].accepted,false);assert.equal(custom[2].accepted,false);
+  const overridden=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:focusedExamples,settings:{...IntentCore.defaults(),mode:'work',intentDescriptions:{work:description}}});
+  assert.equal(overridden[0].accepted,true,'an edited builtin intent uses the configured subject');
+  assert.equal(overridden[1].accepted,false,'editing Work replaces the broad app-building profile');
   assert.ok(requests.every(url=>url.startsWith(origin+'/')),'all inference requests stay on the packaged origin');
   assert.equal(requests.filter(url=>url.endsWith('.onnx')).length,1,'model is loaded once and reused');
   assert.deepEqual(errors,[]);

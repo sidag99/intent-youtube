@@ -6,15 +6,51 @@
     music: {name: 'Music', symbol: '♫', description: 'Find your rhythm.', topics: ['music', 'song', 'album', 'playlist', 'lofi', 'lo-fi', 'jazz', 'piano', 'guitar', 'ambient', 'soundtrack', 'symphony', 'concert', 'orchestra', 'acoustic', 'beats', 'chillhop', 'classical', 'dj set', 'live set', 'lyrics', 'official audio', 'official video', 'synth', 'bossa nova']},
     leisure: {name: 'Leisure', symbol: '☀', description: 'A little downtime, on purpose.', topics: ['comedy', 'funny', 'gaming', 'gameplay', 'travel', 'cooking', 'recipe', 'film', 'movie', 'review', 'vlog', 'sports', 'football', 'basketball', 'craft', 'garden', 'art', 'hiking', 'photography', 'podcast', 'animation', 'chess', 'minecraft', 'entertainment', 'food', 'tour', 'sketch']}
   };
-  const defaults = () => ({mode: 'work', hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
+  function customRecords(input) {
+    const records = {};
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return records;
+    for (const [id, value] of Object.entries(input)) {
+      if (!/^custom-[a-z0-9-]{1,48}$/.test(id) || !value || typeof value.name !== 'string' || typeof value.description !== 'string') continue;
+      const name = value.name.trim().slice(0, 48), description = value.description.trim().slice(0, 1000);
+      if (!name || !description) continue;
+      records[id] = {name, description};
+      if (Object.keys(records).length === 10) break;
+    }
+    return records;
+  }
+  const validMode = (mode, settings = {}) => Object.hasOwn(MODES, mode) || mode === 'off' || Object.hasOwn(customRecords(settings.customIntents), mode);
+  const descriptionTerms = text => terms(String(text || '').replace(/[;.!?]/g, ','));
+  function modes(settings = {}) {
+    const builtins = Object.fromEntries(Object.entries(MODES).map(([id, mode]) => {
+      const description = typeof settings.intentDescriptions?.[id] === 'string' ? settings.intentDescriptions[id].trim().slice(0, 1000) : '';
+      return [id, {...mode, description: description || mode.description, topics: description ? descriptionTerms(description) : [...mode.topics]}];
+    }));
+    const custom = Object.fromEntries(Object.entries(customRecords(settings.customIntents)).map(([id, record]) => [id, {...record, symbol: '◎', topics: descriptionTerms(record.description)}]));
+    return {...builtins, ...custom};
+  }
+  const defaults = () => ({mode: 'work', newTabMode: 'last', customIntents: {}, intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, leisure: true, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
   function sanitize(input = {}) {
     const out = defaults();
-    if (Object.hasOwn(MODES, input.mode) || input.mode === 'off') out.mode = input.mode;
+    out.customIntents = customRecords(input.customIntents);
+    for (const mode of Object.keys(MODES)) if (typeof input.intentDescriptions?.[mode] === 'string') out.intentDescriptions[mode] = input.intentDescriptions[mode].trim().slice(0, 1000);
+    const ids = [...Object.keys(MODES), ...Object.keys(out.customIntents)];
+    if (validMode(input.mode, out)) out.mode = input.mode;
+    if (input.newTabMode === 'last' || validMode(input.newTabMode, out)) out.newTabMode = input.newTabMode;
+    for (const mode of [...ids, 'off']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
     for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback']) if (typeof input[key] === 'boolean') out[key] = input[key];
     if (Number.isFinite(Number(input.dailyMinutes))) out.dailyMinutes = Math.max(1, Math.min(1440, Math.round(Number(input.dailyMinutes))));
-    for (const field of ['customTopics', 'channels']) for (const mode of Object.keys(MODES)) out[field][mode] = String(input[field]?.[mode] || '').slice(0, 4000);
+    for (const field of ['customTopics', 'channels']) for (const mode of ids) out[field][mode] = String(input[field]?.[mode] || '').slice(0, 4000);
     out.blockedTerms = String(input.blockedTerms || '').slice(0, 4000);
     return out;
+  }
+  function initialMode(settings = {}) {
+    const s = sanitize(settings);
+    return s.newTabMode === 'last' ? s.mode : s.newTabMode;
+  }
+  function countsMode(settings = {}, mode = settings.mode) {
+    if (!validMode(mode, settings)) return true;
+    const value = settings.countModes?.[mode];
+    return typeof value === 'boolean' ? value : mode !== 'music';
   }
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
   const terms = value => [...new Set(String(value || '').split(/[,\n]/).map(normalize).filter(Boolean))];
@@ -35,7 +71,7 @@
     if (settings.hideClickbait && clickbait(video.title)) return {visible: false, reason: 'clickbait'};
     if (settings.mode === 'off') return {visible: true, reason: 'unfiltered'};
     if (terms(settings.channels[settings.mode]).includes(normalize(video.channel))) return {visible: true, reason: 'your channel'};
-    const topics = [...MODES[settings.mode].topics, ...terms(settings.customTopics[settings.mode])];
+    const topics = [...(modes(settings)[settings.mode]?.topics || []), ...terms(settings.customTopics[settings.mode])];
     return topics.some(t => matches(`${video.title} ${video.description || ''}`, t)) ? {visible: true, reason: settings.mode} : {visible: false, reason: 'outside mode'};
   }
   function dayKey(now = Date.now()) {
@@ -68,5 +104,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, defaults, sanitize, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();

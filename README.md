@@ -2,13 +2,16 @@
 
 **YouTube, with purpose.** A Chrome / Edge extension with intent-driven home and watch-page recommendations, local topic analysis, distraction controls and a daily budget.
 
-- **Filled home and watch feeds:** Work, Study, Music and Leisure load mode-related videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
-- **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations return when modes are off. Switching modes preserves the current video player.
+- **Filled home and watch feeds:** Work, Study, Music, Leisure and custom intents load matching videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
+- **Controls left of search:** while a mode is active, a clearly labelled Intent selector, refresh control and settings shortcut sit to the left of YouTube’s search box, keeping search and the microphone together. There is no separate feed banner. Turning modes off removes the toolbar; use the extension popup to turn a mode back on.
+- **Your own definitions:** edit the descriptions of Work, Study, Music and Leisure, or create up to ten named custom intents. A configured description replaces the broad built-in topic scope.
+- **Independent tab memory:** a tab keeps its selected intent across reloads. Choose whether new tabs follow the last-used intent or always start in a particular intent. Changing one tab leaves other tabs alone.
+- **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations and layout return when modes are off. Switching modes preserves the current video player.
 - **YouTube-style light and dark UI:** feeds follow YouTube's theme, including live theme switches. Popup, settings and break pages use the last theme detected on an active YouTube tab, with the system theme as the initial fallback.
 - **Bundled semantic AI:** a small, quantized MiniLM embedding model compares meaning, including titles without literal mode keywords. The model and CPU/WASM runtime ship inside the extension. No companion app, account, API key, model download or GPU setup is required.
 - **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. For up to four uncertain results per batch, Intent also tries to read the fuller public video description, hashtags and video tags.
-- **Fewer distractions:** hide Shorts and obvious title-based clickbait; customize included channels, extra topics and blocked phrases.
-- **Daily budget:** set 1–1,440 minutes for all modes combined. Exhausted budgets redirect YouTube tabs to a break page and block new visits until local midnight.
+- **Fewer distractions:** hide Shorts and obvious title-based clickbait; turning Hide Shorts off allows matching Shorts through topic classification, using a horizontal shelf after the first video row, left/right scroll arrows, portrait thumbnails and Shorts links; customize included channels, extra topics and blocked phrases.
+- **Daily budget:** set 1–1,440 minutes shared by the intents you choose to count. Music is excluded by default. Exempt intents add no time and stay accessible after the limit; counted intents are blocked until local midnight.
 
 ## Install
 
@@ -19,7 +22,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.3 adds watch-page recommendations and a YouTube-style light/dark interface; no new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.5 adds independent tab intents, configurable new-tab defaults, timer exemptions and editable/custom intents, alongside the Shorts and layout fixes. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
@@ -33,7 +36,9 @@ The model runs in a dedicated worker hosted by an offscreen extension document. 
 
 ## Topic and distraction controls
 
-Add short topic descriptions, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
+Use **Intent description** to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
+
+Add extra topics, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
 
 The semantic model is English-focused and has only a small regression evaluation so far. It does not watch videos or inspect thumbnails, and cannot recover a topic from missing or misleading metadata. Work and Study can overlap. Similarity scores are not calibrated probabilities. Incorrect inclusions and exclusions remain possible; this is not a guaranteed judgment of usefulness or factual quality.
 
@@ -41,17 +46,25 @@ Descriptions and video tags are read when publicly available; consent screens, a
 
 Clickbait filtering remains a separate rule-based heuristic for common phrases, repeated punctuation and lengthy all-caps titles. YouTube changes its HTML and A/B tests layouts, so search parsers and selectors will need maintenance. The settings page's illustrative cards demonstrate keyword and distraction controls; they are not a semantic-model benchmark or the live feed.
 
-Mode filtering affects home and watch-page recommendations. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music is included in the budget, but its music-specific home is not replaced by this feed.
+Mode filtering affects home and watch-page recommendations. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music participates in the same per-tab timer policy, but its music-specific home is not replaced by this feed. Exemption depends on the selected intent, rather than detecting whether a particular video contains music.
+
+## Tab memory
+
+The toolbar and popup change the current YouTube tab. The full settings page edits the last-used intent and global preferences; it does not force all existing tabs into one mode. **New YouTube tabs** can follow the last-used intent or a fixed intent, including a custom intent or modes-off browsing.
+
+Per-tab selections are kept in session storage across reloads and background-worker restarts. A full browser restart uses the saved new-tab policy; tab-specific choices are not promised across browser restarts. Preferences, custom definitions and the last-used intent persist in local storage.
 
 ## Time accounting
 
+- Each intent, including custom intents and modes-off browsing, has an independent **Count time** switch. Music starts excluded; other intents start counted. Changes apply to future accounting and do not erase time already used.
 - Counts foreground YouTube browsing while its browser window is focused and the system is active (60-second idle threshold).
+- Only counted intents add time. Exempt foreground tabs and exempt background audio add none. Counted background playback can still add time while an exempt tab is in front.
 - By default, also counts reported playing media or audible YouTube tabs in the background. Disable Count background playback to count foreground use only.
 - Counts elapsed time once across multiple tabs; stops while the screen is locked.
 - Stores daily totals locally for at most fourteen calendar dates. Browser restarts and mode changes do not reset today's balance.
 - Checks playing pages about every five seconds, with a thirty-second alarm fallback. Delayed accounting intervals are capped at thirty-five seconds to avoid charging long sleep gaps. Browser throttling can delay accounting/blocking; this is not a second-accurate timer.
 - The budget resets at local midnight; clearing the prior day's block can wait until the next alarm or break-page refresh.
-- Blocks top-level YouTube and YouTube NoCookie visits, including Music and Studio. New embedded frames also redirect; existing videos in third-party embedded players are outside active-tab tracking and are not guaranteed to stop immediately.
+- Blocks top-level YouTube and YouTube NoCookie visits in counted intents. Session network rules keep existing exempt tabs available, while new visits use the configured new-tab policy. The break page offers available exempt intents. New embedded frames follow their containing tab’s rule; existing videos in third-party embedded players are outside active-tab tracking and are not guaranteed to stop immediately.
 
 You can change the limit or disable the extension. It is a personal boundary within a browser profile, not a device-wide restriction or parental control.
 
@@ -62,13 +75,13 @@ You can change the limit or disable the extension. It is a personal boundary wit
 | Permission | Purpose |
 | --- | --- |
 | YouTube / YouTube NoCookie hosts | Filter cards, retrieve public results/metadata, observe playback and redirect exhausted tabs. |
-| `storage` | Local settings/daily totals and a session accounting checkpoint. |
+| `storage` | Local settings/intent definitions/daily totals, plus session tab intents and an accounting checkpoint. |
 | `alarms` | Accounting fallback and overnight recovery. |
 | `idle` | Exclude inactive foreground use and locked devices. |
 | `offscreen` | Host the dedicated worker for the packaged local model. |
 | `declarativeNetRequestWithHostAccess` | Redirect new YouTube visits after the budget is exhausted. |
 
-No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. Feed requests are limited to top-level YouTube home and valid video pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
+No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. The toolbar has a separate, top-level YouTube-only message that can change the selected mode; it cannot change budgets or distraction rules. Feed requests are limited to top-level YouTube home and valid video pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
 
 ## Development and checks
 
@@ -98,6 +111,7 @@ Only this developer build step may download pinned assets from Hugging Face. Ins
 src/core.js               Settings, distraction rules and calendar accounting
 src/feed.js               Public search/watch parsing, caching and result selection
 src/home.js               Home/watch feeds, mode refresh and stale-result protection
+src/toolbar.js            Compact intent controls beside the native search box
 src/feed-theme.js         YouTube-style feed appearance in light/dark themes
 src/background.js         Serialized accounting, feed orchestration and blocking
 src/semantic.js           Mode descriptions and semantic similarity policy

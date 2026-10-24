@@ -38,7 +38,8 @@ async function classify(videos, inputSettings) {
   return videos.map((video, i) => {
     if (!C.classify(video, {...settings, mode: 'off'}).visible) return {accepted: false, uncertain: false};
     if (C.terms(settings.channels[settings.mode]).includes(C.normalize(video.channel))) return {accepted: true, uncertain: false};
-    return S.decide(encoded[all.length + i], refs, settings.mode);
+    const customized = Boolean(settings.intentDescriptions?.[settings.mode]?.trim() || settings.customIntents?.[settings.mode]);
+    return S.decide(encoded[all.length + i], refs, settings.mode, customized);
   });
 }
 let queue = Promise.resolve();

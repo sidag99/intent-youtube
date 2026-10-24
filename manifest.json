@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Intent — YouTube with purpose",
-  "version": "1.3.0",
-  "description": "A quieter YouTube: four focus modes, fewer distractions, and a daily time budget. Private and local.",
+  "version": "1.5.0",
+  "description": "A focused YouTube: customizable intents, local topic filtering, fewer distractions, and a daily time budget.",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "alarms", "idle", "offscreen", "declarativeNetRequestWithHostAccess"],
   "content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://www.youtube.com"},
@@ -13,7 +13,7 @@
   "options_page": "settings.html",
   "content_scripts": [{
     "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
-    "js": ["src/core.js", "src/feed.js", "src/feed-theme.js", "src/home.js", "src/content.js"],
+    "js": ["src/core.js", "src/feed.js", "src/feed-theme.js", "src/home.js", "src/toolbar.js", "src/content.js"],
     "css": ["src/content.css"],
     "run_at": "document_start",
     "all_frames": true

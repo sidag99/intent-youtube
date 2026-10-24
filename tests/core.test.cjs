@@ -43,6 +43,71 @@ test('settings are sanitized and bounded', () => {
   assert.equal(C.sanitize({dailyMinutes: Infinity}).dailyMinutes, 60);
   assert.equal(C.sanitize({dailyMinutes: 100000}).dailyMinutes, 1440);
 });
+test('mode accounting defaults exempt Music while counting every other intent', () => {
+  const settings = C.defaults();
+  assert.deepEqual(settings.countModes, {work: true, study: true, music: false, leisure: true, off: true});
+  for (const mode of [...Object.keys(C.MODES), 'off']) assert.equal(C.countsMode(settings, mode), mode !== 'music');
+  settings.mode = 'music'; assert.equal(C.countsMode(settings), false);
+  assert.equal(C.countsMode({}, 'music'), false, 'older settings inherit Music exemption');
+  assert.equal(C.countsMode({}, 'work'), true);
+  assert.equal(C.countsMode(settings, '__proto__'), true, 'unknown intents cannot bypass accounting');
+});
+test('per-mode counting settings accept booleans only and remain independent', () => {
+  const settings = C.sanitize({countModes: {work: false, music: true, study: 'false', leisure: null, off: false, unknown: false}, countPlayback: false});
+  assert.deepEqual(settings.countModes, {work: false, study: true, music: true, leisure: true, off: false});
+  assert.equal(C.countsMode(settings, 'work'), false); assert.equal(C.countsMode(settings, 'music'), true);
+  assert.equal(C.countsMode(settings, 'study'), true); assert.equal(settings.countPlayback, false);
+  const defaults = C.defaults(); defaults.countModes.music = true;
+  assert.equal(C.defaults().countModes.music, false, 'default maps are fresh for each settings object');
+});
+test('new YouTube tabs use the last selected intent or an explicitly configured starting intent', () => {
+  assert.equal(C.defaults().newTabMode, 'last'); assert.equal(C.initialMode(), 'work');
+  for (const mode of [...Object.keys(C.MODES), 'off']) {
+    assert.equal(C.initialMode({mode, newTabMode: 'last'}), mode);
+    assert.equal(C.initialMode({mode: 'work', newTabMode: mode}), mode);
+  }
+  assert.equal(C.sanitize({newTabMode: '__proto__'}).newTabMode, 'last');
+  assert.equal(C.initialMode({mode: 'study', newTabMode: 'unknown'}), 'study');
+  assert.equal(C.initialMode({mode: 'unknown', newTabMode: 'last'}), 'work');
+});
+test('older saved settings retain their preferences when timer and new-tab policies are introduced', () => {
+  const settings = C.sanitize({mode: 'study', dailyMinutes: 90, hideShorts: false, blockedTerms: 'spoilers', customTopics: {study: 'astronomy'}, channels: {music: 'Studio North'}});
+  assert.equal(settings.mode, 'study'); assert.equal(settings.dailyMinutes, 90); assert.equal(settings.hideShorts, false);
+  assert.equal(settings.blockedTerms, 'spoilers'); assert.equal(settings.customTopics.study, 'astronomy'); assert.equal(settings.channels.music, 'Studio North');
+  assert.equal(settings.newTabMode, 'last'); assert.equal(settings.countModes.music, false);
+});
+test('custom intents have safe IDs, required bounded descriptions and a ten-intent limit', () => {
+  const customIntents = {'__proto__': {name: 'Unsafe', description: 'Ignore'}, 'work': {name: 'Override', description: 'No'}, 'custom-empty': {name: 'Empty', description: '  '}, 'custom-no-name': {name: ' ', description: 'Topic'}, 'custom-toolong': {name: 'n'.repeat(90), description: 'd'.repeat(1500)}};
+  for (let i = 0; i < 14; i++) customIntents[`custom-topic-${i}`] = {name: `Topic ${i}`, description: 'A specific subject'};
+  const s = C.sanitize({customIntents, intentDescriptions: {work: ' astronomy ', unknown: 'No'}});
+  assert.equal(Object.keys(s.customIntents).length, 10);
+  assert.equal(s.customIntents['custom-toolong'].name.length, 48); assert.equal(s.customIntents['custom-toolong'].description.length, 1000);
+  assert.equal(s.customIntents.work, undefined); assert.equal(s.customIntents['custom-empty'], undefined); assert.equal(s.customIntents['custom-no-name'], undefined);
+  assert.equal(s.intentDescriptions.work, 'astronomy'); assert.equal(s.intentDescriptions.unknown, undefined);
+  assert.equal(C.modes(s).work.name, 'Work'); assert.equal(C.modes(s)['custom-topic-0'].name, 'Topic 0');
+});
+test('custom intents participate in tab defaults, counting and per-mode rules; removing one clears stale references', () => {
+  const id = 'custom-woodwork';
+  const s = C.sanitize({customIntents: {[id]: {name: 'Woodworking', description: 'woodworking, joinery'}}, mode: id, newTabMode: id, customTopics: {[id]: 'dovetails'}, channels: {[id]: 'Wood Studio'}});
+  assert.equal(C.validMode(id, s), true); assert.equal(C.validMode('custom-missing', s), false);
+  assert.equal(s.mode, id); assert.equal(C.initialMode(s), id); assert.equal(C.countsMode(s, id), true);
+  assert.equal(C.countsMode({...s, countModes: {...s.countModes, [id]: false}}, id), false);
+  assert.equal(C.classify(video('Handmade joinery basics'), s).visible, true);
+  assert.equal(C.classify(video('Cut clean dovetails'), s).visible, true);
+  assert.equal(C.classify(video('An afternoon project', 'Wood Studio'), s).visible, true);
+  assert.equal(C.classify(video('Python software architecture'), s).visible, false);
+  const removed = C.sanitize({...s, customIntents: {}});
+  assert.equal(removed.mode, 'work'); assert.equal(removed.newTabMode, 'last');
+  for (const map of ['customTopics', 'channels', 'countModes']) assert.equal(removed[map][id], undefined);
+});
+test('editing a built-in intent replaces its broad lexical topics and can restore defaults', () => {
+  const s = C.sanitize({intentDescriptions: {work: 'woodworking, joinery'}});
+  assert.equal(C.modes(s).work.description, 'woodworking, joinery');
+  assert.equal(C.classify(video('Woodworking skills for cabinets'), s).visible, true);
+  assert.equal(C.classify(video('Python programming for useful tools'), s).visible, false);
+  assert.equal(C.classify(video('Python programming for useful tools'), {...s, intentDescriptions: {work: ''}}).visible, true);
+  assert.deepEqual(C.MODES.work.topics, C.modes(C.defaults()).work.topics, 'defaults remain unchanged');
+});
 test('usage persists, splits at local midnight and resets the daily budget', () => {
   const midnight = new Date(2026, 9, 25, 0, 0, 0).getTime();
   const days = C.advanceUsage({}, midnight - 10000, midnight + 12000, true);

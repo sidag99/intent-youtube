@@ -3,8 +3,13 @@
   let settings, pending, lastURL = '', running = false, themeObserved = false;
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
-  const CARDS = 'ytd-rich-item-renderer,ytd-video-renderer,ytd-grid-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytm-rich-item-renderer';
-  const SHELVES = 'ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytm-reel-shelf-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2';
+  const toolbar = window.top === window ? new IntentToolbar(chrome.runtime, {
+    onSettings: value => { settings = C.sanitize(value); schedule(); },
+    onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
+  }) : null;
+  const SHORT_ITEMS = 'ytd-reel-item-renderer,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2';
+  const CARDS = 'ytd-rich-item-renderer,ytd-rich-section-renderer,ytd-video-renderer,ytd-grid-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytm-rich-item-renderer,' + SHORT_ITEMS;
+  const SHELVES = 'ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytm-reel-shelf-renderer';
   const isHome = () => location.pathname === '/' && !location.hostname.startsWith('music.');
   const isWatch = () => location.pathname === '/watch' && !location.hostname.startsWith('music.') && /^[\w-]{11}$/.test(new URL(location.href).searchParams.get('v') || '');
   const text = (el, selector) => el.querySelector(selector)?.textContent?.trim() || '';
@@ -12,7 +17,7 @@
     if (hidden !== el.hasAttribute('data-intent-hidden')) el.toggleAttribute('data-intent-hidden', hidden);
   }
   function refreshTheme() {
-    homeFeed?.updateTheme(); watchFeed?.updateTheme();
+    homeFeed?.updateTheme(); watchFeed?.updateTheme(); toolbar?.updateTheme();
     const gate = document.getElementById('intent-shorts-gate');
     if (gate) gate.dataset.theme = IntentHome.theme();
     if (window.top === window) heartbeat();
@@ -46,16 +51,20 @@
     const home = isHome();
     homeFeed?.sync(settings, home);
     watchFeed?.sync(settings, isWatch());
+    toolbar?.sync(settings, !location.hostname.startsWith('music.'));
     document.documentElement.toggleAttribute('data-intent-shorts', settings.hideShorts);
-    const visibleSettings = home ? settings : {...settings, mode: 'off'};
+    // Mode selection is handled by the filled feeds. Native shelves must not be
+    // rejected as one title when Shorts are allowed, especially during restore.
+    const visibleSettings = {...settings, mode: 'off'};
     for (const card of document.querySelectorAll(CARDS)) {
+      if (card.querySelector(SHELVES)) { setHidden(card, settings.hideShorts); continue; }
       // Modern lockups can be nested in legacy cards. Filter each visual card once.
-      if (card.parentElement?.closest(CARDS)) continue;
-      const title = text(card, '#video-title,.yt-lockup-metadata-view-model__title,h3');
+      const parentCard = card.parentElement?.closest(CARDS);
+      if (parentCard && !parentCard.querySelector(SHELVES)) continue;
+      const title = text(card, '#video-title,.yt-lockup-metadata-view-model__title,.shortsLockupViewModelHostMetadataTitle,h3') || card.querySelector('a[href*="/shorts/"]')?.getAttribute('title') || '';
       const channel = text(card, '#channel-name a,ytd-channel-name,.yt-content-metadata-view-model__metadata-row .yt-content-metadata-view-model__metadata-text');
-      const shorts = !!card.querySelector('a[href^="/shorts/"],a[href*="youtube.com/shorts/"],ytd-reel-shelf-renderer,[is-shorts]');
+      const shorts = card.matches(SHORT_ITEMS) || !!card.querySelector('a[href^="/shorts/"],a[href*="youtube.com/shorts/"],[is-shorts]');
       const result = C.classify({title, channel, shorts}, visibleSettings);
-      // Cards containing shelves may contain many titles; unrelated shelves are hidden in a mode.
       setHidden(card, !result.visible);
     }
     for (const shelf of document.querySelectorAll(SHELVES)) setHidden(shelf, settings.hideShorts);
@@ -84,6 +93,7 @@
   });
   new MutationObserver(schedule).observe(document, {childList: true, subtree: true, characterData: true});
   document.addEventListener('yt-navigate-finish', schedule);
+  window.addEventListener('resize', schedule, {passive: true});
   // Theme changes do not require a reload or another network/model request.
   observeTheme();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshTheme);

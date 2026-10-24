@@ -9,11 +9,14 @@
   };
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode]]);
+    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode], s.intentDescriptions, s.customIntents]);
   }
   function queries(settings, round = 0) {
-    if (!SEEDS[settings.mode]) return [];
-    const all = [...new Set([...C.terms(settings.customTopics[settings.mode]), ...C.terms(settings.channels[settings.mode]), ...SEEDS[settings.mode]].map(q => q.slice(0, 160)))].slice(0, 24);
+    const s = C.sanitize(settings);
+    if (s.mode === 'off') return [];
+    const description = s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description;
+    const seeds = description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
+    const all = [...new Set([...C.terms(s.customTopics[s.mode]), ...C.terms(s.channels[s.mode]), ...seeds].map(q => q.slice(0, 160)))].slice(0, 24);
     const start = (Math.max(0, Math.trunc(Number(round) || 0)) * 2) % all.length;
     return [...all.slice(start), ...all.slice(0, start)];
   }
@@ -77,6 +80,26 @@
     const badges = (image?.overlays || []).flatMap(o => o.thumbnailOverlayBadgeViewModel?.thumbnailBadges || []);
     return {id: v.contentId, title, channel: plain(rows[0]?.metadataParts?.[0]?.text).slice(0, 200), description: '', metadata: rows.slice(1).flatMap(r => r.metadataParts || []).map(p => plain(p.text)).filter(Boolean).join(' · ').slice(0, 120), duration: badges.map(b => plain(b.thumbnailBadgeViewModel?.text)).find(t => /^\d[\d:]*$/.test(t)) || '', thumbnail: thumbnail(sources.at(-1)?.url, v.contentId), shorts: badges.some(b => /shorts/i.test(plain(b.thumbnailBadgeViewModel?.text)))};
   }
+  function shortVideo(v) {
+    const commands = [v.navigationEndpoint, v.onTap?.innertubeCommand, v.onTap, v.command?.innertubeCommand, v.command, v.inlinePlayerData?.onVisible?.innertubeCommand, v.rendererContext?.commandContext?.onTap?.innertubeCommand].filter(Boolean);
+    let id = [v.videoId, v.contentId, ...commands.flatMap(c => [c.reelWatchEndpoint?.videoId, c.watchEndpoint?.videoId])].find(value => /^[\w-]{11}$/.test(value || ''));
+    if (!id) for (const command of commands) {
+      try {
+        const url = new URL(command.commandMetadata?.webCommandMetadata?.url || command.urlEndpoint?.url, 'https://www.youtube.com');
+        if (url.protocol !== 'https:' || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) continue;
+        const candidate = url.pathname.match(/^\/shorts\/([\w-]{11})\/?$/)?.[1] || (url.pathname === '/watch' ? url.searchParams.get('v') : '');
+        if (/^[\w-]{11}$/.test(candidate || '')) { id = candidate; break; }
+      } catch { /* An unavailable or unrelated endpoint is not a video. */ }
+    }
+    if (!id || v.unplayableText) return null;
+    const overlay = v.overlayMetadata || {};
+    const accessible = plain(v.accessibilityText || v.accessibility?.accessibilityData?.label).replace(/\s*[-–]\s*play short\s*$/i, '').replace(/,\s*[\d.,]+\s*(?:thousand|million|billion|[kmb])?\s*views\s*$/i, '');
+    const title = plain(v.headline || v.title || overlay.primaryText || v.metadata?.title || accessible).slice(0, 500);
+    if (!title) return null;
+    const image = v.thumbnailViewModel?.thumbnailViewModel || v.thumbnailViewModel;
+    const sources = image?.image?.sources || v.thumbnail?.sources || v.thumbnail?.thumbnails || commands.find(c => c.reelWatchEndpoint?.thumbnail)?.reelWatchEndpoint.thumbnail.thumbnails || [];
+    return {id, title, channel: plain(v.ownerText || v.longBylineText || v.shortBylineText || v.channelName || v.metadata?.channelName).slice(0, 200), description: plain(v.descriptionSnippet || v.description).slice(0, 600), duration: plain(v.lengthText).slice(0, 30), metadata: [plain(v.viewCountText || overlay.secondaryText), plain(v.publishedTimeText)].filter(Boolean).join(' · ').slice(0, 120), thumbnail: thumbnail(sources.at(-1)?.url, id), shorts: true};
+  }
   function extract(html) {
     const data = initialData(html);
     // Only search-result sections: don't mix in unrelated sidebars or player recommendations.
@@ -88,7 +111,8 @@
       const node = pending.pop();
       if (!node || typeof node !== 'object') continue;
       if (Array.isArray(node)) { for (let i = node.length - 1; i >= 0; i--) pending.push(node[i]); continue; }
-      const video = node.videoRenderer ? legacy(node.videoRenderer) : node.lockupViewModel ? modern(node.lockupViewModel) : null;
+      const short = node.reelItemRenderer || node.shortsLockupViewModel || node.shortsLockupViewModelV2;
+      const video = node.videoRenderer ? legacy(node.videoRenderer) : node.lockupViewModel ? modern(node.lockupViewModel) : short ? shortVideo(short) : null;
       if (video && !seen.has(video.id)) { seen.add(video.id); videos.push(video); }
       if (node.videoRenderer || node.lockupViewModel || node.reelItemRenderer || node.shortsLockupViewModel || node.shortsLockupViewModelV2) continue;
       for (const [name, child] of Object.entries(node)) if (!/adSlot|promoted|adPlacement|playerAds/i.test(name)) pending.push(child);

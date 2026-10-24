@@ -12,15 +12,20 @@
     return `${String(video.title || '').slice(0, 500)}. Channel: ${String(video.channel || '').slice(0, 160)}. ${tags ? 'Topics: ' + tags + '. ' : ''}${String(video.description || '').slice(0, 1800)}`;
   }
   function profiles(settings) {
-    return Object.fromEntries(Object.entries(PROFILES).map(([mode, examples]) => [mode, [...examples, ...C.terms(settings.customTopics[mode]).slice(0, 16).map(t => `Videos about ${t}.`)]]));
+    const s = C.sanitize(settings);
+    return Object.fromEntries(Object.keys(C.modes(s)).map(mode => {
+      const description = s.intentDescriptions[mode] || s.customIntents[mode]?.description;
+      const examples = description ? [description] : PROFILES[mode];
+      return [mode, [...examples, ...C.terms(s.customTopics[mode]).slice(0, 16).map(t => `Videos about ${t}.`)]];
+    }));
   }
   function dot(a, b) { let sum = 0; for (let i = 0; i < a.length; i++) sum += a[i] * b[i]; return sum; }
-  function decide(vector, modeVectors, mode) {
+  function decide(vector, modeVectors, mode, customized = false) {
     const scores = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, Math.max(...refs.map(ref => dot(vector, ref)))]));
     const selected = scores[mode] || 0;
-    const other = Math.max(...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
+    const other = Math.max(0, ...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
     // Similarities are not calibrated probabilities. Overlapping intents can both qualify.
-    return {accepted: selected >= .26 && selected >= other - .07, uncertain: selected > .18 && (selected < .40 || Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other};
+    return {accepted: customized ? selected >= .30 : selected >= .26 && selected >= other - .07, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other};
   }
   globalThis.IntentSemantic = {PROFILES, text, profiles, dot, decide};
 })();
