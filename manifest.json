@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Intent — YouTube with purpose",
+  "version": "1.0.0",
+  "description": "A quieter YouTube: four focus modes, fewer distractions, and a daily time budget. Private and local.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "alarms", "idle", "declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
+  "background": {"service_worker": "src/background.js"},
+  "action": {"default_popup": "popup.html", "default_icon": {"16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png"}},
+  "icons": {"16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png"},
+  "options_page": "settings.html",
+  "content_scripts": [{
+    "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
+    "js": ["src/core.js", "src/content.js"],
+    "css": ["src/content.css"],
+    "run_at": "document_start",
+    "all_frames": true
+  }],
+  "web_accessible_resources": [{"resources": ["blocked.html", "src/ui.css", "src/blocked.js", "src/core.js", "icons/128.png"], "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"]}]
+}

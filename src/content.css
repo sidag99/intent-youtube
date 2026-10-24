@@ -1,0 +1,6 @@
+[data-intent-hidden] { display: none !important; }
+html[data-intent-shorts] ytd-reel-shelf-renderer,
+html[data-intent-shorts] ytd-rich-shelf-renderer[is-shorts],
+html[data-intent-shorts] ytm-reel-shelf-renderer,
+html[data-intent-shorts] ytm-shorts-lockup-view-model,
+html[data-intent-shorts] ytm-shorts-lockup-view-model-v2 { display: none !important; }
