@@ -1,90 +1,108 @@
 # Intent
 
-**YouTube, with purpose.** A Chrome / Edge extension that makes room for what you actually came to watch.
+**YouTube, with purpose.** A Chrome / Edge extension with an intent-driven home feed, local topic analysis, distraction controls and a daily budget.
 
-- **Work, Study, Music, Leisure:** show only home-page videos whose titles match the selected mode. Add your own topics and exact channel names for each mode.
-- **Hide Shorts:** remove Shorts shelves and navigation links, hide short-form cards, and stop direct Shorts playback behind a return-home screen.
-- **Filter clickbait:** hide common bait phrases, excessive punctuation and long all-caps titles. Add your own blocked words or phrases.
-- **Daily budget:** set 1–1,440 minutes for all modes combined. When exhausted, open YouTube tabs redirect to a break page, and new YouTube visits are blocked until local midnight.
-- **Private by design:** no sign-in, API keys, remote inference, analytics or external runtime dependencies.
+- **A filled home feed:** Work, Study, Music and Leisure load mode-related videos from public YouTube searches. Approved videos appear in a compact grid, without holes left by rejected recommendations.
+- **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube home returns when modes are off.
+- **Bundled semantic AI:** a small, quantized MiniLM embedding model compares meaning, including titles without literal mode keywords. The model and CPU/WASM runtime ship inside the extension. No companion app, account, API key, model download or GPU setup is required.
+- **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. For up to four uncertain results per batch, Intent also tries to read the fuller public video description, hashtags and video tags.
+- **Fewer distractions:** hide Shorts and obvious title-based clickbait; customize included channels, extra topics and blocked phrases.
+- **Daily budget:** set 1–1,440 minutes for all modes combined. Exhausted budgets redirect YouTube tabs to a break page and block new visits until local midnight.
 
-## Install locally
+## Install
 
-1. Download this repository using **Code → Download ZIP**, then extract it. Or clone it.
-2. Open `chrome://extensions` in Chrome, or `edge://extensions` in Edge.
-3. Turn on **Developer mode** and select **Load unpacked**.
-4. Choose the extracted folder containing `manifest.json`.
-5. Pin **Intent** from your browser’s Extensions menu. Refresh any already-open YouTube tabs.
+1. Download the repository with **Code → Download ZIP**, extract it, or use the supplied `intent-extension.zip` package.
+2. Open `chrome://extensions` or `edge://extensions`.
+3. Enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`.
+4. Pin Intent and refresh any already-open YouTube tabs.
 
-Click the toolbar icon to choose a mode, toggle distractions and set your budget. Open the full settings page using the arrow in the popup to customize topics and channels. Settings apply to open YouTube tabs automatically.
+The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-No build step or npm installation is needed to run the extension. Chrome 120+ is required. This is an unpacked extension, not a Chrome Web Store release. Firefox and Safari packaging are not included.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.2 adds the `offscreen` permission for local inference.
 
-## How matching works
+## How the feed works
 
-Matching is deterministic and local. On the YouTube home page, a video is visible when its title includes a built-in topic or one of your added topics, or its displayed channel name exactly matches a channel you included for that mode. Unknown titles are hidden while a mode is on. Turning modes off restores unmatched recommendations, while the Shorts, clickbait, blocked-term and time-budget settings remain independent.
+The extension preserves YouTube's home-page URL and navigation, and replaces the native home recommendations while a mode is active. It searches for the mode's subjects and your custom topics/channels, reads public search-page data without executing page scripts, applies distraction rules, and analyses candidate metadata with the bundled semantic model. It does not control or retrain YouTube's personalized recommendation algorithm.
 
-Topics match whole words or phrases, ignoring case. Separate topics and channel names with commas or newlines. Custom keywords can use any language; built-in topics and clickbait phrases are English. Channel entries use the full displayed name, not the `@handle`. Channel exceptions do not bypass Shorts, clickbait or blocked-term filters.
+Two topic searches are fetched per batch. The initial feed can fetch one additional batch when fewer than twelve videos qualify. Find more explicitly requests further topics, with at most 120 displayed videos per feed. Refresh rotates the topic order and refreshes the first searches. No unrelated filler or empty card placeholders are inserted. Search failures and exhausted matches show an explanation and retry/search options; a complete feed cannot be guaranteed for every topic.
 
-Mode filtering changes home-page recommendations; it does not prevent intentional searches or direct visits to long-form videos. Distraction filters also apply to supported recommendation cards outside the home page. YouTube Music is included in the time budget, but its music-specific home page is not mode-filtered.
+Search results are cached in worker memory for ten minutes; fuller descriptions are cached for up to a day, subject to bounded cache sizes. Metadata, model vectors and feed caches are not persisted as browsing history. Old requests cannot overwrite a newly selected mode, and search/model work does not block the usage-accounting queue.
 
-Clickbait detection is an approximation, not a factual quality judgment. It cannot understand thumbnails, the video’s actual contents or every misleading title. YouTube changes its page markup; selectors may need maintenance. The settings page includes clearly labeled illustrative videos for trying your rules, not a copy of your live recommendations.
+The model runs in a dedicated worker hosted by an offscreen extension document. It uses a single CPU/WASM thread. Tokenizers, weights, runtime code and WASM are bundled; remote model loading is disabled. Inference remains on the device. The first analysis initializes the model; later analyses reuse it and cached embeddings. Memory and speed vary by device.
+
+## Topic and distraction controls
+
+Add short topic descriptions, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
+
+The semantic model is English-focused and has only a small regression evaluation so far. It does not watch videos or inspect thumbnails, and cannot recover a topic from missing or misleading metadata. Work and Study can overlap. Similarity scores are not calibrated probabilities. Incorrect inclusions and exclusions remain possible; this is not a guaranteed judgment of usefulness or factual quality.
+
+Descriptions and video tags are read when publicly available; consent screens, age restrictions, unavailable videos and changed page structures may prevent access. Hashtags are extracted from available title/description text and split where practical, such as `#MachineLearning` into `Machine Learning`. No transcript or full audiovisual analysis is included.
+
+Clickbait filtering remains a separate rule-based heuristic for common phrases, repeated punctuation and lengthy all-caps titles. YouTube changes its HTML and A/B tests layouts, so search parsers and selectors will need maintenance. The settings page's illustrative cards demonstrate keyword and distraction controls; they are not a semantic-model benchmark or the live feed.
+
+Mode filtering affects the home page. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music is included in the budget, but its music-specific home is not replaced by this feed.
 
 ## Time accounting
 
-- Counts foreground YouTube browsing while the browser window is focused and the system is active (idle detection threshold: 60 seconds).
-- By default, also counts reported playing media or audible YouTube tabs in the background. Turn **Count background playback** off to count only foreground use.
-- Counts elapsed wall time once, even if multiple YouTube tabs or videos are active.
-- Stops while the screen is locked. Does not charge long sleep gaps: an individual accounting interval is capped at 35 seconds.
-- Stores usage locally by calendar date and retains at most 14 dates. Restarts do not reset the daily balance.
-- Checks playing pages roughly every five seconds, with a 30-second browser alarm as fallback. Browser throttling can delay accounting or blocking; this is not a second-accurate timer. The midnight unblock can take up to the next alarm or page refresh.
-- Blocks top-level YouTube and YouTube NoCookie visits, including YouTube Music and Studio. New embedded YouTube frames are also redirected when blocked. Existing videos in third-party embedded players are outside active-tab tracking and are not guaranteed to stop immediately.
+- Counts foreground YouTube browsing while its browser window is focused and the system is active (60-second idle threshold).
+- By default, also counts reported playing media or audible YouTube tabs in the background. Disable Count background playback to count foreground use only.
+- Counts elapsed time once across multiple tabs; stops while the screen is locked.
+- Stores daily totals locally for at most fourteen calendar dates. Browser restarts and mode changes do not reset today's balance.
+- Checks playing pages about every five seconds, with a thirty-second alarm fallback. Delayed accounting intervals are capped at thirty-five seconds to avoid charging long sleep gaps. Browser throttling can delay accounting/blocking; this is not a second-accurate timer.
+- The budget resets at local midnight; clearing the prior day's block can wait until the next alarm or break-page refresh.
+- Blocks top-level YouTube and YouTube NoCookie visits, including Music and Studio. New embedded frames also redirect; existing videos in third-party embedded players are outside active-tab tracking and are not guaranteed to stop immediately.
 
-The daily budget is a personal boundary: you can change it in settings or disable/uninstall the extension. It does not enforce limits across other browser profiles, browsers, devices, incognito sessions without extension access, or YouTube’s native apps.
+You can change the limit or disable the extension. It is a personal boundary within a browser profile, not a device-wide restriction or parental control.
 
-## Permissions and data
+## Privacy and permissions
+
+**No cloud inference, analytics or remote scripts.** Searches necessarily send mode/topic queries to YouTube, and thumbnails are loaded from YouTube's image servers. Fuller metadata requests go only to public YouTube watch pages. Background search/watch requests omit cookies; they are not submitted as searches through your signed-in page. YouTube can still see ordinary network details such as your IP address.
 
 | Permission | Purpose |
 | --- | --- |
-| YouTube and YouTube NoCookie host access | Read visible card titles/channels, hide distractions, observe playback, and redirect open YouTube tabs after the budget is reached. |
-| `storage` | Save settings and daily totals locally; keep the current accounting checkpoint in session storage. |
-| `alarms` | Recover time checks when pages are quiet and clear yesterday’s blocking rule after midnight. |
-| `idle` | Avoid charging foreground time while the device is inactive or locked. |
-| `declarativeNetRequestWithHostAccess` | Redirect new YouTube visits to the break page when the daily budget is exhausted, including while the service worker is asleep. |
+| YouTube / YouTube NoCookie hosts | Filter cards, retrieve public results/metadata, observe playback and redirect exhausted tabs. |
+| `storage` | Local settings/daily totals and a session accounting checkpoint. |
+| `alarms` | Accounting fallback and overnight recovery. |
+| `idle` | Exclude inactive foreground use and locked devices. |
+| `offscreen` | Host the dedicated worker for the packaged local model. |
+| `declarativeNetRequestWithHostAccess` | Redirect new YouTube visits after the budget is exhausted. |
 
-No broad `tabs` permission is requested. Usage stores totals, not watched video URLs, titles or browsing history. Content scripts cannot write settings directly: the background worker validates the sending extension page, sanitizes settings, and serializes accounting updates. Storage is restricted to trusted extension contexts. No remote scripts, fonts or other assets are loaded.
+No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. Feed requests are limited to top-level YouTube home pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
 
-## Development
+## Development and checks
 
-Use Node.js 20+ for the dependency-free tests:
+Use Node.js 20+:
 
 ```sh
+npm ci --ignore-scripts
 npm test
 npm run check
-```
-
-Optional UI and DOM checks (Chrome messages are mocked; these do not exercise the installed service worker):
-
-```sh
-npm install
 npx playwright install chromium
 npm run test:browser
+npm run test:model
+npm run test:extension
 ```
 
-Screenshots go to the ignored `test-results/` folder. See [VALIDATION.md](VALIDATION.md) for the checked scope and remaining live verification.
+`test:browser` exercises the home grid and controls with mocked Chrome messages. `test:model` runs the actual packaged WASM model in Chromium, checks semantic paraphrases and hashtag/tag-based classification, and asserts that inference makes no requests outside the packaged origin. `test:extension` loads the real extension in a fresh browser profile, uses deterministic YouTube responses with the actual offscreen model, and verifies mode refresh plus real budget redirects. See [VALIDATION.md](VALIDATION.md) for the complete verification boundary.
 
-The tests cover classification, Unicode topics, precedence, settings validation, time boundaries, overnight reset, worker persistence, background playback, multiple tabs, locking and concurrent requests. Browser-level verification uses a separate test profile with synthetic YouTube markup; it is not a guarantee of compatibility with every current YouTube experiment.
+To rebuild the worker bundle and pinned model assets after source changes:
 
-```
-manifest.json        Manifest V3 permissions and entry points
-src/core.js          Shared classification, settings and calendar logic
-src/background.js    Serialized usage accounting, storage and blocking
-src/content.js       Card filtering, Shorts gate, home status and playback reports
-src/ui.js            Popup, settings controls and illustrative feed
-src/blocked.js       Break page and midnight recovery
-tests/               Node unit and background integration tests
+```sh
+npm run build
 ```
 
-After editing, reload Intent on the browser’s Extensions page and refresh YouTube tabs so their content scripts update. View background errors from the extension’s **Service worker** link.
+Only this developer build step may download pinned assets from Hugging Face. Installation/use of the committed extension package does not download models. Asset hashes and the model revision are recorded in `models/Xenova/all-MiniLM-L6-v2/INTEGRITY.json`. Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Implementation references: [content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), [extension storage](https://developer.chrome.com/docs/extensions/reference/api/storage), [alarms](https://developer.chrome.com/docs/extensions/reference/api/alarms), and [declarative network rules](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest).
+```
+src/core.js               Settings, distraction rules and calendar accounting
+src/feed.js               Public search/watch parsing, caching and result selection
+src/home.js               Compact home grid, mode refresh and stale-result protection
+src/background.js         Serialized accounting, feed orchestration and blocking
+src/semantic.js           Mode descriptions and semantic similarity policy
+src/ai-worker-source.mjs   Local embedding model and cached vectors
+src/ai-host.js / ai.html   Offscreen worker host
+runtime/                  Built inference worker and required WASM
+models/                   Bundled quantized MiniLM model and tokenizer
+src/content.js            Native distraction filtering and playback reports
+src/ui.js                  Popup/settings controls
+```

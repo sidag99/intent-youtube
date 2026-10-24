@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const source = name => fs.readFileSync(path.join(__dirname, '../src', name), 'utf8');
-function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime()) {
+function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetcher, judge) {
   let now = start, listener;
   const local = structuredClone(stored), session = {}, redirects = [], rules = [];
   let tabs = [{id: 1, windowId: 1, active: true, audible: false, url: 'https://www.youtube.com/'}];
@@ -19,11 +19,12 @@ function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime()) {
     windows: {getLastFocused: async () => focus, onFocusChanged: event()},
     declarativeNetRequest: {updateDynamicRules: async r => rules.push(r)},
     action: {setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}},
-    runtime: {getURL: s => 'chrome-extension://intent/' + s, openOptionsPage: async () => {}, onMessage: {addListener(fn) {listener = fn;}}, onInstalled: event(), onStartup: event()}
+    offscreen: {createDocument: async () => {}},
+    runtime: {getContexts: async () => [{}], sendMessage: async message => ({ok: true, decisions: judge ? await judge(message.videos, message.settings) : message.videos.map(() => ({accepted: true, uncertain: false}))}), getURL: s => 'chrome-extension://intent/' + s, openOptionsPage: async () => {}, onMessage: {addListener(fn) {listener = fn;}}, onInstalled: event(), onStartup: event()}
   };
   class Clock extends Date { static now() { return now; } }
-  const context = vm.createContext({chrome, console, URL, Date: Clock});
-  context.importScripts = () => vm.runInContext(source('core.js'), context);
+  const context = vm.createContext({chrome, console, URL, AbortSignal, fetch: fetcher, Date: Clock});
+  context.importScripts = (...names) => names.forEach(name => vm.runInContext(source(name), context));
   vm.runInContext(source('background.js'), context);
   const sender = {url: 'chrome-extension://intent/settings.html'};
   const send = (message, from = sender) => new Promise(resolve => listener(message, from, resolve));
@@ -75,4 +76,28 @@ test('concurrent heartbeat requests are serialized without double-counting', asy
   const h = harness(); await h.send({type: 'GET_STATE'}); h.advance(12000);
   const results = await Promise.all(Array.from({length: 8}, () => h.send({type: 'GET_STATE'})));
   assert.ok(results.every(r => r.usedMs === 12000));
+});
+
+test('feed requests are restricted to a top-level YouTube home page and respect the daily block', async () => {
+  let calls = 0;
+  const h = harness({settings: {dailyMinutes: 1}, days: {'2026-10-24': 60000}}, undefined, async () => {calls++;});
+  const sender = {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0};
+  const blocked = await h.send({type: 'GET_FEED'}, sender);
+  assert.equal(blocked.blocked, true); assert.equal(calls, 0);
+  const invalid = await h.send({type: 'GET_FEED'}, {...sender, url: 'https://www.youtube.com/watch?v=abcdefghijk'});
+  assert.equal(invalid.ok, false);
+  const iframe = await h.send({type: 'GET_FEED'}, {...sender, frameId: 2});
+  assert.equal(iframe.ok, false);
+});
+test('a mode change supersedes an in-flight feed and slow search does not block accounting', async () => {
+  require('../src/core.js');require('../src/feed.js');
+  let release, requested;
+  const gate=new Promise(r=>{release=r;});const started=new Promise(r=>{requested=r;});
+  const fetcher=async url=>{requested();await gate;return {ok:true,url,text:async()=>'<script>var ytInitialData = '+JSON.stringify({contents:{twoColumnSearchResultsRenderer:{primaryContents:{sectionListRenderer:{contents:[{videoRenderer:{videoId:'abcdefghijk',title:{simpleText:'A better routine'}}}]}}}}})+';</script>'};};
+  const h=harness({},undefined,fetcher);
+  const sender={url:'https://www.youtube.com/',tab:{id:1},frameId:0};
+  const pending=h.send({type:'GET_FEED',key:IntentFeed.key(IntentCore.defaults())},sender);
+  await started;
+  const changed=await h.send({type:'UPDATE_SETTINGS',patch:{mode:'music'}});assert.equal(changed.settings.mode,'music');
+  release();assert.equal((await pending).stale,true);
 });

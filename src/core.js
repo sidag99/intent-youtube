@@ -36,7 +36,7 @@
     if (settings.mode === 'off') return {visible: true, reason: 'unfiltered'};
     if (terms(settings.channels[settings.mode]).includes(normalize(video.channel))) return {visible: true, reason: 'your channel'};
     const topics = [...MODES[settings.mode].topics, ...terms(settings.customTopics[settings.mode])];
-    return topics.some(t => matches(video.title, t)) ? {visible: true, reason: settings.mode} : {visible: false, reason: 'outside mode'};
+    return topics.some(t => matches(`${video.title} ${video.description || ''}`, t)) ? {visible: true, reason: settings.mode} : {visible: false, reason: 'outside mode'};
   }
   function dayKey(now = Date.now()) {
     const d = new Date(now);

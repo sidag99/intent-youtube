@@ -1,0 +1,161 @@
+/* Public search-page reader and bounded, local-only recommendation cache. No page scripts execute. */
+(() => {
+  const C = IntentCore;
+  const SEEDS = {
+    work: ['software engineering tutorial', 'design workflow', 'productivity workflow', 'business strategy', 'python programming', 'web development', 'career skills', 'data science'],
+    study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained'],
+    music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music'],
+    leisure: ['travel vlog', 'cooking recipe', 'comedy sketch', 'gaming review', 'sports highlights', 'film review', 'photography tutorial', 'gardening ideas']
+  };
+  function key(settings) {
+    const s = C.sanitize(settings);
+    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode]]);
+  }
+  function queries(settings, round = 0) {
+    if (!SEEDS[settings.mode]) return [];
+    const all = [...new Set([...C.terms(settings.customTopics[settings.mode]), ...C.terms(settings.channels[settings.mode]), ...SEEDS[settings.mode]].map(q => q.slice(0, 160)))].slice(0, 24);
+    const start = (Math.max(0, Math.trunc(Number(round) || 0)) * 2) % all.length;
+    return [...all.slice(start), ...all.slice(0, start)];
+  }
+  function initialData(html, player = false) {
+    if (typeof html !== 'string' || html.length > 8000000) throw new Error('YouTube returned an unreadable search page.');
+    const assignments = player ? /(?:\b(?:var\s+)?ytInitialPlayerResponse\s*|window\s*\[\s*["']ytInitialPlayerResponse["']\s*\]\s*)=\s*/g : /(?:\b(?:var\s+)?ytInitialData\s*|window\s*\[\s*["']ytInitialData["']\s*\]\s*)=\s*/g;
+    let match;
+    while ((match = assignments.exec(html))) {
+      const start = assignments.lastIndex;
+      if (html[start] !== '{') continue;
+      let depth = 0, quoted = false, escaped = false;
+      for (let i = start; i < html.length; i++) {
+        const c = html[i];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (c === '\\') escaped = true;
+          else if (c === '"') quoted = false;
+        } else if (c === '"') quoted = true;
+        else if (c === '{') depth++;
+        else if (c === '}' && --depth === 0) {
+          try { return JSON.parse(html.slice(start, i + 1)); } catch { break; }
+        }
+      }
+    }
+    throw new Error('YouTube did not return readable results. It may be asking for consent or limiting searches.');
+  }
+  function plain(value) {
+    if (typeof value === 'string') return value;
+    return value?.simpleText || value?.content || value?.runs?.map(r => r.text || '').join('') || '';
+  }
+  function thumbnail(url, id) {
+    try { const u = new URL(url); if (u.protocol === 'https:' && (u.hostname === 'ytimg.com' || u.hostname.endsWith('.ytimg.com'))) return u.href; } catch {}
+    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  }
+  function hashtags(text) {
+    return [...new Set((String(text).match(/#[\p{L}\p{N}_]+/gu) || []).slice(0, 30).map(t => t.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ')))];
+  }
+  function watchMetadata(html, id) {
+    const player = initialData(html, true), details = player.videoDetails;
+    if (!details || details.videoId !== id) throw new Error('The full description is unavailable.');
+    const description = String(details.shortDescription || '').slice(0, 12000);
+    return {description: description.slice(0, 4000), keywords: (details.keywords || []).filter(k => typeof k === 'string').slice(0, 30).map(k => k.slice(0, 100)), hashtags: hashtags(description + ' ' + (details.title || ''))};
+  }
+  function legacy(v) {
+    if (!/^[\w-]{11}$/.test(v.videoId || '') || v.unplayableText) return null;
+    const title = plain(v.title).slice(0, 500);
+    if (!title) return null;
+    const overlays = v.thumbnailOverlays || [];
+    const shorts = /\/shorts\//.test(v.navigationEndpoint?.commandMetadata?.webCommandMetadata?.url || '') || overlays.some(o => o.thumbnailOverlayTimeStatusRenderer?.style === 'SHORTS');
+    const sources = v.thumbnail?.thumbnails || [];
+    return {id: v.videoId, title, channel: plain(v.ownerText || v.longBylineText || v.shortBylineText).slice(0, 200), description: plain(v.detailedMetadataSnippets?.[0]?.snippetText || v.descriptionSnippet).slice(0, 600), duration: plain(v.lengthText).slice(0, 30), metadata: [plain(v.shortViewCountText || v.viewCountText), plain(v.publishedTimeText)].filter(Boolean).join(' · ').slice(0, 120), thumbnail: thumbnail(sources.at(-1)?.url, v.videoId), shorts};
+  }
+  function modern(v) {
+    if (!/^[\w-]{11}$/.test(v.contentId || '') || v.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO') return null;
+    const meta = v.metadata?.lockupMetadataViewModel;
+    const title = plain(meta?.title).slice(0, 500);
+    if (!title) return null;
+    const rows = meta?.metadata?.contentMetadataViewModel?.metadataRows || [];
+    const image = v.contentImage?.thumbnailViewModel;
+    const sources = image?.image?.sources || [];
+    const badges = (image?.overlays || []).flatMap(o => o.thumbnailOverlayBadgeViewModel?.thumbnailBadges || []);
+    return {id: v.contentId, title, channel: plain(rows[0]?.metadataParts?.[0]?.text).slice(0, 200), description: '', metadata: rows.slice(1).flatMap(r => r.metadataParts || []).map(p => plain(p.text)).filter(Boolean).join(' · ').slice(0, 120), duration: badges.map(b => plain(b.thumbnailBadgeViewModel?.text)).find(t => /^\d[\d:]*$/.test(t)) || '', thumbnail: thumbnail(sources.at(-1)?.url, v.contentId), shorts: badges.some(b => /shorts/i.test(plain(b.thumbnailBadgeViewModel?.text)))};
+  }
+  function extract(html) {
+    const data = initialData(html);
+    // Only search-result sections: don't mix in unrelated sidebars or player recommendations.
+    const root = data.contents?.twoColumnSearchResultsRenderer?.primaryContents || data.contents?.sectionListRenderer || data.contents?.singleColumnSearchResultsRenderer;
+    if (!root) throw new Error('YouTube changed its search layout or returned a consent page. Try opening YouTube search.');
+    const pending = [root], seen = new Set(), videos = [];
+    let visited = 0;
+    while (pending.length && visited++ < 80000) {
+      const node = pending.pop();
+      if (!node || typeof node !== 'object') continue;
+      if (Array.isArray(node)) { for (let i = node.length - 1; i >= 0; i--) pending.push(node[i]); continue; }
+      const video = node.videoRenderer ? legacy(node.videoRenderer) : node.lockupViewModel ? modern(node.lockupViewModel) : null;
+      if (video && !seen.has(video.id)) { seen.add(video.id); videos.push(video); }
+      if (node.videoRenderer || node.lockupViewModel || node.reelItemRenderer || node.shortsLockupViewModel || node.shortsLockupViewModelV2) continue;
+      for (const [name, child] of Object.entries(node)) if (!/adSlot|promoted|adPlacement|playerAds/i.test(name)) pending.push(child);
+    }
+    return videos.map(v => ({...v, hashtags: hashtags(v.title + ' ' + v.description)}));
+  }
+  function createService({fetcher = globalThis.fetch, now = Date.now, judge} = {}) {
+    const cache = new Map(), inflight = new Map(), metadataCache = new Map();
+    async function metadata(video) {
+      const cached = metadataCache.get(video.id);
+      if (cached && now() - cached.at < 86400000) return cached.value;
+      const url = new URL('https://www.youtube.com/watch'); url.searchParams.set('v', video.id); url.searchParams.set('hl', 'en');
+      const response = await fetcher(url.href, {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(12000)});
+      if (!response.ok || response.url && new URL(response.url).hostname !== 'www.youtube.com') throw new Error('The full description is unavailable.');
+      const value = watchMetadata(await response.text(), video.id);
+      metadataCache.set(video.id, {at: now(), value});
+      while (metadataCache.size > 100) metadataCache.delete(metadataCache.keys().next().value);
+      return value;
+    }
+    async function search(query, fresh) {
+      const cached = cache.get(query);
+      if (!fresh && cached && now() - cached.at < 600000) return cached.items;
+      if (inflight.has(query)) return inflight.get(query);
+      const job = (async () => {
+        const url = new URL('https://www.youtube.com/results');
+        url.searchParams.set('search_query', query); url.searchParams.set('hl', 'en');
+        const response = await fetcher(url.href, {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(12000)});
+        if (!response.ok) throw new Error(`YouTube search is unavailable (${response.status}). Try again shortly.`);
+        if (response.url && new URL(response.url).hostname !== 'www.youtube.com') throw new Error('YouTube redirected this search to a consent or sign-in page. Open YouTube search and try again.');
+        const items = extract(await response.text());
+        cache.delete(query); cache.set(query, {at: now(), items});
+        while (cache.size > 32) cache.delete(cache.keys().next().value);
+        return items;
+      })();
+      inflight.set(query, job);
+      try { return await job; } finally { inflight.delete(query); }
+    }
+    async function get(settings, options = {}) {
+      const s = C.sanitize(settings), pool = queries(s, options.round);
+      const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
+      const selected = pool.slice(cursor, cursor + 2);
+      const batches = await Promise.allSettled(selected.map(q => search(q, options.fresh === true)));
+      const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);
+      const items = [], seen = new Set(excluded);
+      // Interleave searches so a topic doesn't fill the entire screen before the next one.
+      const lists = batches.filter(b => b.status === 'fulfilled').map(b => b.value);
+      for (let i = 0; i < Math.max(0, ...lists.map(l => l.length)); i++) for (const list of lists) {
+        const video = list[i];
+        if (video && !seen.has(video.id) && C.classify(video, {...s, mode: 'off'}).visible) { seen.add(video.id); items.push(video); }
+      }
+      const errors = batches.filter(b => b.status === 'rejected');
+      if (selected.length && errors.length === selected.length) throw new Error(errors[0].reason?.message || 'YouTube search could not be reached.');
+      const candidates = items.slice(0, 100);
+      let decisions = judge ? await judge(candidates, s) : candidates.map(v => ({accepted: C.classify(v, s).visible, uncertain: false}));
+      const uncertain = decisions.map((d, i) => d.uncertain ? i : -1).filter(i => i >= 0).slice(0, 4);
+      if (uncertain.length) {
+        const details = await Promise.allSettled(uncertain.map(i => metadata(candidates[i])));
+        const enriched = [];
+        details.forEach((result, n) => {if (result.status === 'fulfilled') {const i = uncertain[n]; candidates[i] = {...candidates[i], ...result.value}; enriched.push(i);}});
+        if (enriched.length) {
+          const updated = await judge(enriched.map(i => candidates[i]), s);
+          enriched.forEach((i, n) => {decisions[i] = updated[n];});
+        }
+      }
+      return {key: key(s), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
+    }
+    return {get};
+  }
+  globalThis.IntentFeed = {key, queries, initialData, extract, createService, hashtags, watchMetadata};
+})();

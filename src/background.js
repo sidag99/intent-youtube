@@ -1,5 +1,19 @@
-importScripts('core.js');
+importScripts('core.js', 'feed.js');
 const C = IntentCore;
+const feedService = IntentFeed.createService({judge: classifyLocally});
+let creatingAI;
+async function classifyLocally(videos, settings) {
+  if (!videos.length) return [];
+  const url = chrome.runtime.getURL('ai.html');
+  const existing = await chrome.runtime.getContexts({contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url]});
+  if (!existing.length) {
+    if (!creatingAI) creatingAI = chrome.offscreen.createDocument({url: 'ai.html', reasons: ['WORKERS'], justification: 'Run the bundled, private topic classifier in a dedicated worker.'}).finally(() => {creatingAI = undefined;});
+    await creatingAI;
+  }
+  const result = await chrome.runtime.sendMessage({type: 'AI_CLASSIFY', target: 'intent-ai', videos, settings});
+  if (!result?.ok || !Array.isArray(result.decisions) || result.decisions.length !== videos.length) throw new Error(result?.error || 'The bundled topic model did not return a valid decision.');
+  return result.decisions;
+}
 let settings, days, tracker, initialized, appliedBlock;
 let queue = Promise.resolve();
 const reports = new Map();
@@ -74,11 +88,27 @@ async function tick(message = {}, sender = {}) {
   return state;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'GET_FEED') {
+    feedRequest(message, sender).then(respond, error => respond({ok: false, error: error.message}));
+    return true;
+  }
   if (!['HEARTBEAT', 'GET_STATE', 'UPDATE_SETTINGS', 'OPEN_SETTINGS'].includes(message?.type)) return;
   if (message.type === 'OPEN_SETTINGS') { chrome.runtime.openOptionsPage().then(() => respond({ok: true})); return true; }
   serial(() => tick(message, sender)).then(state => respond({ok: true, ...state}), error => respond({ok: false, error: error.message}));
   return true;
 });
+async function feedRequest(message, sender) {
+  const url = new URL(sender.url || 'https://invalid.test/');
+  if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || url.pathname !== '/' || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from the YouTube home page.');
+  const state = await serial(() => tick());
+  if (state.blocked) return {ok: true, blocked: true};
+  if (message.key !== IntentFeed.key(state.settings)) return {ok: true, stale: true};
+  const result = await feedService.get(state.settings, message);
+  // A mode change or exhausted budget during the fetch must supersede old results.
+  if (C.snapshot(settings, days).blocked) return {ok: true, blocked: true};
+  if (result.key !== IntentFeed.key(settings)) return {ok: true, stale: true};
+  return {ok: true, ...result};
+}
 const refresh = () => { serial(() => tick()).catch(() => {}); };
 chrome.alarms.onAlarm.addListener(refresh);
 chrome.tabs.onActivated.addListener(refresh);

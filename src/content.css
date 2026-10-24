@@ -1,4 +1,6 @@
 [data-intent-hidden] { display: none !important; }
+[data-intent-native-home] { display: none !important; }
+html[data-intent-feed] ytd-feed-filter-chip-bar-renderer { display: none !important; }
 html[data-intent-shorts] ytd-reel-shelf-renderer,
 html[data-intent-shorts] ytd-rich-shelf-renderer[is-shorts],
 html[data-intent-shorts] ytm-reel-shelf-renderer,

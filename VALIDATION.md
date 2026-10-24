@@ -1,26 +1,36 @@
-# Validation — 24 October 2026
+# Validation — 24 October 2026, version 1.2
 
 ## Verified
 
-- All **17 Node tests** pass. They exercise real shared policy and background-worker source with mocked Chrome APIs and a controlled clock.
-- Syntax checks pass for all five runtime JavaScript files.
-- Chromium UI/DOM checks pass: all modes, settings persistence in preview storage, independent switches, saved custom topics/channels, unsaved drafts across mode changes, filtered example videos, a 390px layout without horizontal overflow, and the popup.
-- The real content script hides unrelated legacy and modern video cards, Shorts and clickbait in synthetic YouTube markup; it reclassifies cards inserted later and responds to settings messages. A direct Shorts path opens the protective screen.
-- Break-page browser checks cover the exhausted-budget message and the transition back to available time.
-- Chromium loads the Manifest V3 package without reported manifest errors.
+- All **29 Node tests** pass. They cover settings, distraction rules, daily usage, concurrent requests, blocking policy, bounded search requests, parsers, description/hashtag/tag extraction, caching, semantic-result handling and stale-response protection.
+- Syntax checks pass for runtime source files.
+- Chromium UI/DOM checks pass: compact card placement without skipped slots, mode refresh, loading more, duplicate suppression, out-of-order responses, error states, restoring the native feed, Shorts protection, per-mode drafts, saved preferences, popup and narrow layouts.
+- **Actual packaged inference** passes semantic regression checks in Chromium using the shipped quantized model and WASM runtime. The examples include programming, music, science and travel paraphrases without configured keywords, plus an opaque title classified from hashtags/tags. Cross-mode distractors are excluded. All inference network requests stay on the packaged origin, and the model is loaded once and reused.
+- **Installed-extension model execution** works from `chrome-extension://` under the production Content Security Policy.
+- **Fresh-install end-to-end checks** pass with the real Manifest V3 worker, real offscreen model host, real content scripts and deterministic YouTube network responses. Settings load without manual model warming; Work gets a filled semantic feed; switching to Music refreshes it using descriptions. Exhausting a seeded one-minute budget redirects existing YouTube tabs and real declarative network rules redirect new visits. Increasing the budget removes the block.
+- A live public YouTube search page was fetched successfully and yielded **19 readable videos** through the actual parser. This is a snapshot of one current layout, not coverage of all YouTube variants.
+- The selected dependency tree reports **zero known vulnerabilities** in `npm audit` at validation time. The Node-only `sharp` dependency is overridden to 0.35.5; it is not part of browser inference.
 
-## Verification boundary
+The background-worker startup limitation recorded for version 1.0 did not reproduce in the final fresh-profile checks. The final test starts from an uninitialized extension, rather than relying on a manually warmed model.
 
-The installed background service worker could not be started in the automated Chromium environment on this host. The same issue reproduced with a separate minimal extension and with Chromium 141 and Chrome for Testing 156, so this is consistent with a host/browser test limitation. Its cause has not been established. The optional browser tests mock Chrome messages for DOM behavior; they do not claim to verify the installed service worker, real browser storage, real idle events or live network redirects end to end.
+## Limits of this verification
 
-Timer accounting, concurrent heartbeats, stored balances, background playback, locked devices, rule creation, tab redirection and midnight recovery are verified in the Node background harness. Actual live enforcement and current YouTube layouts still need a manual check after loading the unpacked extension. YouTube A/B tests and future markup changes may require selector updates.
+The installed-extension end-to-end checks use synthetic YouTube responses so they remain deterministic and do not access an account. They exercise real extension messaging, model execution, UI and network redirects, but cannot prove compatibility with every live YouTube layout, consent state, country, browser policy or experiment.
 
-## Suggested live check
+The semantic evaluation is a small regression set, not a representative accuracy benchmark. No precision/recall or usefulness guarantee is claimed. The model is English-focused, similarities are not confidence probabilities, and full descriptions/tags may be inaccessible. No transcript, audio, video-frame or thumbnail understanding is included. Clickbait detection remains heuristic.
 
-1. Load the unpacked extension and refresh YouTube. Confirm settings open without an error and mode changes affect home-page cards.
-2. Switch between modes, add a channel or topic, and confirm Shorts and clickbait controls work independently.
-3. Set the budget to one minute, use YouTube, and confirm all open YouTube tabs redirect at exhaustion. A new YouTube tab should redirect too.
-4. Raise the budget, confirm access returns, restart the browser and check that today’s used time remains.
-5. With background playback enabled, play music in a background YouTube tab. Confirm time increases once with multiple tabs, then stops when playback stops and YouTube is not focused.
+In one local browser run, the small twenty-comparison model regression took about 0.7 seconds after the test page opened, including initialization. This is a development-machine observation, not a latency or battery guarantee for other hardware. Network retrieval is additional. The packaged model/tokenizer/runtime occupy about 44 MiB before ZIP compression; process memory is additional and has not been benchmarked.
 
-Changing the budget does not erase usage. Increase it above today’s total when returning to normal use.
+## Commands
+
+```sh
+npm ci --ignore-scripts
+npm test
+npm run check
+npx playwright install chromium
+npm run test:browser
+npm run test:model
+npm run test:extension
+```
+
+For a live account check, reload the unpacked extension, refresh YouTube, switch modes, and inspect relevance and layout. Change the budget above today's used time after testing a short limit; changing it does not erase usage.
