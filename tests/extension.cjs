@@ -30,8 +30,8 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   const worker=context.serviceWorkers()[0];assert.ok(worker);
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1}}));
-  await yt.waitForURL(`chrome-extension://${id}/blocked.html`);await yt.getByRole('heading',{name:'There’s a whole world'}).waitFor();
-  const newTab=await context.newPage();await newTab.goto('https://www.youtube.com/').catch(error=>{if(!error.message.includes('ERR_ABORTED'))throw error;});await newTab.waitForURL(`chrome-extension://${id}/blocked.html`);
+  await yt.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(yt.url(),`chrome-extension://${id}/blocked.html`);
+  const newTab=await context.newPage();await newTab.goto('https://www.youtube.com/').catch(error=>{if(!error.message.includes('ERR_ABORTED'))throw error;});await newTab.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(newTab.url(),`chrome-extension://${id}/blocked.html`);
   console.log('PASS real exhaustion redirects existing tabs and DNR redirects new visits');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:60}}));
   await newTab.goto('https://www.youtube.com/');await newTab.locator('#intent-home-feed').waitFor();
