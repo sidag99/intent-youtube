@@ -17,8 +17,8 @@ async function refresh() {
       select.replaceChildren(...choices.map(([value, name]) => { const option = document.createElement('option'); option.value = value; option.textContent = name; return option; }));
     }
     if (!state.blocked) {
-      document.querySelector('h1').textContent = state.timerExempt && state.budgetExhausted ? 'Your intent is still available.' : 'A fresh start is waiting.';
-      document.querySelector('#block-detail').textContent = state.timerExempt ? 'This intent is excluded from your daily timer. You can keep using it.' : 'Your YouTube budget is available again.';
+      document.querySelector('h1').textContent = state.tabPaused ? 'Intent is paused on this tab.' : state.timerExempt && state.budgetExhausted ? 'Your intent is still available.' : 'A fresh start is waiting.';
+      document.querySelector('#block-detail').textContent = state.tabPaused ? 'Filters and timer counting are paused here. Other tabs keep their settings. Resume Intent from the toolbar or popup.' : state.timerExempt ? 'This intent is excluded from your daily timer. You can keep using it.' : 'Your YouTube budget is available again.';
       document.querySelector('#reset-label').textContent = 'Go in with an intention.';
       const button = document.querySelector('#close-tab');
       button.textContent = 'Return to YouTube →';
@@ -33,6 +33,7 @@ async function refresh() {
 }
 chrome.runtime.onMessage?.addListener(message => {
   if (message.type === 'APPEARANCE' && ['light', 'dark'].includes(message.appearance)) document.documentElement.dataset.theme = message.appearance;
+  if (message.type === 'SETTINGS') refresh();
 });
 document.querySelector('#continue-exempt').onclick = async () => {
   await currentTab;

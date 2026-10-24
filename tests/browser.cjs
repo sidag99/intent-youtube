@@ -2,6 +2,14 @@ const {chromium}=require('playwright');
 const path=require('path'),fs=require('fs'),assert=require('assert/strict');
 const root=path.resolve(__dirname,'..');
 const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mkdirSync(shots,{recursive:true});
+
+async function chooseMode(toolbar, mode, customName) {
+ const names={work:'Work',study:'Study',music:'Music',leisure:'Leisure',off:'Off'};
+ await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
+ await toolbar.getByRole('option',{name:customName||names[mode],exact:true}).click();
+ if(mode==='off')return;
+ await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).evaluate((el,mode)=>new Promise(resolve=>{const poll=()=>el.dataset.mode===mode?resolve():setTimeout(poll,10);poll();}),mode);
+}
 (async()=>{
  const b=await chromium.launch({channel:'chromium',headless:true});const errors=[];
  try{
@@ -9,19 +17,20 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto('file://'+root+'/settings.html');
   await page.getByRole('heading',{name:'What are you here for?'}).waitFor();
-  await page.getByRole('button',{name:'Music Find your rhythm'}).click();
+  assert.equal(await page.getByRole('heading',{name:'Make it yours',exact:true}).count(),0);
+  await page.locator('[data-edit="music"]').click();
+  assert.equal(await page.locator('[data-mode="work"]').getAttribute('aria-pressed'),'true','editing another intent does not change the selected mode');
   await page.getByLabel('Extra topics for music').fill('sitar, tabla');
   await page.getByLabel('Always include these channels in this mode').fill('My Channel');
   await page.getByRole('button',{name:'Save preferences'}).click();await page.getByText('All preferences saved on this device.').waitFor();
-  await page.reload();await page.getByLabel('Extra topics for music').waitFor();
+  await page.locator('#close-editor').click();await page.reload();
+  await page.locator('[data-edit="music"]').click();
   assert.equal(await page.getByLabel('Extra topics for music').inputValue(),'sitar, tabla');
   assert.equal(await page.getByLabel('Always include these channels in this mode').inputValue(),'My Channel');
-  await page.getByRole('button',{name:'Study Stay curious'}).click();
+  await page.locator('#close-editor').click();await page.locator('[data-edit="study"]').click();
   await page.getByLabel('Extra topics for study').fill('Astronomie');
-  await page.getByRole('button',{name:'Work Get in the zone'}).click();
-  await page.getByRole('button',{name:'Study Stay curious'}).click();
-  assert.equal(await page.getByLabel('Extra topics for study').inputValue(),'Astronomie','unsaved drafts survive mode switches');
-  await page.getByRole('button',{name:'Save preferences'}).click();
+  await page.getByRole('button',{name:'Save preferences'}).click();await page.getByText('All preferences saved on this device.').waitFor();
+  await page.locator('#close-editor').click();
   await page.getByRole('switch',{name:'Hide Shorts',exact:true}).click();
   assert.equal(await page.getByRole('switch',{name:'Hide Shorts',exact:true}).getAttribute('aria-checked'),'false');
   await page.getByRole('switch',{name:'Hide Shorts',exact:true}).click();
@@ -35,6 +44,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   const settingsDark=await page.locator('html').evaluate(el=>getComputedStyle(el).backgroundColor);
   assert.notEqual(settingsLight,settingsDark,'settings follow system dark mode');
   await page.screenshot({path:path.join(shots,'intent-settings-dark.png'),fullPage:true});
+  await page.locator('[data-edit="work"]').click();await page.screenshot({path:path.join(shots,'intent-editor-dark.png')});await page.keyboard.press('Escape');
   await page.emulateMedia({colorScheme:'light'});
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -44,6 +54,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   const yt=await context.newPage();yt.on('pageerror',e=>errors.push(e.message));
   await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html><head><meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-masthead{display:flex;height:56px;padding:0 16px;align-items:center;gap:24px}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}ytd-browse{display:block}#primary{width:100%;margin:0}ytd-rich-item-renderer{display:block}</style></head><body><ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form><button id="voice-search-button" aria-label="Search with your voice">Mic</button></div><div id="end">Account</div></ytd-masthead><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf"><h2>Shorts</h2><ytm-shorts-lockup-view-model id="native-short"><a href="/shorts/m0000000096"><h3>Quiet jazz music short</h3></a></ytm-shorts-lockup-view-model></ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
   await yt.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#d8dfc8"/><circle cx="490" cy="230" r="160" fill="#c0cdae"/><path d="M60 240h220M60 190h150" stroke="#718465" stroke-width="12" stroke-linecap="round"/></svg>'}));
+  await yt.route('https://extension.test/icons/**',route=>route.fulfill({path:root+'/icons/128.png'}));
   await yt.goto('https://www.youtube.com/');
   const nativePrimary=await yt.locator('#primary').evaluate(el=>({width:el.getBoundingClientRect().width,margin:getComputedStyle(el).margin,padding:getComputedStyle(el).padding}));
   for (const file of ['core.js','feed.js','feed-theme.js','home.js','toolbar.js']) await yt.addScriptTag({path:root+'/src/'+file});
@@ -57,7 +68,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
       if(testFail)return {ok:false,error:'YouTube search unavailable'};
       if(settings.mode==='work'&&testDelayWork)await new Promise(resolve=>setTimeout(resolve,300));
       const videos=Array.from({length:12},(_,n)=>make(settings.mode,n+message.cursor*12));
-      return {ok:true,key:IntentFeed.key(settings),items:[...videos,videos[0],{...make('work',99),title:'You won’t believe this Python music!!!'},{...make('work',98),title:'Cooking recipe'},...Array.from({length:8},(_,n)=>({...make('music',90+n),shorts:true}))],nextCursor:message.cursor+2,hasMore:message.cursor<2,warning:''};
+      return {ok:true,key:IntentFeed.key(settings),items:[...videos,videos[0],{...make('work',99),title:'You won’t believe this Python music!!!'},{...make('work',98),title:'Cooking recipe'},...Array.from({length:8},(_,n)=>({...make('music',90+n),shorts:true}))],nextCursor:message.cursor+2,hasMore:message.cursor<2,warning:'',metadataStats:{limit:settings.metadataLimit,checked:4,requests:2,cacheHits:2,sharedRequests:0,failed:0,remaining:1}};
     }}};
     window.setTestMode=mode=>{testSettings.mode=mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));};
   });
@@ -74,6 +85,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   assert.ok(Math.abs(homeGeometry.left)<2&&Math.abs(homeGeometry.right)<2,'home feed uses the full native content width without centered side bars');
   assert.equal(homeGeometry.maxWidth,'none');
   assert.equal(await feed.locator('.card').count(),12);
+  assert.match(await feed.locator('.status').textContent(),/2 extra video-page requests/);
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.includes('jazz music')));
   const boxes=await feed.locator('.card').evaluateAll(cards=>cards.map(c=>{const r=c.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width};}));
   const firstRow=boxes.filter(r=>r.y===boxes[0].y);assert.ok(firstRow.length>=3);
@@ -82,6 +94,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await feed.getByRole('button',{name:'Find more videos'}).click();
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelectorAll('.card').length===24);
   assert.equal(await feed.locator('.card').count(),24);
+  assert.match(await feed.locator('.status').textContent(),/4 extra video-page requests/);
   await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelectorAll('.card').length===12);
   assert.equal(await yt.evaluate(()=>testRequests.at(-1).round),1);
@@ -122,7 +135,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   assert.equal(await feed.locator('.shorts-shelf').isVisible(),false);
   assert.equal(await feed.locator('.rest-grid').isVisible(),false,'without Shorts the regular feed becomes one continuous grid again');
   assert.equal(await feed.locator('.first-grid .card').count(),12);
-  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('work');
+  await chooseMode(toolbar,'work');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.title')?.textContent.includes('Python'));
   assert.equal(await yt.evaluate(()=>testSettings.mode),'work','masthead selector changes the active intent');
   await yt.evaluate(()=>{const old=document.querySelector('ytd-masthead');const fresh=old.cloneNode(true);fresh.querySelector('#intent-toolbar')?.remove();old.replaceWith(fresh);});
@@ -134,7 +147,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await yt.evaluate(()=>{testDelayWork=true;setTestMode('work');});
   await yt.waitForFunction(()=>testRequests.at(-1).key.includes('work'));
   await yt.evaluate(()=>setTestMode('study'));
-  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('study');
+  await chooseMode(toolbar,'study');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
   await yt.waitForTimeout(400);
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.includes('Physics')));
@@ -147,22 +160,27 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
   await yt.evaluate(()=>{testFail=true;});await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
   await feed.getByRole('heading',{name:'Your feed couldn’t load.'}).waitFor();
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.filterState==='unavailable');
+  assert.equal(await toolbar.getByText('Unavailable',{exact:true}).isVisible(),true);
   assert.equal(await feed.locator('.card').count(),0);assert.equal(await yt.locator('#music').isVisible(),false);
   assert.ok(await feed.getByRole('link',{name:'Open this topic on YouTube search'}).isVisible());
   await yt.evaluate(()=>{testFail=false;setTestMode('off');});
   await yt.locator('#intent-home-feed').waitFor({state:'detached'});
   assert.equal(await yt.locator('#music').isVisible(),true);
   for(const id of ['bait','short','shelf'])assert.equal(await yt.locator('#'+id).isVisible(),false);
-  assert.equal(await toolbar.count(),0,'turning modes off removes masthead intent controls');
+  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'off','turning modes off remains explicit in the masthead');
   assert.deepEqual(await yt.locator('#primary').evaluate(el=>({width:el.getBoundingClientRect().width,margin:getComputedStyle(el).margin,padding:getComputedStyle(el).padding})),nativePrimary,'native layout is restored without extension side spacing');
   await yt.evaluate(()=>{testSettings.hideShorts=false;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));});
-  await yt.waitForFunction(()=>!document.querySelector('#shelf').hasAttribute('data-intent-hidden'));
+  await yt.locator('#shelf').waitFor({state:'visible'});
   assert.equal(await yt.locator('#shelf').isVisible(),true,'native Shorts shelf is restored when Hide Shorts is disabled');
   assert.equal(await yt.locator('#native-short').isVisible(),true);
   await yt.evaluate(()=>{testSettings.hideShorts=true;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));});
   // Native cards outside home retain distraction filtering, including newly loaded cards.
   await yt.evaluate(()=>{history.pushState({},'', '/results?search_query=python');setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));const card=document.createElement('yt-lockup-view-model');card.id='lazy';card.innerHTML='<h3>You won’t believe this programming trick!!!</h3>';document.querySelector('#primary').append(card);});
   await yt.locator('#lazy[data-intent-hidden]').waitFor({state:'attached'});
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.filterState==='off-here');
+  assert.equal(await toolbar.getByText('Off here',{exact:true}).isVisible(),true,'search results clearly say intent filtering is off here');
+  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'work','the selected intent is saved while search filtering is off');
   assert.equal(await yt.locator('#work').isVisible(),true);
   // The same SPA now opens a video. Replace only recommendations, preserving the player and chat.
   await yt.evaluate(()=>{

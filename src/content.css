@@ -1,12 +1,8 @@
 [data-intent-hidden] { display: none !important; }
+[data-intent-short-shelf] { display: none !important; }
 [data-intent-native-home],
 [data-intent-native-watch] { display: none !important; }
 html[data-intent-feed] ytd-feed-filter-chip-bar-renderer { display: none !important; }
-html[data-intent-shorts] ytd-reel-shelf-renderer,
-html[data-intent-shorts] ytd-rich-shelf-renderer[is-shorts],
-html[data-intent-shorts] ytm-reel-shelf-renderer,
-html[data-intent-shorts] ytm-shorts-lockup-view-model,
-html[data-intent-shorts] ytm-shorts-lockup-view-model-v2 { display: none !important; }
 
 /* Feed layout uses the same available content width; the masthead keeps its native layout. */
 html[data-intent-feed] ytd-browse[page-subtype="home"] #primary { min-width: 0; max-width: none; }

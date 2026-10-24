@@ -23,15 +23,17 @@
   function modes(settings = {}) {
     const builtins = Object.fromEntries(Object.entries(MODES).map(([id, mode]) => {
       const description = typeof settings.intentDescriptions?.[id] === 'string' ? settings.intentDescriptions[id].trim().slice(0, 1000) : '';
-      return [id, {...mode, description: description || mode.description, topics: description ? descriptionTerms(description) : [...mode.topics]}];
+      const name = typeof settings.intentNames?.[id] === 'string' ? settings.intentNames[id].trim().slice(0, 48) : '';
+      return [id, {...mode, name: name || mode.name, description: description || mode.description, topics: description ? descriptionTerms(description) : [...mode.topics]}];
     }));
     const custom = Object.fromEntries(Object.entries(customRecords(settings.customIntents)).map(([id, record]) => [id, {...record, symbol: '◎', topics: descriptionTerms(record.description)}]));
     return {...builtins, ...custom};
   }
-  const defaults = () => ({mode: 'work', newTabMode: 'last', customIntents: {}, intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, leisure: true, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
+  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, leisure: true, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
   function sanitize(input = {}) {
     const out = defaults();
     out.customIntents = customRecords(input.customIntents);
+    for (const mode of Object.keys(MODES)) if (typeof input.intentNames?.[mode] === 'string' && input.intentNames[mode].trim()) out.intentNames[mode] = input.intentNames[mode].trim().slice(0, 48);
     for (const mode of Object.keys(MODES)) if (typeof input.intentDescriptions?.[mode] === 'string') out.intentDescriptions[mode] = input.intentDescriptions[mode].trim().slice(0, 1000);
     const ids = [...Object.keys(MODES), ...Object.keys(out.customIntents)];
     if (validMode(input.mode, out)) out.mode = input.mode;
@@ -39,6 +41,7 @@
     for (const mode of [...ids, 'off']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
     for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback']) if (typeof input[key] === 'boolean') out[key] = input[key];
     if (Number.isFinite(Number(input.dailyMinutes))) out.dailyMinutes = Math.max(1, Math.min(1440, Math.round(Number(input.dailyMinutes))));
+    if ((typeof input.metadataLimit === 'number' || typeof input.metadataLimit === 'string' && input.metadataLimit.trim()) && Number.isFinite(Number(input.metadataLimit))) out.metadataLimit = Math.max(0, Math.min(40, Math.round(Number(input.metadataLimit))));
     for (const field of ['customTopics', 'channels']) for (const mode of ids) out[field][mode] = String(input[field]?.[mode] || '').slice(0, 4000);
     out.blockedTerms = String(input.blockedTerms || '').slice(0, 4000);
     return out;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Intent — YouTube with purpose",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "A focused YouTube: customizable intents, local topic filtering, fewer distractions, and a daily time budget.",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "alarms", "idle", "offscreen", "declarativeNetRequestWithHostAccess"],
@@ -16,7 +16,7 @@
     "js": ["src/core.js", "src/feed.js", "src/feed-theme.js", "src/home.js", "src/toolbar.js", "src/content.js"],
     "css": ["src/content.css"],
     "run_at": "document_start",
-    "all_frames": true
+    "all_frames": false
   }],
   "web_accessible_resources": [{"resources": ["blocked.html", "src/ui.css", "src/blocked.js", "src/core.js", "icons/128.png"], "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"]}]
 }

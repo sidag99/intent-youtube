@@ -14,7 +14,9 @@ async function classifyLocally(videos, settings) {
   if (!result?.ok || !Array.isArray(result.decisions) || result.decisions.length !== videos.length) throw new Error(result?.error || 'The bundled topic model did not return a valid decision.');
   return result.decisions;
 }
-let settings, days, tracker, appearance, tabModes, initialized, appliedBlock;
+let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock;
+let feedRevision = 0;
+const tabFeedRevisions = new Map();
 let queue = Promise.resolve();
 const reports = new Map();
 const URLS = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
@@ -24,7 +26,9 @@ const countsMode = mode => C.countsMode ? C.countsMode(settings, mode) : setting
 const badgeMode = mode => mode === 'off' ? '' : ((C.modes ? C.modes(settings)[mode]?.name : C.MODES[mode]?.name) || mode).slice(0, 1).toUpperCase();
 const extensionSender = sender => sender.url?.startsWith(chrome.runtime.getURL('')) && !(sender.tab && C.isYouTube(sender.tab.url));
 const blockedURL = () => chrome.runtime.getURL('blocked.html');
-const isYouTubeTab = tab => C.isYouTube(tab.url || tab.pendingUrl) || tab.url?.startsWith(blockedURL()) || reports.has(tab.id);
+const hasYouTubeURL = tab => C.isYouTube(tab.url) || C.isYouTube(tab.pendingUrl);
+const isYouTubeTab = tab => hasYouTubeURL(tab) || tab.url?.startsWith(blockedURL()) || tab.pendingUrl?.startsWith(blockedURL());
+const associatedTab = id => Object.hasOwn(tabModes || {}, id) || Object.hasOwn(pausedTabs || {}, id) || reports.has(id) || tabFeedRevisions.has(id);
 function serial(task) {
   const job = queue.then(task);
   queue = job.catch(error => console.error('Intent:', error));
@@ -39,8 +43,9 @@ function effectiveSettings(tabId) {
 }
 function stateFor(tabId, now = Date.now()) {
   const effective = effectiveSettings(tabId), base = C.snapshot(effective, days, now);
-  const timerExempt = !countsMode(effective.mode);
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, appearance, tabId};
+  const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
+  const timerExempt = tabPaused || !countsMode(effective.mode);
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId};
 }
 async function initialize() {
   if (!initialized) initialized = (async () => {
@@ -48,26 +53,30 @@ async function initialize() {
     const data = await chrome.storage.local.get(['settings', 'days', 'appearance']);
     settings = C.sanitize(data.settings); days = data.days || {};
     appearance = ['light', 'dark'].includes(data.appearance) ? data.appearance : undefined;
-    const session = await chrome.storage.session.get(['tracker', 'tabModes']);
+    const session = await chrome.storage.session.get(['tracker', 'tabModes', 'pausedTabs']);
     tracker = session.tracker || {lastAt: Date.now(), counting: false};
     tabModes = {};
     for (const [id, mode] of Object.entries(session.tabModes || {})) if (/^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && validMode(mode)) tabModes[id] = mode;
+    pausedTabs = {};
+    for (const [id, paused] of Object.entries(session.pausedTabs || {})) if (/^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && paused === true) {pausedTabs[id] = true; ensureMode(Number(id));}
     if (!(await chrome.alarms.get('intent-tick'))) await chrome.alarms.create('intent-tick', {periodInMinutes: .5});
     chrome.idle.setDetectionInterval(60);
   })();
   return initialized;
 }
-async function broadcast(tabs) {
-  await Promise.allSettled(tabs.filter(isYouTubeTab).map(tab => chrome.tabs.sendMessage(tab.id, {type: 'SETTINGS', settings: effectiveSettings(tab.id)})));
+async function broadcast(tabs, reset = false) {
+  await Promise.allSettled(tabs.filter(isYouTubeTab).map(tab => chrome.tabs.sendMessage(tab.id, {type: 'SETTINGS', settings: effectiveSettings(tab.id), tabPaused: pausedTabs[tab.id] === true, ...(reset ? {reset: true} : {})})));
 }
 async function applyBlock(exhausted, tabs) {
   const baseBlocked = exhausted && countsMode(initialMode());
   const counted = [], exempt = [];
-  for (const tab of tabs) if (Object.hasOwn(tabModes, tab.id) || isYouTubeTab(tab)) (countsMode(ensureMode(tab.id)) ? counted : exempt).push(tab.id);
+  // Preserve known per-tab rules while a reload briefly has no matching URL.
+  // Confirmed navigation away and tab removal explicitly delete the association.
+  for (const id of Object.keys(tabModes)) (!pausedTabs[id] && countsMode(ensureMode(Number(id))) ? counted : exempt).push(Number(id));
   counted.sort((a, b) => a - b); exempt.sort((a, b) => a - b);
   const signature = JSON.stringify([exhausted, baseBlocked, counted, exempt]);
   if (appliedBlock !== signature) {
-    const condition = {requestDomains: ['youtube.com', 'youtube-nocookie.com'], resourceTypes: ['main_frame', 'sub_frame']};
+    const condition = {requestDomains: ['youtube.com', 'youtube-nocookie.com'], resourceTypes: ['main_frame']};
     const redirect = {type: 'redirect', redirect: {extensionPath: '/blocked.html'}};
     // Known tabs always get an explicit rule. Unknown/new tabs use their configured
     // initial mode through the global rule, so exempt new tabs need no initialization race.
@@ -78,50 +87,58 @@ async function applyBlock(exhausted, tabs) {
     await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: [1], addRules: baseBlocked ? [{id: 1, priority: 1, action: redirect, condition}] : []});
     appliedBlock = signature;
   }
-  if (exhausted) await Promise.allSettled(tabs.filter(tab => C.isYouTube(tab.url || tab.pendingUrl) && countsMode(ensureMode(tab.id))).map(tab => chrome.tabs.update(tab.id, {url: blockedURL()})));
-  await chrome.action.setBadgeText({text: baseBlocked ? 'END' : badgeMode(initialMode())});
-  await chrome.action.setBadgeBackgroundColor({color: baseBlocked ? '#9b4135' : '#365e4b'});
+  if (exhausted) await Promise.allSettled(tabs.filter(tab => hasYouTubeURL(tab) && !pausedTabs[tab.id] && countsMode(ensureMode(tab.id))).map(tab => chrome.tabs.update(tab.id, {url: blockedURL()})));
+  // The default action is off outside YouTube; only supported tabs get a badge.
+  await chrome.action.setBadgeText({text: ''});
   await Promise.allSettled(tabs.filter(isYouTubeTab).map(async tab => {
-    const mode = ensureMode(tab.id), blocked = exhausted && countsMode(mode);
-    await chrome.action.setBadgeText({tabId: tab.id, text: blocked ? 'END' : badgeMode(mode)});
+    const mode = ensureMode(tab.id), blocked = exhausted && !pausedTabs[tab.id] && countsMode(mode);
+    await chrome.action.setBadgeText({tabId: tab.id, text: pausedTabs[tab.id] ? '' : blocked ? 'END' : badgeMode(mode)});
     await chrome.action.setBadgeBackgroundColor({tabId: tab.id, color: blocked ? '#9b4135' : '#365e4b'});
   }));
 }
 async function tick(message = {}, sender = {}) {
   await initialize();
   const [tabs, focused, idle] = await Promise.all([
-    chrome.tabs.query({}), chrome.windows.getLastFocused().catch(() => ({focused: false})), chrome.idle.queryState(60)
+    chrome.tabs.query({url: [...URLS, blockedURL() + '*']}), chrome.windows.getLastFocused().catch(() => ({focused: false})), chrome.idle.queryState(60)
   ]);
-  const liveIds = new Set(tabs.map(tab => tab.id));
-  for (const id of Object.keys(tabModes)) if (!liveIds.has(Number(id))) delete tabModes[id];
-  for (const tab of tabs) if (Object.hasOwn(tabModes, tab.id) || isYouTubeTab(tab)) ensureMode(tab.id);
-  let targetTabId = sender.tab && (C.isYouTube(sender.url || sender.tab.url) || sender.url?.startsWith(blockedURL())) ? sender.tab.id : undefined;
+  for (const tab of tabs) if (isYouTubeTab(tab)) ensureMode(tab.id);
+  const senderScoped = sender.tab && (sender.frameId || 0) === 0 && (tabs.some(tab => tab.id === sender.tab.id && isYouTubeTab(tab)) || Object.hasOwn(tabModes, sender.tab.id) && isYouTubeTab(sender.tab));
+  let targetTabId = senderScoped && (C.isYouTube(sender.url || sender.tab.url) || sender.url?.startsWith(blockedURL())) ? sender.tab.id : undefined;
   if (Object.hasOwn(message, 'targetTabId')) {
     if (!extensionSender(sender)) throw new Error('A target tab can only be selected from Intent.');
     const target = tabs.find(tab => tab.id === message.targetTabId);
     if (!Number.isInteger(message.targetTabId) || !target || !isYouTubeTab(target)) throw new Error('The selected YouTube tab is no longer available.');
     targetTabId = target.id;
   }
-  let patch;
+  let patch, resetting = false, pauseChange;
   if (message.type === 'SET_MODE') {
     const url = new URL(sender.url || 'https://invalid.test/');
-    if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('The intent mode can only be changed from the YouTube toolbar.');
+    if (!senderScoped || !C.isYouTube(url.href) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('The intent mode can only be changed from the YouTube toolbar.');
     if (!validMode(message.mode)) throw new Error('Choose a valid intent mode.');
     patch = {mode: message.mode}; targetTabId = sender.tab.id;
   } else if (message.type === 'UPDATE_SETTINGS') {
     if (!extensionSender(sender)) throw new Error('Settings can only be changed in Intent.');
     patch = message.patch || {};
+  } else if (message.type === 'RESET_SETTINGS') {
+    if (!extensionSender(sender)) throw new Error('Settings can only be reset in Intent.');
+    resetting = true; patch = C.defaults();
+  } else if (message.type === 'SET_TAB_PAUSED') {
+    if (typeof message.paused !== 'boolean') throw new Error('Choose a valid paused state.');
+    if (extensionSender(sender)) {
+      if (!Number.isInteger(message.targetTabId)) throw new Error('Choose a YouTube tab to pause.');
+    } else if (!senderScoped || !C.isYouTube(sender.url || sender.tab.url)) throw new Error('Intent can only be paused from a top-level YouTube page or Intent.');
+    pauseChange = message.paused;
   }
   let nextSettings;
   if (patch) {
     const merged = {...settings, ...patch};
-    for (const field of ['countModes', 'customTopics', 'channels', 'intentDescriptions']) if (patch[field]) merged[field] = {...settings[field], ...patch[field]};
-    nextSettings = C.sanitize(merged);
+    for (const field of ['countModes', 'customTopics', 'channels', 'intentDescriptions', 'intentNames']) if (patch[field]) merged[field] = {...settings[field], ...patch[field]};
+    nextSettings = resetting ? C.defaults() : C.sanitize(merged);
     if (Object.hasOwn(patch, 'mode') && !validMode(patch.mode, nextSettings)) throw new Error('Choose a valid intent mode.');
   }
   const now = Date.now();
   days = C.advanceUsage(days, tracker.lastAt, now, tracker.counting);
-  if (message.type === 'HEARTBEAT' && sender.tab && C.isYouTube(sender.url || sender.tab.url)) {
+  if (message.type === 'HEARTBEAT' && senderScoped && !pausedTabs[sender.tab.id] && C.isYouTube(sender.url || sender.tab.url)) {
     ensureMode(sender.tab.id);
     const frames = reports.get(sender.tab.id) || new Map();
     frames.set(sender.frameId || 0, {playing: message.playing === true, expiresAt: now + 20000}); reports.set(sender.tab.id, frames);
@@ -132,23 +149,36 @@ async function tick(message = {}, sender = {}) {
   }
   if (patch) {
     settings = nextSettings;
-    if (Object.hasOwn(patch, 'mode') && Number.isInteger(targetTabId)) tabModes[targetTabId] = settings.mode;
+    if (resetting) {
+      feedRevision++;
+      pausedTabs = {};
+      for (const id of Object.keys(tabModes)) tabModes[id] = 'work';
+      for (const tab of tabs) if (isYouTubeTab(tab)) tabModes[tab.id] = 'work';
+    } else if (Object.hasOwn(patch, 'mode') && Number.isInteger(targetTabId)) tabModes[targetTabId] = settings.mode;
     for (const tab of tabs) if (Object.hasOwn(tabModes, tab.id) || isYouTubeTab(tab)) ensureMode(tab.id); // Deleted custom intents fall back safely.
     await chrome.storage.local.set({settings});
-    await broadcast(tabs);
+    await broadcast(tabs, resetting);
+  }
+  if (typeof pauseChange === 'boolean') {
+    const wasPaused = pausedTabs[targetTabId] === true;
+    if (pauseChange) pausedTabs[targetTabId] = true; else delete pausedTabs[targetTabId];
+    if (wasPaused !== pauseChange) tabFeedRevisions.set(targetTabId, (tabFeedRevisions.get(targetTabId) || 0) + 1);
+    reports.delete(targetTabId);
+    await chrome.storage.session.set({tabModes, pausedTabs});
+    await broadcast(tabs.filter(tab => tab.id === targetTabId));
   }
   for (const [id, frames] of reports) {
     for (const [frame, report] of frames) if (report.expiresAt <= now) frames.delete(frame);
-    if (!liveIds.has(id) || !frames.size) reports.delete(id);
+    if (!frames.size) reports.delete(id);
   }
   const state = stateFor(targetTabId, now);
-  const youtubeTabs = tabs.filter(tab => C.isYouTube(tab.url || tab.pendingUrl));
-  const eligible = youtubeTabs.filter(tab => countsMode(ensureMode(tab.id)));
+  const youtubeTabs = tabs.filter(hasYouTubeURL);
+  const eligible = youtubeTabs.filter(tab => !pausedTabs[tab.id] && countsMode(ensureMode(tab.id)));
   const foreground = idle === 'active' && focused.focused && eligible.some(tab => tab.active && tab.windowId === focused.id);
   const playing = settings.countPlayback && eligible.some(tab => tab.audible || [...(reports.get(tab.id)?.values() || [])].some(report => report.playing));
   tracker = {lastAt: now, counting: !state.budgetExhausted && idle !== 'locked' && Boolean(foreground || playing)};
   await chrome.storage.local.set({days});
-  await chrome.storage.session.set({tracker, tabModes});
+  await chrome.storage.session.set({tracker, tabModes, pausedTabs});
   await applyBlock(state.budgetExhausted, tabs);
   return state;
 }
@@ -156,7 +186,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === 'GET_FEED') {
     feedRequest(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
   }
-  if (!['HEARTBEAT', 'GET_STATE', 'UPDATE_SETTINGS', 'SET_MODE', 'OPEN_SETTINGS'].includes(message?.type)) return;
+  if (!['HEARTBEAT', 'GET_STATE', 'UPDATE_SETTINGS', 'RESET_SETTINGS', 'SET_MODE', 'SET_TAB_PAUSED', 'OPEN_SETTINGS'].includes(message?.type)) return;
   if (message.type === 'OPEN_SETTINGS') { chrome.runtime.openOptionsPage().then(() => respond({ok: true})); return true; }
   serial(() => tick(message, sender)).then(state => respond({ok: true, ...state}), error => respond({ok: false, error: error.message})); return true;
 });
@@ -165,28 +195,58 @@ async function feedRequest(message, sender) {
   const currentVideo = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
   if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || !(url.pathname === '/' || currentVideo) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
   const state = await serial(() => tick({}, sender));
+  if (!Number.isInteger(state.tabId)) return {ok: true, stale: true};
+  if (state.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (state.blocked) return {ok: true, blocked: true};
   if (message.key !== IntentFeed.key(state.settings)) return {ok: true, stale: true};
+  const revision = feedRevision;
+  const tabRevision = tabFeedRevisions.get(sender.tab.id) || 0;
+  const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id));
   const exclude = currentVideo ? [currentVideo, ...(Array.isArray(message.exclude) ? message.exclude : [])] : message.exclude;
-  const result = await feedService.get(state.settings, {...message, exclude});
+  let result;
+  try { result = await feedService.get(state.settings, {...message, exclude, isActive}); }
+  catch (error) {
+    if (pausedTabs[sender.tab.id]) return {ok: true, paused: true, tabPaused: true};
+    if (!isActive()) return {ok: true, stale: true};
+    throw error;
+  }
+  if (!Object.hasOwn(tabModes, sender.tab.id)) return {ok: true, stale: true};
   const current = stateFor(sender.tab.id);
+  if (current.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (current.blocked) return {ok: true, blocked: true};
-  if (result.key !== IntentFeed.key(current.settings)) return {ok: true, stale: true};
+  if (!isActive() || result.key !== IntentFeed.key(current.settings)) return {ok: true, stale: true};
   return {ok: true, ...result};
 }
 const refresh = () => { serial(() => tick()).catch(() => {}); };
 chrome.alarms.onAlarm.addListener(refresh);
 chrome.tabs.onActivated.addListener(refresh);
 chrome.tabs.onCreated?.addListener(tab => {
+  if (!isYouTubeTab(tab)) return;
   serial(async () => { await initialize(); ensureMode(tab.id); await chrome.storage.session.set({tabModes}); await tick(); }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener(id => {
-  reports.delete(id);
-  serial(async () => { await initialize(); delete tabModes[id]; await tick(); }).catch(() => {});
+  serial(async () => {
+    await initialize();
+    if (!associatedTab(id)) return;
+    reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.delete(id);
+    await tick();
+  }).catch(() => {});
 });
 chrome.tabs.onUpdated.addListener((id, info) => {
-  if (info.url) reports.delete(id);
-  if (info.url || info.status === 'complete' || info.audible !== undefined) refresh();
+  if (info.url) {
+    if (!C.isYouTube(info.url) && !info.url.startsWith(blockedURL())) {
+      serial(async () => {
+        await initialize();
+        if (!associatedTab(id)) return;
+        reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1);
+        await chrome.action.setBadgeText({tabId: id, text: ''});
+        await tick();
+      }).catch(() => {});
+      return;
+    }
+    reports.delete(id);
+  }
+  if (info.url || Object.hasOwn(tabModes || {}, id) && (info.status === 'complete' || info.audible !== undefined)) refresh();
 });
 chrome.windows.onFocusChanged.addListener(refresh);
 chrome.idle.onStateChanged.addListener(refresh);

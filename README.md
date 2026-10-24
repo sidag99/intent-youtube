@@ -3,13 +3,14 @@
 **YouTube, with purpose.** A Chrome / Edge extension with intent-driven home and watch-page recommendations, local topic analysis, distraction controls and a daily budget.
 
 - **Filled home and watch feeds:** Work, Study, Music, Leisure and custom intents load matching videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
-- **Controls left of search:** while a mode is active, a clearly labelled Intent selector, refresh control and settings shortcut sit to the left of YouTube’s search box, keeping search and the microphone together. There is no separate feed banner. Turning modes off removes the toolbar; use the extension popup to turn a mode back on.
-- **Your own definitions:** edit the descriptions of Work, Study, Music and Leisure, or create up to ten named custom intents. A configured description replaces the broad built-in topic scope.
+- **Controls left of search:** on YouTube, a clearly labelled Intent selector, refresh control and settings shortcut sit to the left of YouTube’s search box, keeping search and the microphone together. The original green-and-white logo opens a custom menu with keyboard navigation. There is no separate feed banner. Off remains visible and can be re-enabled from the same control. Search and unsupported pages explicitly show **Off here**, while loading and failed feeds show their current state.
+- **Your own definitions:** use the pencil on any intent to edit its name, description, topics and channels, including Work, Study, Music and Leisure, or create up to ten named custom intents. A configured description replaces the broad built-in topic scope.
 - **Independent tab memory:** a tab keeps its selected intent across reloads. Choose whether new tabs follow the last-used intent or always start in a particular intent. Changing one tab leaves other tabs alone.
+- **Pause individual tabs:** choose **Pause on this tab** in the toolbar menu or popup. YouTube's native content returns, all distraction filtering stops, and that tab adds no time or budget block. Other tabs remain active. Resume restores the tab's saved intent.
 - **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations and layout return when modes are off. Switching modes preserves the current video player.
 - **YouTube-style light and dark UI:** feeds follow YouTube's theme, including live theme switches. Popup, settings and break pages use the last theme detected on an active YouTube tab, with the system theme as the initial fallback.
 - **Bundled semantic AI:** a small, quantized MiniLM embedding model compares meaning, including titles without literal mode keywords. The model and CPU/WASM runtime ship inside the extension. No companion app, account, API key, model download or GPU setup is required.
-- **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. For up to four uncertain results per batch, Intent also tries to read the fuller public video description, hashtags and video tags.
+- **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. Choose 0–40 fuller checks per search batch (default 4). Each uncached check makes an extra public video-page request to read the fuller description, hashtags and tags. Higher limits may improve matching but use more network traffic and take longer. The feed reports extra video-page requests and cached checks.
 - **Fewer distractions:** hide Shorts and obvious title-based clickbait; turning Hide Shorts off allows matching Shorts through topic classification, using a horizontal shelf after the first video row, left/right scroll arrows, portrait thumbnails and Shorts links; customize included channels, extra topics and blocked phrases.
 - **Daily budget:** set 1–1,440 minutes shared by the intents you choose to count. Music is excluded by default. Exempt intents add no time and stay accessible after the limit; counted intents are blocked until local midnight.
 
@@ -22,7 +23,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.5 adds independent tab intents, configurable new-tab defaults, timer exemptions and editable/custom intents, alongside the Shorts and layout fixes. No new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.6 adds per-tab pause, configurable fuller-metadata checks and network counts, custom mode menus, pencil editors, factory reset, explicit filtering status and complete Shorts-section hiding in search. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
@@ -30,13 +31,15 @@ The extension preserves YouTube's URLs and navigation, and replaces home and wat
 
 Two topic searches are fetched per batch. The initial feed can fetch one additional batch when fewer than twelve videos qualify. Find more explicitly requests further topics, with at most 120 displayed videos per feed. Refresh rotates the topic order and refreshes the first searches. No unrelated filler or empty card placeholders are inserted. Search failures and exhausted matches show an explanation and retry/search options; a complete feed cannot be guaranteed for every topic.
 
+Fuller metadata is checked in groups of at most four, until twelve confident matches are available, the configured cap is reached, or a 45-second enrichment deadline expires. Unchecked/failed candidates retain their initial metadata-based decision. Cached descriptions need no new video-page request; concurrent feeds share in-flight metadata requests. The cap applies to each search batch, so the initial two-batch feed may check up to twice the configured amount. Search-page and thumbnail requests are additional to the displayed fuller-check request count. Set the cap to zero for search metadata only.
+
 Search results are cached in worker memory for ten minutes; fuller descriptions are cached for up to a day, subject to bounded cache sizes. Metadata, model vectors and feed caches are not persisted as browsing history. The last detected YouTube light/dark appearance is saved locally so extension pages match it. Old requests cannot overwrite a newly selected mode, and search/model work does not block the usage-accounting queue.
 
 The model runs in a dedicated worker hosted by an offscreen extension document. It uses a single CPU/WASM thread. Tokenizers, weights, runtime code and WASM are bundled; remote model loading is disabled. Inference remains on the device. The first analysis initializes the model; later analyses reuse it and cached embeddings. Memory and speed vary by device.
 
 ## Topic and distraction controls
 
-Use **Intent description** to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
+Use the pencil button next to an intent, then **Intent description**, to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
 
 Add extra topics, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
 
@@ -50,9 +53,15 @@ Mode filtering affects home and watch-page recommendations. Searches and intenti
 
 ## Tab memory
 
-The toolbar and popup change the current YouTube tab. The full settings page edits the last-used intent and global preferences; it does not force all existing tabs into one mode. **New YouTube tabs** can follow the last-used intent or a fixed intent, including a custom intent or modes-off browsing.
+The toolbar and popup change the current YouTube tab. Search results and other unsupported pages do not receive intent topic filtering: **Off here** means the intent is saved for Home/video recommendations; distraction filters and the timer can still apply. The full settings page edits the last-used intent and global preferences; it does not force all existing tabs into one mode. **New YouTube tabs** can follow the last-used intent or a fixed intent, including a custom intent or modes-off browsing.
 
 Per-tab selections are kept in session storage across reloads and background-worker restarts. A full browser restart uses the saved new-tab policy; tab-specific choices are not promised across browser restarts. Preferences, custom definitions and the last-used intent persist in local storage.
+
+**Pause on this tab** is separate from the **Off** intent. Off removes topic filtering while retaining distraction rules and the mode's timer policy. Pause restores native content, stops all filters and new analysis requests, and excludes that tab from the daily timer and limit. Its toolbar explicitly shows **Paused** with a Resume control. The pause survives reloads and worker restarts, stays local to that tab and clears when it closes or leaves YouTube. New tabs start active under your chosen new-tab intent policy. Requests already sent may finish for the shared cache; pausing prevents further model passes or fuller-check groups for that feed.
+
+## Reset settings
+
+**Reset settings** opens a confirmation explaining the changes. It restores factory preferences and built-in names, removes custom intents/rules, clears per-tab pauses, and sets open tab intents to Work. Daily usage history and the detected YouTube appearance are retained. Reset is a settings reset, not a way to erase today’s time.
 
 ## Time accounting
 
@@ -64,9 +73,13 @@ Per-tab selections are kept in session storage across reloads and background-wor
 - Stores daily totals locally for at most fourteen calendar dates. Browser restarts and mode changes do not reset today's balance.
 - Checks playing pages about every five seconds, with a thirty-second alarm fallback. Delayed accounting intervals are capped at thirty-five seconds to avoid charging long sleep gaps. Browser throttling can delay accounting/blocking; this is not a second-accurate timer.
 - The budget resets at local midnight; clearing the prior day's block can wait until the next alarm or break-page refresh.
-- Blocks top-level YouTube and YouTube NoCookie visits in counted intents. Session network rules keep existing exempt tabs available, while new visits use the configured new-tab policy. The break page offers available exempt intents. New embedded frames follow their containing tab’s rule; existing videos in third-party embedded players are outside active-tab tracking and are not guaranteed to stop immediately.
+- Blocks top-level YouTube and YouTube NoCookie visits in counted intents. Session network rules keep existing exempt tabs available, while new visits use the configured new-tab policy. The break page offers available exempt intents. Third-party pages and their embedded players remain outside the extension’s scope; budget redirects apply only to top-level YouTube visits.
 
 You can change the limit or disable the extension. It is a personal boundary within a browser profile, not a device-wide restriction or parental control.
+
+## YouTube-only scope
+
+Content scripts run only on top-level YouTube/YouTube NoCookie pages. They are not injected into other websites or their embedded YouTube frames. The background queries YouTube tabs and Intent’s own break page; it does not inspect other apps or website content. On other sites, the popup explicitly shows **Off on this site** and offers no active filtering controls. System idle/window-focus signals are used only to avoid charging inactive YouTube time.
 
 ## Privacy and permissions
 
@@ -75,13 +88,13 @@ You can change the limit or disable the extension. It is a personal boundary wit
 | Permission | Purpose |
 | --- | --- |
 | YouTube / YouTube NoCookie hosts | Filter cards, retrieve public results/metadata, observe playback and redirect exhausted tabs. |
-| `storage` | Local settings/intent definitions/daily totals, plus session tab intents and an accounting checkpoint. |
+| `storage` | Local settings/intent definitions/daily totals, plus session tab intents/pauses and an accounting checkpoint. |
 | `alarms` | Accounting fallback and overnight recovery. |
 | `idle` | Exclude inactive foreground use and locked devices. |
 | `offscreen` | Host the dedicated worker for the packaged local model. |
 | `declarativeNetRequestWithHostAccess` | Redirect new YouTube visits after the budget is exhausted. |
 
-No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. The toolbar has a separate, top-level YouTube-only message that can change the selected mode; it cannot change budgets or distraction rules. Feed requests are limited to top-level YouTube home and valid video pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
+No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. The toolbar has separate, top-level YouTube-only messages for the selected mode and this tab’s pause; it cannot edit budgets or global distraction rules. Feed requests are limited to top-level YouTube home and valid video pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
 
 ## Development and checks
 

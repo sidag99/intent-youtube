@@ -6,20 +6,32 @@ const path = require('node:path');
 const source = name => fs.readFileSync(path.join(__dirname, '../src', name), 'utf8');
 function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetcher, judge, storedSession = {}) {
   let now = start, listener;
-  const local = structuredClone(stored), session = structuredClone(storedSession), redirects = [], rules = [], sessionRules = [], broadcasts = [], events = {};
+  const local = structuredClone(stored), session = structuredClone(storedSession), redirects = [], rules = [], sessionRules = [], broadcasts = [], badges = [], queries = [], queryResults = [], events = {};
   const dynamic = new Map(), perTabRules = new Map();
   let tabs = [{id: 1, windowId: 1, active: true, audible: false, url: 'https://www.youtube.com/'}];
   let focus = {id: 1, focused: true}, idle = 'active';
   const event = name => ({addListener(fn) { if (name) events[name] = fn; }});
   const storage = data => ({get: async key => Object.fromEntries((Array.isArray(key) ? key : [key]).map(k => [k, structuredClone(data[k])])), set: async values => Object.assign(data, structuredClone(values)), setAccessLevel: async () => {}});
+  const matchesURL = (pattern, value) => {
+    try {
+      const url = new URL(value), domain = pattern.match(/^\*:\/\/\*\.([^/]+)\/\*$/)?.[1];
+      if (domain) return ['http:', 'https:'].includes(url.protocol) && (url.hostname === domain || url.hostname.endsWith('.' + domain));
+      return new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*') + '$').test(url.href);
+    } catch {return false;}
+  };
   const chrome = {
     storage: {local: storage(local), session: storage(session)},
     alarms: {get: async () => null, create: async () => {}, onAlarm: event()},
     idle: {queryState: async () => idle, setDetectionInterval() {}, onStateChanged: event()},
-    tabs: {query: async () => tabs, update: async (id, info) => redirects.push({id, ...info}), sendMessage: async (id, message) => broadcasts.push({id, message: structuredClone(message)}), onActivated: event(), onCreated: event('created'), onRemoved: event('removed'), onUpdated: event('updated')},
+    tabs: {query: async query => {
+      queries.push(structuredClone(query));
+      const patterns = query?.url ? Array.isArray(query.url) ? query.url : [query.url] : null;
+      const result = patterns ? tabs.filter(tab => patterns.some(pattern => matchesURL(pattern, tab.url))) : tabs;
+      queryResults.push(result.map(tab => tab.id)); return result;
+    }, update: async (id, info) => redirects.push({id, ...info}), sendMessage: async (id, message) => broadcasts.push({id, message: structuredClone(message)}), onActivated: event(), onCreated: event('created'), onRemoved: event('removed'), onUpdated: event('updated')},
     windows: {getLastFocused: async () => focus, onFocusChanged: event()},
     declarativeNetRequest: {updateDynamicRules: async r => {rules.push(r); for (const id of r.removeRuleIds) dynamic.delete(id); for (const rule of r.addRules) dynamic.set(rule.id, structuredClone(rule));}, updateSessionRules: async r => {sessionRules.push(r); for (const id of r.removeRuleIds) perTabRules.delete(id); for (const rule of r.addRules) perTabRules.set(rule.id, structuredClone(rule));}},
-    action: {setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}},
+    action: {setBadgeText: async value => badges.push(structuredClone(value)), setBadgeBackgroundColor: async () => {}},
     offscreen: {createDocument: async () => {}},
     runtime: {getContexts: async () => [{}], sendMessage: async message => message.type === 'AI_CLASSIFY' ? ({ok: true, decisions: judge ? await judge(message.videos, message.settings) : message.videos.map(() => ({accepted: true, uncertain: false}))}) : ({ok: true}), getURL: s => 'chrome-extension://intent/' + s, openOptionsPage: async () => {}, onMessage: {addListener(fn) {listener = fn;}}, onInstalled: event(), onStartup: event()}
   };
@@ -29,7 +41,7 @@ function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetch
   vm.runInContext(source('background.js'), context);
   const sender = {url: 'chrome-extension://intent/settings.html'};
   const send = (message, from = sender) => new Promise(resolve => listener(message, from, resolve));
-  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
+  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, badges, queries, queryResults, drain: () => vm.runInContext('queue', context), associated: id => vm.runInContext(`associatedTab(${Number(id)})`, context), updateEvent: (id, info) => events.updated(id, info), removeEvent: id => events.removed(id), advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, updateTab: async (id, info) => {tabs = tabs.map(tab => tab.id === id ? {...tab, ...info} : tab); events.updated(id, info); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
 }
 test('foreground use counts once across tabs; an unfocused browser stops counting', async () => {
   const h = harness(); await h.send({type: 'GET_STATE'});
@@ -258,4 +270,263 @@ test('exhausted daily budgets still permit semantic feeds in timer-exempt modes'
   const h = harness({settings, days: {'2026-10-24': 60000}}, undefined, fetcher);
   const result = await h.send({type: 'GET_FEED', key: IntentFeed.key(settings)}, fromTab(1));
   assert.equal(result.ok, true); assert.equal(result.blocked, undefined); assert.equal(result.items.length, 1);
+});
+
+test('built-in name updates merge with saved names and use stable intent IDs', async () => {
+  const h = harness({settings: {intentNames: {work: 'Client projects', study: 'Legal studies'}}});
+  const result = await h.send({type: 'UPDATE_SETTINGS', patch: {intentNames: {work: 'Portfolio work'}}});
+  assert.equal(result.settings.intentNames.work, 'Portfolio work'); assert.equal(result.settings.intentNames.study, 'Legal studies');
+  assert.equal(result.settings.mode, 'work');
+});
+test('reset restores all preferences and tab intents while retaining usage history and appearance', async () => {
+  require('../src/core.js');
+  const settings = {mode: 'custom-repair', newTabMode: 'music', metadataLimit: 31, dailyMinutes: 120, hideShorts: false, hideClickbait: false, limitEnabled: false, countPlayback: false, customIntents: {'custom-repair': {name: 'Repair', description: 'Bicycle maintenance'}}, customTopics: {work: 'photography', 'custom-repair': 'wheelbuilding'}, channels: {music: 'Studio North'}, countModes: {work: false, music: true}, intentNames: {work: 'Client projects', study: 'Legal studies'}, intentDescriptions: {study: 'Contract law'}, blockedTerms: 'spoilers'};
+  const days = {'2026-10-23': 50000, '2026-10-24': 70000};
+  const h = harness({settings, days, appearance: 'dark'}, undefined, undefined, undefined, {tabModes: {1: 'custom-repair', 2: 'music', 3: 'study'}});
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}, {id: 3, url: 'https://example.com/', active: false, windowId: 1}]);
+  const result = await h.send({type: 'RESET_SETTINGS'});
+  assert.equal(result.ok, true); assert.deepEqual(h.local.settings, IntentCore.defaults());
+  assert.deepEqual(h.local.days, days); assert.equal(result.usedMs, 70000); assert.equal(result.appearance, 'dark'); assert.equal(h.local.appearance, 'dark');
+  assert.deepEqual(h.session.tabModes, {'1': 'work', '2': 'work', '3': 'work'});
+  assert.deepEqual(h.broadcasts.map(item => item.id), [1, 2]);
+  assert.ok(h.broadcasts.every(item => item.message.reset === true && item.message.settings.mode === 'work' && Object.keys(item.message.settings.customIntents).length === 0));
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 2})).settings.mode, 'work');
+});
+test('webpages and embedded extension pages cannot reset settings', async () => {
+  const h = harness({settings: {mode: 'music', metadataLimit: 8, intentNames: {work: 'My work'}}});
+  for (const sender of [
+    {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0},
+    {url: 'https://example.com/', tab: {id: 2}},
+    {url: 'chrome-extension://intent.evil/settings.html'},
+    {url: 'chrome-extension://intent/settings.html', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 2}
+  ]) {
+    const result = await h.send({type: 'RESET_SETTINGS'}, sender);
+    assert.equal(result.ok, false); assert.match(result.error, /only be reset in Intent/);
+  }
+  const state = await h.send({type: 'GET_STATE'});
+  assert.equal(state.settings.mode, 'music'); assert.equal(state.settings.metadataLimit, 8); assert.equal(state.settings.intentNames.work, 'My work');
+});
+test('reset moves formerly exempt tabs into counted Work and preserves an exhausted budget', async () => {
+  const h = harness({settings: {mode: 'music'}, days: {'2026-10-24': 3600000}}, undefined, undefined, undefined, {tabModes: {1: 'music'}});
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).blocked, false);
+  const reset = await h.send({type: 'RESET_SETTINGS', targetTabId: 1});
+  assert.equal(reset.settings.mode, 'work'); assert.equal(reset.blocked, true); assert.equal(reset.budgetExhausted, true);
+  assert.equal(reset.usedMs, 3600000); assert.equal(h.redirects.at(-1).url, 'chrome-extension://intent/blocked.html');
+});
+test('reset supersedes an in-flight feed even when restored preferences have an identical feed key', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let release, requested;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const fetcher = async url => {requested(); await gate; return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{videoRenderer: {videoId: 'abcdefghijk', title: {simpleText: 'Build a useful tool'}}}]}}}}}) + ';</script>'};};
+  const h = harness({}, undefined, fetcher);
+  const pending = h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults())}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  await started;
+  assert.equal((await h.send({type: 'RESET_SETTINGS'})).ok, true);
+  release(); assert.equal((await pending).stale, true);
+});
+
+test('tab queries are restricted to YouTube and the owned break page; unrelated pages receive no intent badge or broadcasts', async () => {
+  const h = harness({settings: {dailyMinutes: 1}, days: {'2026-10-24': 60000}});
+  h.setTabs([
+    {id: 1, url: 'https://www.youtube.com/', active: false, windowId: 1},
+    {id: 2, url: 'https://www.youtube-nocookie.com/embed/abcdefghijk', active: false, windowId: 1},
+    {id: 3, url: 'chrome-extension://intent/blocked.html', active: false, windowId: 1},
+    {id: 4, url: 'https://example.com/', active: true, audible: true, windowId: 1},
+    {id: 5, url: 'https://youtube.com.evil.test/', active: false, windowId: 1},
+    {id: 6, url: 'chrome-extension://unrelated/blocked.html', active: false, windowId: 1}
+  ]);
+  await h.send({type: 'UPDATE_SETTINGS', patch: {hideShorts: false}});
+  assert.ok(h.queries.every(query => JSON.stringify(query.url) === JSON.stringify(['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*', 'chrome-extension://intent/blocked.html*'])));
+  assert.ok(h.queryResults.every(ids => JSON.stringify(ids) === '[1,2,3]'));
+  assert.deepEqual(h.broadcasts.map(item => item.id), [1, 2, 3]);
+  assert.ok(h.badges.filter(item => !Object.hasOwn(item, 'tabId')).every(item => item.text === ''), 'the global badge is off on all other apps/sites');
+  assert.ok(h.badges.filter(item => item.tabId).every(item => [1, 2, 3].includes(item.tabId)));
+  assert.deepEqual(Object.keys(h.session.tabModes).sort(), ['1', '2', '3']);
+  const redirectRules = [...h.dynamic.values(), ...h.perTabRules.values()];
+  assert.ok(redirectRules.length > 0); assert.ok(redirectRules.every(rule => JSON.stringify(rule.condition.resourceTypes) === '["main_frame"]'), 'external pages’ YouTube iframes are outside budget enforcement');
+});
+test('new unrelated tabs get no intent, while a pending YouTube tab keeps its initial mode before its URL commits', async () => {
+  const h = harness({settings: {newTabMode: 'music'}, days: {'2026-10-24': 3600000}});
+  h.setTabs([{id: 8, url: 'https://example.com/', active: true, windowId: 1}]);
+  await h.createTab({id: 9, url: 'https://another.example/', active: false, windowId: 1});
+  assert.deepEqual(h.session.tabModes, {});
+  await h.createTab({id: 10, url: 'about:blank', pendingUrl: 'https://www.youtube.com/watch?v=abcdefghijk', active: false, windowId: 1});
+  assert.equal(h.session.tabModes[10], 'music');
+  assert.ok(h.perTabRules.get(3)?.condition.tabIds.includes(10), 'the pending exempt tab gets its allow before navigation can hit a counted global default');
+  assert.ok(!h.badges.some(item => [8, 9, 10].includes(item.tabId) && item.text), 'uncommitted/other pages receive no intent badge');
+});
+test('restricted-query gaps do not erase tab intent or exempt reload rules; removal does', async () => {
+  const h = harness({days: {'2026-10-24': 3600000}}, undefined, undefined, undefined, {tabModes: {1: 'music'}});
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).settings.mode, 'music');
+  h.setTabs([{id: 1, url: 'about:blank', active: true, windowId: 1}]);
+  await h.send({type: 'GET_STATE'});
+  assert.equal(h.session.tabModes[1], 'music'); assert.ok(h.perTabRules.get(3)?.condition.tabIds.includes(1));
+  h.setTabs([{id: 1, url: 'https://www.youtube.com/watch?v=abcdefghijk', active: true, windowId: 1}]);
+  const reloaded = await h.send({type: 'GET_STATE', targetTabId: 1}); assert.equal(reloaded.settings.mode, 'music'); assert.equal(reloaded.blocked, false);
+  await h.removeTab(1); assert.equal(h.session.tabModes[1], undefined); assert.equal(h.perTabRules.get(3), undefined);
+});
+test('confirmed navigation away clears intent, playback reports, badges and per-tab rules, then uses a fresh policy on return', async () => {
+  const h = harness({settings: {mode: 'work'}, days: {'2026-10-24': 3600000}}, undefined, undefined, undefined, {tabModes: {1: 'music'}});
+  await h.send({type: 'HEARTBEAT', playing: true}, {url: 'https://www.youtube.com/', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 0});
+  assert.ok(h.perTabRules.get(3)?.condition.tabIds.includes(1));
+  await h.updateTab(1, {url: 'https://example.com/', audible: true});
+  assert.equal(h.session.tabModes[1], undefined); assert.equal(h.perTabRules.get(3), undefined);
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).ok, false, 'a popup cannot target a tab that left YouTube');
+  const broadcastCount = h.broadcasts.length;
+  await h.send({type: 'UPDATE_SETTINGS', patch: {newTabMode: 'study'}});
+  assert.equal(h.broadcasts.length, broadcastCount, 'settings are not sent to the unrelated document');
+  await h.updateTab(1, {url: 'https://www.youtube.com/'});
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).settings.mode, 'study');
+});
+test('YouTube embeds on other sites and non-top-level frame reports cannot activate tracking, appearance or intent', async () => {
+  const h = harness(); h.setTabs([{id: 7, url: 'https://example.com/', active: true, audible: true, windowId: 1}]);
+  const embedded = {url: 'https://www.youtube.com/embed/abcdefghijk', tab: {id: 7, url: 'https://example.com/', active: true}, frameId: 2};
+  await h.send({type: 'HEARTBEAT', playing: true, appearance: 'dark'}, embedded);
+  await h.send({type: 'HEARTBEAT', playing: true, appearance: 'dark'}, {...embedded, frameId: 0});
+  h.advance(10000); const state = await h.send({type: 'GET_STATE'});
+  assert.equal(state.usedMs, 0); assert.equal(state.appearance, undefined); assert.deepEqual(h.session.tabModes, {});
+  assert.ok(!h.badges.some(item => item.tabId === 7 && item.text));
+  assert.equal((await h.send({type: 'SET_MODE', mode: 'music'}, embedded)).ok, false);
+  const top = harness(); top.setFocus({focused: false});
+  await top.send({type: 'HEARTBEAT', playing: false}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  await top.send({type: 'HEARTBEAT', playing: true}, {url: 'https://www.youtube.com/embed/abcdefghijk', tab: {id: 1}, frameId: 3});
+  top.advance(10000); assert.equal((await top.send({type: 'GET_STATE'})).usedMs, 0, 'embedded playback cannot override the primary player report');
+});
+test('an old in-flight YouTube feed cannot recreate tab state after navigation to another site', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let release, requested;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const fetcher = async url => {requested(); await gate; return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{videoRenderer: {videoId: 'abcdefghijk', title: {simpleText: 'Build a useful tool'}}}]}}}}}) + ';</script>'};};
+  const h = harness({}, undefined, fetcher);
+  const sender = {url: 'https://www.youtube.com/', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 0};
+  const pending = h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults())}, sender);
+  await started; await h.updateTab(1, {url: 'https://example.com/'}); release();
+  assert.equal((await pending).stale, true); assert.equal(h.session.tabModes[1], undefined);
+  assert.equal((await h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults())}, sender)).stale, true);
+  assert.equal(h.session.tabModes[1], undefined, 'a late old-page message also stays outside scope');
+});
+
+test('per-tab pause preserves intent choices and broadcasts only the paused tab without changing defaults', async () => {
+  const h = harness({settings: {mode: 'study', newTabMode: 'music'}}, undefined, undefined, undefined, {tabModes: {1: 'work', 2: 'music'}});
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
+  const sender = {url: 'https://www.youtube.com/', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 0};
+  const paused = await h.send({type: 'SET_TAB_PAUSED', paused: true}, sender);
+  assert.equal(paused.ok, true); assert.equal(paused.tabPaused, true); assert.equal(paused.timerExempt, true); assert.equal(paused.settings.mode, 'work');
+  assert.equal((await h.send({type: 'GET_STATE'})).settings.mode, 'study'); assert.equal(paused.settings.newTabMode, 'music');
+  assert.deepEqual(h.session.pausedTabs, {'1': true}); assert.deepEqual(h.session.tabModes, {'1': 'work', '2': 'music'});
+  assert.deepEqual(h.broadcasts.map(item => ({id: item.id, paused: item.message.tabPaused})), [{id: 1, paused: true}]);
+  const other = await h.send({type: 'GET_STATE', targetTabId: 2}); assert.equal(other.tabPaused, false); assert.equal(other.settings.mode, 'music');
+  const resumed = await h.send({type: 'SET_TAB_PAUSED', paused: false}, sender);
+  assert.equal(resumed.tabPaused, false); assert.equal(resumed.settings.mode, 'work'); assert.deepEqual(h.session.pausedTabs, {});
+  assert.equal(h.broadcasts.at(-1).id, 1); assert.equal(h.broadcasts.at(-1).message.tabPaused, false);
+});
+test('pause requires a boolean and a trusted top-level YouTube or targeted extension context', async () => {
+  const h = harness();
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, url: 'chrome-extension://intent/blocked.html', active: false, windowId: 1}, {id: 3, url: 'https://example.com/', active: false, windowId: 1}]);
+  const sender = {url: 'https://www.youtube.com/', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 0};
+  for (const paused of [undefined, null, 'true', 1]) assert.equal((await h.send({type: 'SET_TAB_PAUSED', paused}, sender)).ok, false);
+  for (const from of [{...sender, frameId: 2}, {...sender, url: 'https://example.com/'}, {url: 'https://www.youtube.com/embed/abcdefghijk', tab: {id: 3, url: 'https://example.com/'}, frameId: 2}]) assert.equal((await h.send({type: 'SET_TAB_PAUSED', paused: true}, from)).ok, false);
+  assert.equal((await h.send({type: 'SET_TAB_PAUSED', paused: true})).ok, false, 'an extension page must identify the tab explicitly');
+  assert.equal((await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1}, sender)).ok, false, 'web content cannot spoof a target');
+  assert.equal((await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 3})).ok, false);
+  const blocked = await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 2}); assert.equal(blocked.ok, true); assert.equal(blocked.tabPaused, true);
+  assert.deepEqual(h.session.pausedTabs, {'2': true});
+});
+test('paused tabs add no foreground or playback time while other eligible tabs continue counting once', async () => {
+  const h = harness();
+  h.setTabs([{id: 1, active: true, audible: true, windowId: 1}, {id: 2, active: false, audible: true, windowId: 1}]);
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  h.advance(5000); assert.equal((await h.send({type: 'GET_STATE'})).usedMs, 5000, 'unpaused background playback still counts');
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 2});
+  await h.send({type: 'HEARTBEAT', playing: true}, {url: 'https://www.youtube.com/', tab: {id: 1, url: 'https://www.youtube.com/'}, frameId: 0});
+  h.advance(10000); assert.equal((await h.send({type: 'GET_STATE'})).usedMs, 5000, 'paused active and audible tabs are excluded');
+  await h.send({type: 'SET_TAB_PAUSED', paused: false, targetTabId: 1});
+  h.advance(5000); assert.equal((await h.send({type: 'GET_STATE'})).usedMs, 10000, 'resuming restores normal accounting without double-counting tabs');
+});
+test('paused counted tabs remain accessible after exhaustion and preserve their allow through reloads', async () => {
+  const h = harness({days: {'2026-10-24': 3600000}});
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
+  const paused = await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  assert.equal(paused.blocked, false); assert.equal(paused.budgetExhausted, true); assert.equal(paused.settings.mode, 'work');
+  assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1)); assert.ok(h.perTabRules.get(2).condition.tabIds.includes(2));
+  assert.ok(h.redirects.every(item => item.id === 2)); assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
+  h.setTabs([{id: 1, url: 'about:blank', active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]); await h.send({type: 'GET_STATE'});
+  assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1));
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).tabPaused, true);
+  const resumed = await h.send({type: 'SET_TAB_PAUSED', paused: false, targetTabId: 1});
+  assert.equal(resumed.blocked, true); assert.equal(resumed.settings.mode, 'work'); assert.equal(h.perTabRules.get(3), undefined);
+  assert.ok(h.redirects.some(item => item.id === 1));
+});
+test('pause survives worker restarts but clears when a tab closes, leaves YouTube, or preferences reset', async () => {
+  const h = harness({days: {'2026-10-24': 12000}, appearance: 'dark'}, undefined, undefined, undefined, {tabModes: {1: 'study', 2: 'music'}, pausedTabs: {1: true, 2: true, bad: true, 3: 'true'}});
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).tabPaused, true);
+  assert.deepEqual(h.session.pausedTabs, {'1': true, '2': true});
+  const restarted = harness(h.local, undefined, undefined, undefined, h.session);
+  assert.equal((await restarted.send({type: 'GET_STATE', targetTabId: 1})).tabPaused, true);
+  assert.equal((await restarted.send({type: 'GET_STATE', targetTabId: 1})).settings.mode, 'study');
+  await h.removeTab(2); assert.equal(h.session.pausedTabs[2], undefined);
+  await h.updateTab(1, {url: 'https://example.com/'}); assert.deepEqual(h.session.pausedTabs, {});
+  await h.updateTab(1, {url: 'https://www.youtube.com/'}); assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).tabPaused, false);
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  const reset = await h.send({type: 'RESET_SETTINGS', targetTabId: 1});
+  assert.equal(reset.tabPaused, false); assert.deepEqual(h.session.pausedTabs, {}); assert.equal(reset.usedMs, 12000); assert.equal(reset.appearance, 'dark');
+  assert.equal(h.broadcasts.at(-1).message.tabPaused, false);
+});
+test('paused feed requests do no search, metadata or model work and return no usable items', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let fetches = 0, judgments = 0;
+  const h = harness({}, undefined, async () => {fetches++; throw new Error('Must not fetch while paused');}, async () => {judgments++; return [];});
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  const response = await h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults())}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  assert.equal(response.ok, true); assert.equal(response.tabPaused, true); assert.equal(response.paused, true); assert.equal(response.items, undefined);
+  assert.equal(fetches, 0); assert.equal(judgments, 0);
+});
+test('pausing during an initial search prevents later metadata/model work and suppresses the response', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let release, requested, judgments = 0, metadata = 0;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const fetcher = async url => {
+    if (new URL(url).pathname === '/watch') {metadata++; throw new Error('Must not enrich a paused request');}
+    requested(); await gate;
+    return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{videoRenderer: {videoId: 'abcdefghijk', title: {simpleText: 'Build a useful tool'}}}]}}}}}) + ';</script>'};
+  };
+  const h = harness({}, undefined, fetcher, async videos => {judgments++; return videos.map(() => ({accepted: false, uncertain: true}));});
+  const pending = h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults())}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  await started; await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1}); release();
+  const response = await pending; assert.equal(response.tabPaused, true); assert.equal(response.items, undefined);
+  assert.equal(judgments, 0); assert.equal(metadata, 0);
+});
+test('pause and resume invalidate only that tab’s old feed, including when its saved intent never changed', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let release, requested, judgments = 0;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const fetcher = async url => {requested(); await gate; return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{videoRenderer: {videoId: 'abcdefghijk', title: {simpleText: 'Build a useful tool'}}}]}}}}}) + ';</script>'};};
+  const h = harness({}, undefined, fetcher, async videos => {judgments++; return videos.map(() => ({accepted: true, uncertain: false}));});
+  h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
+  const key = IntentFeed.key(IntentCore.defaults());
+  const first = h.send({type: 'GET_FEED', key}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  const second = h.send({type: 'GET_FEED', key}, {url: 'https://www.youtube.com/', tab: {id: 2}, frameId: 0});
+  await started; await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1}); await h.send({type: 'SET_TAB_PAUSED', paused: false, targetTabId: 1}); release();
+  const [one, two] = await Promise.all([first, second]);
+  assert.equal(one.stale, true); assert.equal(one.items, undefined); assert.equal(two.ok, true); assert.equal(two.items.length, 1);
+  assert.equal(judgments, 1, 'only the unaffected tab reaches topic inference');
+  assert.equal((await h.send({type: 'GET_STATE', targetTabId: 1})).settings.mode, 'work');
+});
+
+test('unrelated tab update and removal events create no associations, badge work or scoped queries', async () => {
+  const h = harness();
+  await h.send({type: 'GET_STATE'});
+  const before = {queries: h.queries.length, badges: h.badges.length, rules: h.rules.length, sessionRules: h.sessionRules.length};
+  h.updateEvent(99, {url: 'https://example.com/'}); await h.drain();
+  assert.equal(h.associated(99), false);
+  h.updateEvent(99, {url: 'https://another.example/'}); h.updateEvent(99, {audible: true, status: 'complete'}); await h.drain();
+  h.removeEvent(99); await h.drain();
+  assert.equal(h.associated(99), false);
+  assert.deepEqual({queries: h.queries.length, badges: h.badges.length, rules: h.rules.length, sessionRules: h.sessionRules.length}, before);
+  assert.equal(h.session.tabModes[99], undefined); assert.equal(h.session.pausedTabs[99], undefined);
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  await h.removeTab(1); assert.equal(h.associated(1), false, 'closed supported tabs also discard their revision bookkeeping');
 });

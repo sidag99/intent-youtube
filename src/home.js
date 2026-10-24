@@ -93,6 +93,7 @@
     }
     restart(fresh) {
       this.generation++; this.items = []; this.cursor = 0; this.hasMore = true; this.busy = false; this.autoBatches = 0;
+      this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
       this.title.textContent = this.surface === 'watch' ? `${C.modes(this.settings)[this.settings.mode].name} recommendations` : `◒ ${C.modes(this.settings)[this.settings.mode].name}, with intent.`;
       this.host.setAttribute('aria-label', `${C.modes(this.settings)[this.settings.mode].name} videos`);
       this.regularCards = []; this.grid.hidden = false; this.grid.replaceChildren(); this.restGrid.replaceChildren(); this.restGrid.hidden = true; this.shortGrid.replaceChildren(); this.shortShelf.hidden = true; this.more.hidden = true;
@@ -102,18 +103,25 @@
       if (!this.host?.isConnected || !this.signature) return;
       this.round++; return this.restart(true);
     }
+    setFeedState(state) {
+      if (this.feedState === state) return;
+      this.feedState = state;
+      document.dispatchEvent(new Event('intent-feed-state-change'));
+    }
     async load(fresh, auto) {
       if (this.busy || !this.hasMore || this.items.length >= 120) return;
       const generation = this.generation, signature = this.signature;
       this.busy = true; this.more.disabled = true;
-      this.status.className = 'status'; this.status.textContent = this.items.length ? 'Finding more videos for your intent…' : 'Finding videos and analysing topics locally…';
+      this.setFeedState(this.items.length ? 'active' : 'loading');
+      this.status.className = 'status'; this.status.textContent = (this.items.length ? 'Finding more videos for your intent…' : 'Finding videos and analysing topics locally…') + (this.settings.metadataLimit ? ` Up to ${this.settings.metadataLimit} extra video-page requests per batch.` : ' Fuller checks are off.');
+      this.status.removeAttribute('title');
       this.grid.setAttribute('aria-busy', 'true');
       this.grid.querySelector('.empty')?.remove();
       try {
         let timer;
         const response = await Promise.race([
           this.runtime.sendMessage({type: 'GET_FEED', key: signature, cursor: this.cursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
-          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The feed took too long to load. Try refreshing it.')), 90000); })
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The feed took too long to load. Try refreshing or lowering the fuller-check limit in settings.')), 180000); })
         ]).finally(() => clearTimeout(timer));
         if (generation !== this.generation) return;
         if (!response?.ok) throw new Error(response?.error || 'The feed could not be loaded.');
@@ -128,7 +136,15 @@
         }
         this.layoutHome();
         this.cursor = response.nextCursor; this.hasMore = response.hasMore;
-        this.status.textContent = `${this.items.length} videos for ${C.modes(this.settings)[this.settings.mode].name.toLowerCase()}${response.warning ? ' · ' + response.warning : ''}`;
+        if (response.metadataStats) {
+          this.hasMetadataStats = true;
+          for (const field of Object.keys(this.metadataStats)) this.metadataStats[field] += Math.max(0, Math.min(100, Math.trunc(Number(response.metadataStats[field]) || 0)));
+        }
+        const stats = this.metadataStats;
+        const network = this.hasMetadataStats ? ` · ${stats.requests} extra video-page request${stats.requests === 1 ? '' : 's'}${stats.cacheHits ? ` · ${stats.cacheHits} cached check${stats.cacheHits === 1 ? '' : 's'}` : ''}` : '';
+        this.status.textContent = `${this.items.length} videos for ${C.modes(this.settings)[this.settings.mode].name.toLowerCase()}${network}${response.warning ? ' · ' + response.warning : ''}`;
+        this.setFeedState('active');
+        if (this.hasMetadataStats) this.status.title = `Fuller metadata for this feed: ${stats.checked} checks, ${stats.requests} extra network requests attempted, ${stats.cacheHits} cached results, ${stats.sharedRequests} requests shared with another feed, ${stats.failed} unavailable checks, ${stats.remaining} uncertain candidates left without a fuller check. Search-page and thumbnail requests are separate.`;
         this.autoBatches++;
         if (auto && this.items.length < 12 && this.hasMore && this.autoBatches < 2) {
           this.busy = false; return await this.load(false, true);
@@ -137,6 +153,7 @@
       } catch (error) {
         if (generation !== this.generation) return;
         this.status.className = 'status error'; this.status.textContent = error.message;
+        this.setFeedState('unavailable');
         if (!this.items.length) this.empty('Your feed couldn’t load.', 'YouTube may be unavailable or asking for consent. Retry with Refresh feed, or open search below.');
       } finally {
         if (generation === this.generation) {

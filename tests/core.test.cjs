@@ -43,6 +43,11 @@ test('settings are sanitized and bounded', () => {
   assert.equal(C.sanitize({dailyMinutes: Infinity}).dailyMinutes, 60);
   assert.equal(C.sanitize({dailyMinutes: 100000}).dailyMinutes, 1440);
 });
+test('fuller metadata checking has a bounded configurable cap without boolean or null coercion', () => {
+  assert.equal(C.defaults().metadataLimit, 4);
+  for (const invalid of [true, false, null, undefined, '', ' ', 'invalid', Infinity, NaN, [], {}]) assert.equal(C.sanitize({metadataLimit: invalid}).metadataLimit, 4);
+  for (const [input, output] of [[0, 0], [4, 4], [8, 8], [23, 23], [40, 40], [-9, 0], [99, 40], [7.6, 8], ['12', 12]]) assert.equal(C.sanitize({metadataLimit: input}).metadataLimit, output);
+});
 test('mode accounting defaults exempt Music while counting every other intent', () => {
   const settings = C.defaults();
   assert.deepEqual(settings.countModes, {work: true, study: true, music: false, leisure: true, off: true});
@@ -107,6 +112,17 @@ test('editing a built-in intent replaces its broad lexical topics and can restor
   assert.equal(C.classify(video('Python programming for useful tools'), s).visible, false);
   assert.equal(C.classify(video('Python programming for useful tools'), {...s, intentDescriptions: {work: ''}}).visible, true);
   assert.deepEqual(C.MODES.work.topics, C.modes(C.defaults()).work.topics, 'defaults remain unchanged');
+});
+test('built-in intent names can be edited without changing their stable mode IDs or default scope', () => {
+  const s = C.sanitize({intentNames: {work: ' Client projects ', study: 'n'.repeat(80), music: '', leisure: 12, 'custom-missing': 'Unknown'}});
+  assert.equal(s.intentNames.work, 'Client projects'); assert.equal(s.intentNames.study.length, 48);
+  assert.equal(s.intentNames.music, 'Music'); assert.equal(s.intentNames.leisure, 'Leisure'); assert.equal(s.intentNames['custom-missing'], undefined);
+  assert.equal(C.modes(s).work.name, 'Client projects'); assert.equal(C.MODES.work.name, 'Work');
+  assert.equal(C.modes(s).work.description, C.MODES.work.description); assert.deepEqual(C.modes(s).work.topics, C.MODES.work.topics);
+  assert.equal(C.validMode('work', s), true); assert.equal(C.validMode('Client projects', s), false);
+  assert.equal(C.defaults().intentNames.work, 'Work');
+  require('../src/feed.js');
+  assert.notEqual(IntentFeed.key(s), IntentFeed.key({...s, intentNames: {...s.intentNames, work: 'Personal projects'}}), 'renaming invalidates labels in the active feed');
 });
 test('usage persists, splits at local midnight and resets the daily budget', () => {
   const midnight = new Date(2026, 9, 25, 0, 0, 0).getTime();

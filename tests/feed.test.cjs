@@ -140,3 +140,116 @@ test('semantic judging can admit a paraphrase and enrich an uncertain title with
   assert.equal(result.semantic,true);assert.equal(result.items.length,1);assert.equal(watchRequests,1);assert.equal(judgingPasses,2);
   assert.equal(C.classify(result.items[0],C.defaults()).visible,false,'semantic acceptance is not re-filtered by exact keywords');
 });
+
+function metadataHarness({count = 18, initialAccepted = true, initialConfident = 0, acceptEnriched = true, delay = 0, fail = [], beforeWatch, afterJudge, now} = {}) {
+  const ids = Array.from({length: count}, (_, n) => 'm' + String(n).padStart(10, '0'));
+  const watches = []; let active = 0, peak = 0;
+  const service = F.createService({now, fetcher: async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname !== '/watch') return {ok: true, url, text: async () => page(ids.map((id, n) => renderer(id, 'A useful project ' + (n + 1))))};
+    const id = parsed.searchParams.get('v'); watches.push({id, options}); active++; peak = Math.max(peak, active);
+    try {
+      if (beforeWatch) await beforeWatch(id);
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if (fail.includes(id)) throw new Error('Full description unavailable');
+      return {ok: true, url, text: async () => '<script>var ytInitialPlayerResponse = ' + JSON.stringify({videoDetails: {videoId: id, shortDescription: 'A fuller explanation of practical project planning.', keywords: ['full']}}) + ';</script>'};
+    } finally { active--; }
+  }, judge: async videos => {
+    const decisions = videos.map(video => video.keywords?.includes('full') ? {accepted: acceptEnriched, uncertain: false} : {accepted: initialAccepted || ids.indexOf(video.id) < initialConfident, uncertain: ids.indexOf(video.id) >= initialConfident});
+    if (videos.some(video => video.keywords?.includes('full')) && afterJudge) afterJudge();
+    return decisions;
+  }});
+  return {service, ids, watches, peak: () => peak};
+}
+const stats = (limit, uncertain, checked, requests = checked, extra = {}) => ({limit, uncertain, checked, requests, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: uncertain - checked, ...extra});
+
+test('metadata caps 0, 4, 8 and a custom limit bound checks and extra watch requests in groups of four', async () => {
+  for (const limit of [0, 4, 8, 7]) {
+    const h = metadataHarness({delay: 2});
+    const result = await h.service.get({...C.defaults(), metadataLimit: limit});
+    assert.deepEqual(result.metadataStats, stats(limit, 18, limit));
+    assert.equal(h.watches.length, limit); assert.ok(h.peak() <= 4);
+    if (limit >= 4) assert.equal(h.peak(), 4);
+    assert.equal(result.items.length, 18, 'unchecked ambiguous acceptances keep their original decision');
+    assert.ok(h.watches.every(({options}) => options.credentials === 'omit' && options.cache === 'no-store' && options.signal instanceof AbortSignal));
+  }
+  assert.notEqual(F.key(C.defaults()), F.key({...C.defaults(), metadataLimit: 8}), 'changing the cap rebuilds the feed');
+});
+test('enrichment stops after enough confident matches, including matches present before the fuller checks', async () => {
+  const h = metadataHarness({count: 24, initialAccepted: true});
+  const enriched = await h.service.get({...C.defaults(), metadataLimit: 40});
+  assert.deepEqual(enriched.metadataStats, stats(40, 24, 12));
+  assert.equal(h.watches.length, 12, 'ambiguous accepted matches do not cause an immediate early stop');
+  const enough = metadataHarness({count: 20, initialConfident: 12});
+  assert.deepEqual((await enough.service.get({...C.defaults(), metadataLimit: 40})).metadataStats, stats(40, 8, 0));
+  const nearly = metadataHarness({count: 18, initialConfident: 10});
+  assert.deepEqual((await nearly.service.get({...C.defaults(), metadataLimit: 40})).metadataStats, stats(40, 8, 4));
+});
+test('the maximum cap still bounds requests when fuller descriptions produce no confident matches', async () => {
+  const h = metadataHarness({count: 45, initialAccepted: false, acceptEnriched: false, delay: 1});
+  const result = await h.service.get({...C.defaults(), metadataLimit: 40});
+  assert.deepEqual(result.metadataStats, stats(40, 45, 40));
+  assert.equal(h.watches.length, 40); assert.equal(h.peak(), 4); assert.equal(result.items.length, 0);
+});
+test('warm fuller-metadata cache is reused for a day and reported separately from new requests', async () => {
+  let clock = Date.now();
+  const h = metadataHarness({count: 10, now: () => clock});
+  const settings = {...C.defaults(), metadataLimit: 8};
+  assert.deepEqual((await h.service.get(settings)).metadataStats, stats(8, 10, 8));
+  assert.deepEqual((await h.service.get(settings)).metadataStats, stats(8, 10, 8, 0, {cacheHits: 8}));
+  assert.equal(h.watches.length, 8);
+  clock += 86400001;
+  assert.deepEqual((await h.service.get(settings)).metadataStats, stats(8, 10, 8));
+  assert.equal(h.watches.length, 16);
+});
+test('concurrent tab feeds share in-flight full descriptions and charge new requests only to their initiator', async () => {
+  let release, started;
+  const gate = new Promise(resolve => {release = resolve;});
+  const active = new Promise(resolve => {started = resolve;});
+  let attempts = 0;
+  const h = metadataHarness({count: 4, beforeWatch: async () => {if (++attempts === 4) started(); await gate;}});
+  const first = h.service.get(C.defaults()), second = h.service.get(C.defaults());
+  await active;
+  // Both feeds have already entered their first group, so the second can join
+  // existing requests before they resolve and become cache entries.
+  await new Promise(resolve => setImmediate(resolve)); release();
+  const results = await Promise.all([first, second]);
+  assert.equal(h.watches.length, 4); assert.equal(h.peak(), 4);
+  assert.deepEqual(results.map(result => result.metadataStats.requests).sort((a, b) => a - b), [0, 4]);
+  assert.deepEqual(results.map(result => result.metadataStats.sharedRequests).sort((a, b) => a - b), [0, 4]);
+  for (const result of results) {assert.equal(result.metadataStats.checked, 4); assert.equal(result.metadataStats.cacheHits, 0); assert.equal(result.metadataStats.failed, 0);}
+});
+test('failed fuller requests are counted once and leave initial decisions in place without automatic retries', async () => {
+  const h = metadataHarness({count: 6, fail: ['m0000000000', 'm0000000002']});
+  const result = await h.service.get(C.defaults());
+  assert.deepEqual(result.metadataStats, stats(4, 6, 4, 4, {failed: 2}));
+  assert.equal(new Set(h.watches.map(watch => watch.id)).size, 4);
+  assert.equal(result.items.length, 6, 'failed and capped candidates retain initial accepted decisions');
+});
+test('the overall enrichment deadline stops additional groups and preserves initial decisions', async () => {
+  let clock = Date.now();
+  const h = metadataHarness({count: 20, initialAccepted: false, now: () => clock, afterJudge: () => {clock += 45001;}});
+  const result = await h.service.get({...C.defaults(), metadataLimit: 40});
+  assert.deepEqual(result.metadataStats, stats(40, 20, 4));
+  assert.equal(h.watches.length, 4); assert.equal(result.items.length, 0);
+});
+test('a paused feed stops after shared searches without starting model or fuller checks', async () => {
+  let active = true, judged = 0, searched = 0;
+  const service = F.createService({fetcher: async url => {
+    searched++; active = false;
+    return {ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python tutorial')])};
+  }, judge: async videos => {judged++; return videos.map(() => ({accepted: true, uncertain: true}));}});
+  await assert.rejects(service.get(C.defaults(), {isActive: () => active}), /paused or this feed is no longer active/);
+  assert.equal(searched, 2); assert.equal(judged, 0);
+  await assert.rejects(service.get(C.defaults(), {isActive: () => false}), /paused/);
+  assert.equal(searched, 2, 'an already paused feed starts no requests');
+});
+test('pausing during fuller checks stops further groups and model calls without disrupting shared metadata', async () => {
+  let active = true, calls = 0;
+  const h = metadataHarness({count: 20, initialAccepted: false, beforeWatch: async () => {calls++; active = false;}});
+  await assert.rejects(h.service.get({...C.defaults(), metadataLimit: 40}, {isActive: () => active}), /paused/);
+  assert.equal(calls, 4, 'only the already dispatched group finishes');
+  const resumed = await h.service.get({...C.defaults(), metadataLimit: 4}, {isActive: () => true});
+  assert.equal(resumed.metadataStats.cacheHits, 4, 'other active feeds can reuse completed shared checks');
+  assert.equal(calls, 4);
+});

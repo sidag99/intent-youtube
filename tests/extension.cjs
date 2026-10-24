@@ -1,4 +1,12 @@
 const {chromium}=require('playwright'),path=require('path'),assert=require('assert/strict'),fs=require('fs'),os=require('os');
+
+async function chooseMode(toolbar, mode, customName) {
+ const names={work:'Work',study:'Study',music:'Music',leisure:'Leisure',off:'Off'};
+ await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
+ await toolbar.getByRole('option',{name:customName||names[mode],exact:true}).click();
+ if(mode==='off')return;
+ await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).evaluate((el,mode)=>new Promise(resolve=>{const poll=()=>el.dataset.mode===mode?resolve():setTimeout(poll,10);poll();}),mode);
+}
 (async()=>{
  const root=path.resolve(__dirname,'..');
  const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
@@ -46,7 +54,7 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   await yt.waitForFunction(()=>!document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('[data-video-id="Q0000000000"]'));
   console.log('PASS installed extension includes relevant Shorts only when Hide Shorts is disabled');
 
-  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('music');
+  await chooseMode(toolbar,'music');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Blue notes'),null,{timeout:60000});
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   console.log('PASS switching modes refreshes the filled feed using description-based semantic classification');
@@ -54,6 +62,7 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length>=12,null,{timeout:60000});
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
+  await settings.locator('[data-edit="work"]').click();
   await settings.locator('#blocked-terms').fill('unsaved appearance draft');
   await settings.evaluate(()=>{window.draftField=document.querySelector('#blocked-terms');});
   await yt.goto('https://www.youtube.com/watch?v=M0000000000');
@@ -68,7 +77,7 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   assert.equal(await settings.locator('#blocked-terms').inputValue(),'unsaved appearance draft');
   assert.equal(await settings.evaluate(()=>draftField===document.querySelector('#blocked-terms')),true,'appearance changes preserve the current settings form and draft');
   await yt.screenshot({path:path.join(shots,'intent-watch-dark.png'),fullPage:true});
-  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('work');
+  await chooseMode(toolbar,'work');
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
   assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.startsWith('Ship a tiny app')));
   assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
@@ -77,57 +86,114 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
   await settings.waitForFunction(()=>document.documentElement.dataset.theme==='light');
   assert.equal(await settings.locator('#blocked-terms').inputValue(),'unsaved appearance draft');
   await yt.screenshot({path:path.join(shots,'intent-watch-light.png'),fullPage:true});
-  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('off');
-  await watchFeed.waitFor({state:'detached'});assert.equal(await yt.locator('#native-related').isVisible(),true);assert.equal(await toolbar.count(),0,'mode off removes toolbar and restores native recommendations');
+  await chooseMode(toolbar,'off');
+  await watchFeed.waitFor({state:'detached'});assert.equal(await yt.locator('#native-related').isVisible(),true);assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'off','mode off is visible while native recommendations return');
   await settings.evaluate(async()=>{const [tab]=await chrome.tabs.query({url:'https://www.youtube.com/watch?v=M0000000000'});return chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',targetTabId:tab.id,patch:{mode:'music'}});});
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
   console.log('PASS real installed extension replaces watch recommendations, excludes current video, follows YouTube appearance and preserves playback during mode changes');
+  await settings.locator('#close-editor').click();
   // Each tab remembers its own intent, including reloads and configurable new-tab defaults.
   const second=await context.newPage();await second.goto('https://www.youtube.com/?intent-test=second');
-  await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('study');
+  await chooseMode(second.locator('#intent-toolbar'),'study');
   await second.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Why the sky'),null,{timeout:60000});
-  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','a second tab never changes the first tab intent');
+  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music','a second tab never changes the first tab intent');
   await yt.reload();await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
-  assert.equal(await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','reloading restores this tab intent');
+  assert.equal(await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music','reloading restores this tab intent');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'work'}}));
   const third=await context.newPage();await third.goto('https://www.youtube.com/?intent-test=third');
   await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
-  assert.equal(await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'work','fixed new-tab policy is applied');
-  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'study');
+  assert.equal(await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'work','fixed new-tab policy is applied');
+  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'last'}}));
-  await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption('music');
+  await chooseMode(third.locator('#intent-toolbar'),'music');
   const followed=await context.newPage();await followed.goto('https://www.youtube.com/?intent-test=followed');
   await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).waitFor();
-  assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music','follow-last policy uses the latest chosen intent');
+  assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music','follow-last policy uses the latest chosen intent');
   console.log('PASS independent per-tab intents survive reload and respect fixed/follow-last new-tab policies');
+  const secondToolbar=second.locator('#intent-toolbar');
+  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
+  await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();
+  await second.locator('#intent-home-feed').waitFor({state:'detached'});
+  await secondToolbar.locator('[data-filter-state="paused"]').first().waitFor();
+  assert.equal(await second.locator('#native').isVisible(),true,'pause restores native YouTube recommendations');
+  assert.equal(await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
+  assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music');
+  await second.evaluate(()=>{document.querySelector('#native').insertAdjacentHTML('beforeend','<ytd-video-renderer id="paused-clickbait"><h3 id="video-title">You won’t believe this!!!</h3></ytd-video-renderer><ytd-reel-shelf-renderer id="paused-shorts">Shorts</ytd-reel-shelf-renderer>');});
+  assert.equal(await second.locator('#paused-clickbait').isVisible(),true);assert.equal(await second.locator('#paused-shorts').isVisible(),true);
+  await second.reload();await second.locator('#intent-toolbar [data-filter-state="paused"]').first().waitFor();
+  assert.equal(await second.locator('#native').isVisible(),true);assert.equal(await second.locator('#intent-home-feed').count(),0);
+  const pausePopup=await context.newPage();await second.bringToFront();await pausePopup.goto(`chrome-extension://${id}/popup.html`);
+  await pausePopup.getByRole('button',{name:'Resume on this tab',exact:true}).waitFor();
+  await pausePopup.getByRole('button',{name:'Resume on this tab',exact:true}).click();
+  await second.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Why the sky'),null,{timeout:60000});
+  assert.equal(await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
+  await pausePopup.close();
+  console.log('PASS per-tab pause restores native content, survives reload, leaves other tabs active and resumes its saved intent from the popup');
   // Create a custom intent through the actual UI and use its packaged semantic profile.
   await settings.locator('#custom-intent-name').fill('Build apps');
   await settings.locator('#custom-intent-description').fill('Build useful software applications and tools for clients, programming and delivering finished digital products.');
   await settings.getByRole('button',{name:'Create intent',exact:true}).click();
   await settings.getByRole('button',{name:'Build apps Your custom intent',exact:true}).waitFor();
   const customId=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return Object.keys(state.settings.customIntents)[0];});
-  await third.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).selectOption(customId);
+  await chooseMode(third.locator('#intent-toolbar'),customId,'Build apps');
   await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
   assert.ok((await third.locator('#intent-home-feed .title').allTextContents()).every(t=>t.startsWith('Ship a tiny app')));
   console.log('PASS custom intents created in settings classify video meaning with the bundled model');
   const worker=context.serviceWorkers()[0];assert.ok(worker);
+  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
+  await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();
+  await second.locator('#intent-home-feed').waitFor({state:'detached'});
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1,newTabMode:'music'}}));
-  await second.getByRole('heading',{name:'There’s a whole world'}).waitFor();
   await third.getByRole('heading',{name:'There’s a whole world'}).waitFor();
+  await second.reload();await second.locator('#intent-toolbar [data-filter-state="paused"]').first().waitFor();
+  assert.ok(second.url().includes('youtube.com/'),'a paused counted intent remains accessible at the daily limit');
+  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
+  await secondToolbar.getByRole('button',{name:'Resume on this tab',exact:true}).click();
+  await second.getByRole('heading',{name:'There’s a whole world'}).waitFor();
+  console.log('PASS actual network rules allow paused tabs at the budget limit and restore blocking on resume');
   assert.equal(yt.url(),'https://www.youtube.com/watch?v=M0000000000','Music remains available after the counted budget is exhausted');
   await yt.reload();await yt.locator('#intent-toolbar').waitFor();assert.ok(yt.url().includes('youtube.com/watch'));
   const exemptNew=await context.newPage();await exemptNew.goto('https://www.youtube.com/?intent-test=exempt');await exemptNew.locator('#intent-toolbar').waitFor();
-  assert.equal(await exemptNew.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music');
+  assert.equal(await exemptNew.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{newTabMode:'work'}}));
   const newTab=await context.newPage();await newTab.goto('https://www.youtube.com/').catch(error=>{if(!error.message.includes('ERR_ABORTED'))throw error;});
   await newTab.getByRole('heading',{name:'There’s a whole world'}).waitFor();assert.equal(newTab.url(),`chrome-extension://${id}/blocked.html`);
   await newTab.getByRole('button',{name:'Continue on YouTube',exact:false}).click();
-  await newTab.locator('#intent-toolbar').waitFor();assert.equal(await newTab.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'music');
+  await newTab.locator('#intent-toolbar').waitFor();assert.equal(await newTab.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music');
   console.log('PASS counted intents are blocked while existing/new exempt modes and break-page exemption controls remain accessible');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:60}}));
   await second.goto('https://www.youtube.com/?intent-test=second');await second.locator('#intent-toolbar').waitFor();
-  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).inputValue(),'study');
+  assert.equal(await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
   console.log('PASS increasing the budget removes the real network block without losing tab intent');
+  await settings.locator('#metadata-limit').fill('12');await settings.locator('#metadata-limit').press('Tab');
+  await settings.waitForFunction(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return state.settings.metadataLimit===12;});
+  await second.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).click();
+  await second.locator('#intent-toolbar').getByRole('option',{name:'Study',exact:true}).click();
+  await settings.getByRole('button',{name:'Reset settings',exact:true}).click();
+  await settings.getByRole('button',{name:'Reset to defaults',exact:true}).click();
+  await second.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-mode-trigger')?.dataset.mode==='work');
+  const reset=await settings.evaluate(()=>chrome.runtime.sendMessage({type:'GET_STATE'}));
+  assert.equal(reset.settings.metadataLimit,4);assert.deepEqual(reset.settings.customIntents,{});assert.ok(reset.usedMs>=60000);
+  assert.equal(await settings.getByRole('heading',{name:'Make it yours',exact:true}).count(),0);
+  console.log('PASS network-limit changes persist and real factory reset restores tab/default settings while retaining daily usage');
+  await context.route('https://example.com/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><style>ytd-masthead,ytd-browse,ytd-rich-item-renderer{display:block}</style>'+masthead+'<ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="outside-native"><h3>You won’t believe this!!!</h3></ytd-rich-item-renderer></div></ytd-browse>'}));
+  const outside=await context.newPage();await outside.goto('https://example.com/');await outside.waitForTimeout(250);
+  assert.equal(await outside.locator('#intent-toolbar,#intent-home-feed').count(),0,'no filtering UI is injected outside YouTube');
+  assert.equal(await outside.locator('#outside-native').isVisible(),true,'outside page content is not filtered even when its DOM resembles YouTube');
+  await context.route('https://www.youtube-nocookie.com/embed/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><ytd-masthead><div id="center"><form id="search"></form></div></ytd-masthead><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="embed-native"><h3>You won’t believe this!!!</h3></ytd-rich-item-renderer></div></ytd-browse>'}));
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1}}));
+  await outside.evaluate(()=>{const iframe=document.createElement('iframe');iframe.src='https://www.youtube-nocookie.com/embed/abcdefghijk';iframe.id='external-embed';document.body.append(iframe);});
+  await outside.frameLocator('#external-embed').locator('#embed-native').waitFor();
+  assert.equal(await outside.frameLocator('#external-embed').locator('#intent-toolbar,#intent-home-feed').count(),0,'no scripts or budget redirects act on embedded frames inside other websites');
+  assert.equal(await outside.frameLocator('#external-embed').locator('#embed-native').isVisible(),true);
+
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${id}/popup.html`);
+  await popup.getByRole('heading',{name:'Intent only runs on YouTube.',exact:true}).waitFor();
+  assert.equal(await popup.getByText('Off on this site',{exact:true}).isVisible(),true);
+  assert.equal(await popup.locator('[data-mode]').count(),0);
+  console.log('PASS real extension leaves outside sites untouched and its popup explicitly remains off');
+
+
  }finally{await context.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

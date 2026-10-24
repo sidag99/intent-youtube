@@ -9,7 +9,7 @@
   };
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode], s.intentDescriptions, s.customIntents]);
+    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode], s.intentDescriptions, s.customIntents, s.metadataLimit, s.intentNames]);
   }
   function queries(settings, round = 0) {
     const s = C.sanitize(settings);
@@ -120,17 +120,34 @@
     return videos.map(v => ({...v, hashtags: hashtags(v.title + ' ' + v.description)}));
   }
   function createService({fetcher = globalThis.fetch, now = Date.now, judge} = {}) {
-    const cache = new Map(), inflight = new Map(), metadataCache = new Map();
-    async function metadata(video) {
+    const cache = new Map(), inflight = new Map(), metadataCache = new Map(), metadataInflight = new Map();
+    function bounded(promise, milliseconds) {
+      if (milliseconds <= 0) { Promise.resolve(promise).catch(() => {}); return Promise.reject(new Error('Fuller metadata checking reached its time limit.')); }
+      let timer;
+      return Promise.race([promise, new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('Fuller metadata checking reached its time limit.')), milliseconds);})]).finally(() => clearTimeout(timer));
+    }
+    async function metadata(video, deadline, onSource) {
+      if (now() >= deadline) throw new Error('Fuller metadata checking reached its time limit.');
       const cached = metadataCache.get(video.id);
-      if (cached && now() - cached.at < 86400000) return cached.value;
-      const url = new URL('https://www.youtube.com/watch'); url.searchParams.set('v', video.id); url.searchParams.set('hl', 'en');
-      const response = await fetcher(url.href, {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(12000)});
-      if (!response.ok || response.url && new URL(response.url).hostname !== 'www.youtube.com') throw new Error('The full description is unavailable.');
-      const value = watchMetadata(await response.text(), video.id);
-      metadataCache.set(video.id, {at: now(), value});
-      while (metadataCache.size > 100) metadataCache.delete(metadataCache.keys().next().value);
-      return value;
+      if (cached && now() - cached.at < 86400000) { onSource('cacheHits'); return cached.value; }
+      let job = metadataInflight.get(video.id);
+      if (job) onSource('sharedRequests');
+      else {
+        const timeout = Math.max(1, Math.min(12000, deadline - now()));
+        onSource('requests');
+        job = bounded((async () => {
+          const url = new URL('https://www.youtube.com/watch'); url.searchParams.set('v', video.id); url.searchParams.set('hl', 'en');
+          const response = await fetcher(url.href, {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(timeout)});
+          if (!response.ok || response.url && new URL(response.url).hostname !== 'www.youtube.com') throw new Error('The full description is unavailable.');
+          return watchMetadata(await response.text(), video.id);
+        })(), timeout).then(value => {
+          metadataCache.set(video.id, {at: now(), value});
+          while (metadataCache.size > 100) metadataCache.delete(metadataCache.keys().next().value);
+          return value;
+        }).finally(() => metadataInflight.delete(video.id));
+        metadataInflight.set(video.id, job);
+      }
+      return bounded(job, deadline - now());
     }
     async function search(query, fresh) {
       const cached = cache.get(query);
@@ -151,10 +168,15 @@
       try { return await job; } finally { inflight.delete(query); }
     }
     async function get(settings, options = {}) {
+      const ensureActive = () => {
+        if (typeof options.isActive === 'function' && !options.isActive()) throw new Error('Intent is paused or this feed is no longer active.');
+      };
+      ensureActive();
       const s = C.sanitize(settings), pool = queries(s, options.round);
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const selected = pool.slice(cursor, cursor + 2);
       const batches = await Promise.allSettled(selected.map(q => search(q, options.fresh === true)));
+      ensureActive();
       const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);
       const items = [], seen = new Set(excluded);
       // Interleave searches so a topic doesn't fill the entire screen before the next one.
@@ -167,17 +189,38 @@
       if (selected.length && errors.length === selected.length) throw new Error(errors[0].reason?.message || 'YouTube search could not be reached.');
       const candidates = items.slice(0, 100);
       let decisions = judge ? await judge(candidates, s) : candidates.map(v => ({accepted: C.classify(v, s).visible, uncertain: false}));
-      const uncertain = decisions.map((d, i) => d.uncertain ? i : -1).filter(i => i >= 0).slice(0, 4);
-      if (uncertain.length) {
-        const details = await Promise.allSettled(uncertain.map(i => metadata(candidates[i])));
+      const uncertain = decisions.map((d, i) => d.uncertain ? i : -1).filter(i => i >= 0);
+      const metadataStats = {limit: s.metadataLimit, uncertain: uncertain.length, checked: 0, requests: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: uncertain.length};
+      const deadline = now() + 45000;
+      // Ambiguous acceptances still need fuller metadata. Stop only when twelve
+      // confident matches are available, or the selected cap/deadline is reached.
+      for (let offset = 0; judge && offset < uncertain.length && metadataStats.checked < s.metadataLimit && now() < deadline && decisions.filter(d => d.accepted && !d.uncertain).length < 12;) {
+        ensureActive();
+        const group = uncertain.slice(offset, offset + Math.min(4, s.metadataLimit - metadataStats.checked));
+        offset += group.length;
+        const details = await Promise.allSettled(group.map(i => {
+          metadataStats.checked++;
+          return metadata(candidates[i], deadline, source => {metadataStats[source]++;});
+        }));
+        ensureActive();
         const enriched = [];
-        details.forEach((result, n) => {if (result.status === 'fulfilled') {const i = uncertain[n]; candidates[i] = {...candidates[i], ...result.value}; enriched.push(i);}});
+        details.forEach((result, n) => {
+          if (result.status === 'fulfilled') {const i = group[n]; candidates[i] = {...candidates[i], ...result.value}; enriched.push(i);}
+          else metadataStats.failed++;
+        });
         if (enriched.length) {
-          const updated = await judge(enriched.map(i => candidates[i]), s);
-          enriched.forEach((i, n) => {decisions[i] = updated[n];});
+          try {
+            const updated = await bounded(judge(enriched.map(i => candidates[i]), s), deadline - now());
+            enriched.forEach((i, n) => {decisions[i] = updated[n];});
+          } catch (error) {
+            if (now() >= deadline || /reached its time limit/.test(error.message)) break;
+            throw error;
+          }
         }
       }
-      return {key: key(s), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
+      ensureActive();
+      metadataStats.remaining = uncertain.length - metadataStats.checked;
+      return {key: key(s), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), metadataStats: {...metadataStats}, nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
     }
     return {get};
   }

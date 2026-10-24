@@ -1,0 +1,186 @@
+const {chromium} = require('playwright');
+const path = require('path'), fs = require('fs'), assert = require('assert/strict');
+const root = path.resolve(__dirname, '..');
+const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
+(async () => {
+  const browser = await chromium.launch({channel: 'chromium', headless: true});
+  try {
+    const context = await browser.newContext({viewport: {width: 1440, height: 900}});
+    const page = await context.newPage(); const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://www.youtube.com/**', route => route.fulfill({contentType: 'text/html', body: `<!doctype html><meta charset="utf-8"><style>
+:root{--yt-spec-text-primary:#0f0f0f;--yt-spec-base-background:#fff}html[dark]{--yt-spec-text-primary:#f1f1f1;--yt-spec-base-background:#0f0f0f}*{box-sizing:border-box}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font:14px Arial}ytd-masthead{display:flex;align-items:center;gap:16px;height:56px;padding:0 16px;overflow:hidden;border-bottom:1px solid #8883}#start,#end{width:100px;flex-shrink:0}#center{display:flex;align-items:center;flex:1;min-width:0;max-width:850px;margin:auto}#native-search-group{display:flex;align-items:center;gap:8px;flex:1;min-width:0}ytd-searchbox{display:block;flex:1;min-width:0}input{width:100%;height:36px;border:1px solid #888;border-radius:18px;padding:8px 12px;background:transparent;color:inherit}#voice-search{width:36px;height:36px;border:0;border-radius:50%;flex-shrink:0}main{padding:32px}#outside{margin-top:20px}@media(max-width:700px){ytd-masthead{gap:8px;padding:0 8px}#start{width:28px;font-size:0}#end{display:none}#voice-search{width:28px}#native-search-group{gap:4px}}</style><ytd-masthead><div id="start">YouTube</div><div id="center"><div id="native-search-group"><ytd-searchbox><input aria-label="Search"></ytd-searchbox><button id="voice-search" aria-label="Voice search">♪</button></div></div><div id="end">Account</div></ytd-masthead><main><h1>Intent toolbar preview</h1><button id="outside">Outside the menu</button></main>`}));
+    await page.route('https://extension.test/icons/128.png', route => route.fulfill({contentType: 'image/png', body: fs.readFileSync(path.join(root, 'icons/128.png'))}));
+    await page.goto('https://www.youtube.com/');
+    for (const file of ['core.js', 'feed.js', 'home.js', 'toolbar.js']) await page.addScriptTag({path: path.join(root, 'src', file)});
+    await page.evaluate(() => {
+      window.testSettings = IntentCore.sanitize({mode: 'work', customIntents: {'custom-build': {name: 'Build things', description: 'Make furniture and useful wooden objects'}}});
+      window.requests = []; window.changes = []; window.refreshes = 0; window.testCoverage = {state: 'active'}; window.pausedChanges = []; window.testPaused = false;
+      window.onTestPaused = paused => {
+        pausedChanges.push(paused); testPaused = paused;
+        if (paused) {if (testCoverage.state !== 'paused') window.testResumeCoverage = {...testCoverage}; testCoverage = {state: 'paused'};}
+        else testCoverage = window.testResumeCoverage || {state: 'active'};
+        toolbar.sync(testSettings, true, testCoverage);
+      };
+      window.runtime = {getURL: value => 'https://extension.test/' + value, sendMessage: async message => {
+        requests.push(message);
+        if (message.type === 'SET_TAB_PAUSED') {
+          if (window.delayPause) await new Promise(resolve => {window.releasePause = resolve;});
+          if (window.failPause) return {ok: false, error: 'Could not pause this tab.'};
+          testPaused = message.paused; return {ok: true, tabPaused: testPaused, settings: testSettings};
+        }
+        if (message.type === 'SET_MODE') {
+          if (window.delayMode) await new Promise(resolve => {window.releaseMode = resolve;});
+          if (window.failMode) return {ok: false, error: 'Try the mode again.'};
+          testSettings = IntentCore.sanitize({...testSettings, mode: message.mode}); return {ok: true, settings: testSettings};
+        }
+        return {ok: true};
+      }};
+      window.toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}, onPaused: onTestPaused});
+      toolbar.sync(testSettings);
+    });
+    const toolbar = page.locator('#intent-toolbar'), trigger = toolbar.getByRole('combobox', {name: 'Intent mode'});
+    const option = name => toolbar.getByRole('option', {name, exact: true});
+    assert.equal(await toolbar.locator('select').count(), 0, 'the mode chooser has no native select outline');
+    assert.equal(await trigger.getAttribute('data-mode'), 'work');
+    await toolbar.locator('.logo').evaluate(image => image.decode());
+    assert.equal(await toolbar.locator('.logo').getAttribute('src'), 'https://extension.test/icons/128.png', 'the original packaged logo is preserved');
+    assert.equal(await page.evaluate(() => document.querySelector('#center').firstElementChild.id), 'intent-toolbar', 'toolbar stays left of the native search group');
+    assert.equal(await page.evaluate(() => document.querySelector('#voice-search').previousElementSibling.tagName), 'YTD-SEARCHBOX', 'search and microphone remain grouped');
+    await trigger.click();
+    await toolbar.getByRole('listbox').waitFor();
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(await option('Work').getAttribute('aria-selected'), 'true');
+    assert.equal(await option('Build things').count(), 1);
+    assert.equal(await toolbar.locator('#intent-mode-popover').evaluate(menu => menu.matches(':popover-open')), true, 'menu uses the top layer outside masthead clipping');
+    const positions = await page.evaluate(() => {const host = document.querySelector('#intent-toolbar'), root = host.shadowRoot; const trigger = root.querySelector('#intent-mode-trigger').getBoundingClientRect(), menu = root.querySelector('#intent-mode-popover').getBoundingClientRect();return {triggerBottom: trigger.bottom, menuTop: menu.top, menuLeft: menu.left, menuRight: menu.right};});
+    assert.ok(positions.menuTop > positions.triggerBottom && positions.menuLeft >= 8 && positions.menuRight <= 1440 - 8);
+    await page.keyboard.press('ArrowDown'); assert.equal(await option('Study').evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'music');
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+    assert.deepEqual(await page.evaluate(() => changes), ['music']);
+    assert.equal(await page.evaluate(() => requests.at(-1).type), 'SET_MODE');
+    await trigger.focus(); await page.keyboard.press('ArrowDown');
+    assert.equal(await option('Music').getAttribute('aria-selected'), 'true');
+    await page.keyboard.press('Home'); assert.equal(await option('Work').evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.press('End'); assert.equal(await option('Off').evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'false'); assert.equal(await trigger.evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.press('Space'); await toolbar.getByRole('listbox').waitFor();
+    await page.locator('#outside').click(); assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+    await trigger.click(); await page.keyboard.press('Tab');
+    assert.equal(await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).evaluate(el => el.getRootNode().activeElement === el), true, 'Tab reaches the separate tab-pause action');
+    await page.keyboard.press('Tab'); assert.equal(await trigger.getAttribute('aria-expanded'), 'false', 'Tab leaves the footer without trapping focus');
+    await page.evaluate(() => {document.documentElement.setAttribute('dark', ''); toolbar.updateTheme();});
+    await trigger.click(); const dark = await toolbar.locator('#intent-mode-popover').evaluate(menu => ({color: getComputedStyle(menu).color, background: getComputedStyle(menu).backgroundColor}));
+    assert.equal(dark.background, 'rgb(40, 40, 40)'); assert.equal(dark.color, 'rgb(241, 241, 241)');
+    await page.screenshot({path:path.join(shots,'intent-toolbar-menu-dark.png'),clip:{x:0,y:0,width:900,height:480}});
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {document.documentElement.removeAttribute('dark'); toolbar.updateTheme();});
+    await trigger.click(); const light = await toolbar.locator('#intent-mode-popover').evaluate(menu => getComputedStyle(menu).backgroundColor);
+    assert.equal(light, 'rgb(255, 255, 255)');await page.screenshot({path:path.join(shots,'intent-toolbar-menu-light.png'),clip:{x:0,y:0,width:900,height:480}}); await page.keyboard.press('Escape');
+    // An unsuccessful selection preserves the current tab's intent and reports the error.
+    await page.evaluate(() => {failMode = true;}); await trigger.click(); await option('Study').click();
+    await toolbar.getByRole('status').filter({hasText: 'Try the mode again.'}).waitFor();
+    assert.equal(await trigger.getAttribute('data-mode'), 'music'); await page.evaluate(() => {failMode = false;});
+    await page.evaluate(() => {delayMode = true;}); await trigger.click(); await option('Study').click();
+    await page.waitForFunction(() => typeof releaseMode === 'function'); assert.equal(await trigger.isDisabled(), true);
+    await page.evaluate(() => {releaseMode(); delayMode = false;}); await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'study');
+    await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).click(); assert.equal(await page.evaluate(() => refreshes), 1);
+    await toolbar.getByRole('button', {name: 'Intent settings', exact: true}).click(); assert.equal(await page.evaluate(() => requests.at(-1).type), 'OPEN_SETTINGS');
+    // Pause is a separate tab-local action: it never replaces the saved intent with Off.
+    const beforePauseModeCalls = await page.evaluate(() => requests.filter(message => message.type === 'SET_MODE').length);
+    await trigger.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Tab');
+    await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).waitFor();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
+    assert.equal(await trigger.getAttribute('data-mode'), 'study');
+    assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Paused');
+    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
+    assert.match(await trigger.getAttribute('title'), /paused for this tab/);
+    assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_TAB_PAUSED', paused: true});
+    assert.deepEqual(await page.evaluate(() => pausedChanges), [true]);
+    await trigger.click();
+    const resume = toolbar.getByRole('button', {name: 'Resume on this tab', exact: true});
+    await resume.focus(); await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
+    assert.equal(await trigger.getAttribute('data-mode'), 'study'); assert.deepEqual(await page.evaluate(() => pausedChanges), [true, false]);
+    assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_TAB_PAUSED', paused: false});
+    assert.equal(await page.evaluate(() => requests.filter(message => message.type === 'SET_MODE').length), beforePauseModeCalls);
+    await page.evaluate(() => {testCoverage = {state: 'paused'}; testPaused = true; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await trigger.getAttribute('data-mode'), 'study', 'a paused reload preserves the saved intent');
+    await trigger.click(); await resume.click(); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
+    await page.evaluate(() => {failPause = true;}); await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
+    await toolbar.getByRole('status').filter({hasText: 'Could not pause this tab.'}).waitFor();
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'active'); assert.equal(await trigger.getAttribute('data-mode'), 'study');
+    await page.evaluate(() => {failPause = false; delayPause = true;}); await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
+    await page.waitForFunction(() => typeof releasePause === 'function'); assert.equal(await trigger.isDisabled(), true);
+    await page.evaluate(() => {releasePause(); delayPause = false;}); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
+    await trigger.click(); await resume.click(); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
+    // Open menus and their document/window listeners are removed on destruction, then safely recreated.
+    await trigger.click(); await page.evaluate(() => toolbar.destroy()); assert.equal(await toolbar.count(), 0);
+    await page.evaluate(() => {const old = document.querySelector('ytd-masthead'); const fresh = old.cloneNode(true); fresh.removeAttribute('data-intent-toolbar'); old.replaceWith(fresh); toolbar.sync(testSettings);});
+    assert.equal(await toolbar.count(), 1); assert.equal(await trigger.getAttribute('data-mode'), 'study'); assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+    await page.setViewportSize({width: 390, height: 844}); await trigger.click();
+    const narrow = await toolbar.locator('#intent-mode-popover').evaluate(menu => {const r = menu.getBoundingClientRect(); return {left: r.left, right: r.right, bottom: r.bottom};});
+    assert.ok(narrow.left >= 8 && narrow.right <= 382 && narrow.bottom <= 836);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'toolbar and menu fit a 390px viewport');
+    await page.setViewportSize({width: 360, height: 640});
+    const resized = await toolbar.locator('#intent-mode-popover').boundingBox(); assert.ok(resized.x >= 8 && resized.x + resized.width <= 352, 'open menu repositions on resize');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {testSettings = IntentCore.sanitize({...testSettings, customIntents: {'custom-very-long': {name: 'A custom intent with a long name', description: 'Make things'}}}); toolbar.sync(testSettings);});
+    await trigger.click(); assert.equal(await option('A custom intent with a long name').count(), 1); assert.equal(await option('Build things').count(), 0);
+    await page.keyboard.press('Escape');
+    // Unsupported pages clearly distinguish the saved tab intent from actual filtering coverage.
+    await page.evaluate(() => {
+      history.pushState({}, '', '/results?search_query=physics');
+      testCoverage = {state: 'off-here'}; testSettings = IntentCore.sanitize({...testSettings, mode: 'work'});
+      toolbar.destroy(); toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}, onPaused: onTestPaused});
+      toolbar.sync(testSettings, true, testCoverage);
+    });
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'off-here');
+    assert.equal(await trigger.getAttribute('data-mode'), 'work', 'search coverage does not overwrite the saved tab intent');
+    assert.equal(await trigger.getAttribute('data-filter-state'), 'off-here');
+    assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Off here');
+    assert.equal(await toolbar.locator('.coverage-badge').isVisible(), true);
+    assert.match(await trigger.getAttribute('title'), /filtering is off on search results/);
+    assert.equal(await trigger.getAttribute('aria-describedby'), 'intent-filter-status');
+    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
+    await trigger.click(); await toolbar.getByRole('heading', {name: 'Saved intent for this tab'}).waitFor();
+    assert.equal(await toolbar.locator('.coverage-detail').innerText(), 'Intent filtering is off on search results. Saved intent applies on Home/video recommendations. Shorts/clickbait rules and timer still apply.');
+    await option('Music').click();
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'music');
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'off-here', 'changing the saved mode on search never pretends filtering became active');
+    assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Off here');
+    const beforeCoverage = await page.evaluate(() => requests.length);
+    await page.evaluate(() => {testCoverage = {state: 'loading', detail: 'Finding matching videos for this tab.'}; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'loading'); assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Loading');
+    assert.match(await trigger.getAttribute('title'), /Finding matching videos/);
+    await page.evaluate(() => {testCoverage = {state: 'unavailable', detail: 'Matching recommendations could not load. Shorts/clickbait rules and timer still apply.'}; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'unavailable'); assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Unavailable');
+    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), false, 'failed feeds can be retried');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'coverage badge also fits narrow screens');
+    await page.evaluate(() => {testCoverage = {state: 'active'}; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'active'); assert.equal(await toolbar.locator('.coverage-badge').isVisible(), false);
+    assert.equal(await page.evaluate(() => requests.length), beforeCoverage, 'coverage updates never change saved intent or send mode requests');
+    await page.evaluate(() => {testSettings = IntentCore.sanitize({...testSettings, mode: 'off'}); toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await toolbar.count(), 1, 'turning filtering off keeps the mode control available');
+    assert.equal(await trigger.getAttribute('data-mode'), 'off'); assert.equal(await trigger.getAttribute('data-filter-state'), 'off');
+    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Off');
+    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
+    await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
+    assert.equal(await trigger.getAttribute('data-mode'), 'off', 'pause keeps an independently selected Off mode');
+    await trigger.click(); await toolbar.getByRole('button', {name: 'Resume on this tab', exact: true}).click();
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'off');
+    assert.equal(await trigger.getAttribute('data-mode'), 'off', 'resume does not implicitly choose a new intent');
+    await trigger.click(); await option('Work').click();
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'work');
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'active', 'the retained Off control can re-enable filtering');
+    await page.evaluate(() => toolbar.sync(testSettings, false)); assert.equal(await toolbar.count(), 0);
+    assert.equal(await page.locator('ytd-masthead').getAttribute('data-intent-toolbar'), null);
+    assert.deepEqual(errors, []);
+    console.log('PASS custom toolbar: packaged logo, top-layer menu, keyboard selection, pointer dismissal, per-tab callback, loading/errors, light/dark themes, SPA reattachment, dynamic custom intents, explicit search/off/loading/unavailable coverage, independent tab pause/resume and narrow viewport.');
+  } finally {await browser.close();}
+})().catch(error => {console.error(error); process.exitCode = 1;});
