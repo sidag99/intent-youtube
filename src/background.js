@@ -14,7 +14,7 @@ async function classifyLocally(videos, settings) {
   if (!result?.ok || !Array.isArray(result.decisions) || result.decisions.length !== videos.length) throw new Error(result?.error || 'The bundled topic model did not return a valid decision.');
   return result.decisions;
 }
-let settings, days, tracker, initialized, appliedBlock;
+let settings, days, tracker, appearance, initialized, appliedBlock;
 let queue = Promise.resolve();
 const reports = new Map();
 const URLS = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
@@ -26,9 +26,10 @@ function serial(task) {
 async function initialize() {
   if (!initialized) initialized = (async () => {
     await chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'});
-    const data = await chrome.storage.local.get(['settings', 'days']);
+    const data = await chrome.storage.local.get(['settings', 'days', 'appearance']);
     settings = C.sanitize(data.settings);
     days = data.days || {};
+    appearance = ['light', 'dark'].includes(data.appearance) ? data.appearance : undefined;
     const session = await chrome.storage.session.get('tracker');
     tracker = session.tracker || {lastAt: Date.now(), counting: false};
     if (!(await chrome.alarms.get('intent-tick'))) await chrome.alarms.create('intent-tick', {periodInMinutes: .5});
@@ -60,6 +61,12 @@ async function tick(message = {}, sender = {}) {
     const frames = reports.get(sender.tab.id) || new Map();
     frames.set(sender.frameId || 0, {playing: message.playing === true, expiresAt: now + 20000});
     reports.set(sender.tab.id, frames);
+    if ((sender.frameId || 0) === 0 && sender.tab.active !== false && ['light', 'dark'].includes(message.appearance) && appearance !== message.appearance) {
+      appearance = message.appearance;
+      await chrome.storage.local.set({appearance});
+      // Extension pages can follow YouTube without rebuilding forms or losing drafts.
+      await chrome.runtime.sendMessage({type: 'APPEARANCE', appearance}).catch(() => {});
+    }
   }
   if (message.type === 'UPDATE_SETTINGS') {
     if (!sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab && C.isYouTube(sender.tab.url)) throw new Error('Settings can only be changed in Intent.');
@@ -85,7 +92,7 @@ async function tick(message = {}, sender = {}) {
   await chrome.storage.local.set({days});
   await chrome.storage.session.set({tracker});
   await applyBlock(state.blocked);
-  return state;
+  return {...state, appearance};
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === 'GET_FEED') {
@@ -99,11 +106,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 async function feedRequest(message, sender) {
   const url = new URL(sender.url || 'https://invalid.test/');
-  if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || url.pathname !== '/' || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from the YouTube home page.');
+  const currentVideo = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
+  if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || !(url.pathname === '/' || currentVideo) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
   const state = await serial(() => tick());
   if (state.blocked) return {ok: true, blocked: true};
   if (message.key !== IntentFeed.key(state.settings)) return {ok: true, stale: true};
-  const result = await feedService.get(state.settings, message);
+  // Derive the watched video from the trusted sender, even if the client omits it.
+  const exclude = currentVideo ? [currentVideo, ...(Array.isArray(message.exclude) ? message.exclude : [])] : message.exclude;
+  const result = await feedService.get(state.settings, {...message, exclude});
   // A mode change or exhausted budget during the fetch must supersede old results.
   if (C.snapshot(settings, days).blocked) return {ok: true, blocked: true};
   if (result.key !== IntentFeed.key(settings)) return {ok: true, stale: true};

@@ -1,9 +1,10 @@
 # Intent
 
-**YouTube, with purpose.** A Chrome / Edge extension with an intent-driven home feed, local topic analysis, distraction controls and a daily budget.
+**YouTube, with purpose.** A Chrome / Edge extension with intent-driven home and watch-page recommendations, local topic analysis, distraction controls and a daily budget.
 
-- **A filled home feed:** Work, Study, Music and Leisure load mode-related videos from public YouTube searches. Approved videos appear in a compact grid, without holes left by rejected recommendations.
-- **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube home returns when modes are off.
+- **Filled home and watch feeds:** Work, Study, Music and Leisure load mode-related videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
+- **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations return when modes are off. Switching modes preserves the current video player.
+- **YouTube-style light and dark UI:** feeds follow YouTube's theme, including live theme switches. Popup, settings and break pages use the last theme detected on an active YouTube tab, with the system theme as the initial fallback.
 - **Bundled semantic AI:** a small, quantized MiniLM embedding model compares meaning, including titles without literal mode keywords. The model and CPU/WASM runtime ship inside the extension. No companion app, account, API key, model download or GPU setup is required.
 - **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. For up to four uncertain results per batch, Intent also tries to read the fuller public video description, hashtags and video tags.
 - **Fewer distractions:** hide Shorts and obvious title-based clickbait; customize included channels, extra topics and blocked phrases.
@@ -18,15 +19,15 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.2 adds the `offscreen` permission for local inference.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.3 adds watch-page recommendations and a YouTube-style light/dark interface; no new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
-The extension preserves YouTube's home-page URL and navigation, and replaces the native home recommendations while a mode is active. It searches for the mode's subjects and your custom topics/channels, reads public search-page data without executing page scripts, applies distraction rules, and analyses candidate metadata with the bundled semantic model. It does not control or retrain YouTube's personalized recommendation algorithm.
+The extension preserves YouTube's URLs and navigation, and replaces home and watch-page recommendations while a mode is active. On watch pages it replaces only the related-video area beside or below the player, excludes the video being watched, and refreshes on video navigation without restarting playback. Live chat and playlists stay in place. Autoplay and recommendations inside the player's end screen remain controlled by YouTube. It searches for the mode's subjects and your custom topics/channels, reads public search-page data without executing page scripts, applies distraction rules, and analyses candidate metadata with the bundled semantic model. It does not control or retrain YouTube's personalized recommendation algorithm.
 
 Two topic searches are fetched per batch. The initial feed can fetch one additional batch when fewer than twelve videos qualify. Find more explicitly requests further topics, with at most 120 displayed videos per feed. Refresh rotates the topic order and refreshes the first searches. No unrelated filler or empty card placeholders are inserted. Search failures and exhausted matches show an explanation and retry/search options; a complete feed cannot be guaranteed for every topic.
 
-Search results are cached in worker memory for ten minutes; fuller descriptions are cached for up to a day, subject to bounded cache sizes. Metadata, model vectors and feed caches are not persisted as browsing history. Old requests cannot overwrite a newly selected mode, and search/model work does not block the usage-accounting queue.
+Search results are cached in worker memory for ten minutes; fuller descriptions are cached for up to a day, subject to bounded cache sizes. Metadata, model vectors and feed caches are not persisted as browsing history. The last detected YouTube light/dark appearance is saved locally so extension pages match it. Old requests cannot overwrite a newly selected mode, and search/model work does not block the usage-accounting queue.
 
 The model runs in a dedicated worker hosted by an offscreen extension document. It uses a single CPU/WASM thread. Tokenizers, weights, runtime code and WASM are bundled; remote model loading is disabled. Inference remains on the device. The first analysis initializes the model; later analyses reuse it and cached embeddings. Memory and speed vary by device.
 
@@ -40,7 +41,7 @@ Descriptions and video tags are read when publicly available; consent screens, a
 
 Clickbait filtering remains a separate rule-based heuristic for common phrases, repeated punctuation and lengthy all-caps titles. YouTube changes its HTML and A/B tests layouts, so search parsers and selectors will need maintenance. The settings page's illustrative cards demonstrate keyword and distraction controls; they are not a semantic-model benchmark or the live feed.
 
-Mode filtering affects the home page. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music is included in the budget, but its music-specific home is not replaced by this feed.
+Mode filtering affects home and watch-page recommendations. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music is included in the budget, but its music-specific home is not replaced by this feed.
 
 ## Time accounting
 
@@ -67,7 +68,7 @@ You can change the limit or disable the extension. It is a personal boundary wit
 | `offscreen` | Host the dedicated worker for the packaged local model. |
 | `declarativeNetRequestWithHostAccess` | Redirect new YouTube visits after the budget is exhausted. |
 
-No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. Feed requests are limited to top-level YouTube home pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
+No broad `tabs` or external AI-provider host permission is requested. Content scripts cannot write settings directly. Feed requests are limited to top-level YouTube home and valid video pages and fixed YouTube search/watch endpoints. Packaged inference code can connect only to the extension's own assets and YouTube. Retrieved data is inserted as text, never executed as scripts.
 
 ## Development and checks
 
@@ -83,7 +84,7 @@ npm run test:model
 npm run test:extension
 ```
 
-`test:browser` exercises the home grid and controls with mocked Chrome messages. `test:model` runs the actual packaged WASM model in Chromium, checks semantic paraphrases and hashtag/tag-based classification, and asserts that inference makes no requests outside the packaged origin. `test:extension` loads the real extension in a fresh browser profile, uses deterministic YouTube responses with the actual offscreen model, and verifies mode refresh plus real budget redirects. See [VALIDATION.md](VALIDATION.md) for the complete verification boundary.
+`test:browser` exercises the home grid, watch recommendations, light/dark themes and controls with mocked Chrome messages. `test:model` runs the actual packaged WASM model in Chromium, checks semantic paraphrases and hashtag/tag-based classification, and asserts that inference makes no requests outside the packaged origin. `test:extension` loads the real extension in a fresh browser profile, uses deterministic YouTube responses with the actual offscreen model, and verifies mode refresh plus real budget redirects. See [VALIDATION.md](VALIDATION.md) for the complete verification boundary.
 
 To rebuild the worker bundle and pinned model assets after source changes:
 
@@ -96,7 +97,8 @@ Only this developer build step may download pinned assets from Hugging Face. Ins
 ```
 src/core.js               Settings, distraction rules and calendar accounting
 src/feed.js               Public search/watch parsing, caching and result selection
-src/home.js               Compact home grid, mode refresh and stale-result protection
+src/home.js               Home/watch feeds, mode refresh and stale-result protection
+src/feed-theme.js         YouTube-style feed appearance in light/dark themes
 src/background.js         Serialized accounting, feed orchestration and blocking
 src/semantic.js           Mode descriptions and semantic similarity policy
 src/ai-worker-source.mjs   Local embedding model and cached vectors

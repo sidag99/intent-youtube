@@ -1,13 +1,27 @@
 (() => {
   const C = IntentCore;
-  let settings, pending, lastURL = '', running = false;
+  let settings, pending, lastURL = '', running = false, themeObserved = false;
   const homeFeed = window.top === window ? new IntentHome() : null;
+  const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
   const CARDS = 'ytd-rich-item-renderer,ytd-video-renderer,ytd-grid-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytm-rich-item-renderer';
   const SHELVES = 'ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytm-reel-shelf-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2';
   const isHome = () => location.pathname === '/' && !location.hostname.startsWith('music.');
+  const isWatch = () => location.pathname === '/watch' && !location.hostname.startsWith('music.') && /^[\w-]{11}$/.test(new URL(location.href).searchParams.get('v') || '');
   const text = (el, selector) => el.querySelector(selector)?.textContent?.trim() || '';
   function setHidden(el, hidden) {
     if (hidden !== el.hasAttribute('data-intent-hidden')) el.toggleAttribute('data-intent-hidden', hidden);
+  }
+  function refreshTheme() {
+    homeFeed?.updateTheme(); watchFeed?.updateTheme();
+    const gate = document.getElementById('intent-shorts-gate');
+    if (gate) gate.dataset.theme = IntentHome.theme();
+    if (window.top === window) heartbeat();
+  }
+  function observeTheme() {
+    if (themeObserved || !document.documentElement) return;
+    themeObserved = true;
+    new MutationObserver(refreshTheme).observe(document.documentElement, {attributes: true, attributeFilter: ['dark', 'data-theme', 'style']});
+    refreshTheme();
   }
   function shortsGate() {
     let gate = document.getElementById('intent-shorts-gate');
@@ -15,10 +29,10 @@
     if (!blocked) { gate?.remove(); return; }
     document.querySelectorAll('video,audio').forEach(media => media.pause());
     if (gate) return;
-    gate = document.createElement('div'); gate.id = 'intent-shorts-gate';
+    gate = document.createElement('div'); gate.id = 'intent-shorts-gate'; gate.dataset.theme = IntentHome.theme();
     const root = gate.attachShadow({mode: 'closed'});
     const style = document.createElement('style');
-    style.textContent = ':host{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f0;color:#283a30;font:16px system-ui}main{max-width:420px;text-align:center;padding:40px}h1{font-size:36px;letter-spacing:-1.5px}p{line-height:1.7;color:#657064}a{display:inline-block;margin-top:22px;border-radius:10px;padding:13px 22px;background:#365e4b;color:white;text-decoration:none}';
+    style.textContent = ':host{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f0;color:#283a30;font:16px system-ui}main{max-width:420px;text-align:center;padding:40px}h1{font-size:36px;letter-spacing:-1.5px}p{line-height:1.7;color:#657064}a{display:inline-block;margin-top:22px;border-radius:10px;padding:13px 22px;background:#365e4b;color:white;text-decoration:none}' + (globalThis.IntentShortsTheme || '');
     const main = document.createElement('main');
     const title = document.createElement('h1'); title.textContent = 'Skip the rabbit hole.';
     const p = document.createElement('p'); p.textContent = 'Shorts are hidden by Intent. Take a breath and choose something worth your time.';
@@ -28,8 +42,10 @@
   function scan() {
     pending = null;
     if (!settings || !document.documentElement) return;
+    observeTheme();
     const home = isHome();
     homeFeed?.sync(settings, home);
+    watchFeed?.sync(settings, isWatch());
     document.documentElement.toggleAttribute('data-intent-shorts', settings.hideShorts);
     const visibleSettings = home ? settings : {...settings, mode: 'off'};
     for (const card of document.querySelectorAll(CARDS)) {
@@ -52,7 +68,7 @@
     running = true;
     try {
       const playing = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && m.readyState > 1);
-      const state = await chrome.runtime.sendMessage({type: 'HEARTBEAT', playing});
+      const state = await chrome.runtime.sendMessage({type: 'HEARTBEAT', playing, ...(window.top === window ? {appearance: IntentHome.theme()} : {})});
       if (state?.ok) {
         if (JSON.stringify(settings) !== JSON.stringify(state.settings)) { settings = state.settings; schedule(); }
         if (state.blocked) {
@@ -68,6 +84,9 @@
   });
   new MutationObserver(schedule).observe(document, {childList: true, subtree: true, characterData: true});
   document.addEventListener('yt-navigate-finish', schedule);
+  // Theme changes do not require a reload or another network/model request.
+  observeTheme();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshTheme);
   document.addEventListener('play', () => { shortsGateIfReady(); heartbeat(); }, true);
   document.addEventListener('pause', heartbeat, true);
   document.addEventListener('visibilitychange', heartbeat);

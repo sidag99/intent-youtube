@@ -2,6 +2,7 @@ async function refresh() {
   try {
     const state = await chrome.runtime.sendMessage({type: 'GET_STATE'});
     if (!state.ok) throw new Error(state.error);
+    if (['light', 'dark'].includes(state.appearance)) document.documentElement.dataset.theme = state.appearance;
     if (!state.blocked) {
       document.querySelector('h1').textContent = 'A fresh start is waiting.';
       document.querySelector('#block-detail').textContent = 'Your YouTube budget is available again.';
@@ -17,6 +18,9 @@ async function refresh() {
     }
   } catch { document.querySelector('#reset-label').textContent = 'Open Intent settings to check your budget.'; }
 }
+chrome.runtime.onMessage?.addListener(message => {
+  if (message.type === 'APPEARANCE' && ['light', 'dark'].includes(message.appearance)) document.documentElement.dataset.theme = message.appearance;
+});
 document.querySelector('#close-tab').onclick = async () => {
   const tab = await chrome.tabs.getCurrent();
   if (tab) await chrome.tabs.remove(tab.id);

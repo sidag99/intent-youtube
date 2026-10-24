@@ -78,16 +78,38 @@ test('concurrent heartbeat requests are serialized without double-counting', asy
   assert.ok(results.every(r => r.usedMs === 12000));
 });
 
-test('feed requests are restricted to a top-level YouTube home page and respect the daily block', async () => {
+test('feed requests are restricted to top-level YouTube home/video pages and respect the daily block', async () => {
   let calls = 0;
   const h = harness({settings: {dailyMinutes: 1}, days: {'2026-10-24': 60000}}, undefined, async () => {calls++;});
   const sender = {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0};
   const blocked = await h.send({type: 'GET_FEED'}, sender);
   assert.equal(blocked.blocked, true); assert.equal(calls, 0);
-  const invalid = await h.send({type: 'GET_FEED'}, {...sender, url: 'https://www.youtube.com/watch?v=abcdefghijk'});
-  assert.equal(invalid.ok, false);
-  const iframe = await h.send({type: 'GET_FEED'}, {...sender, frameId: 2});
-  assert.equal(iframe.ok, false);
+  assert.equal((await h.send({type: 'GET_FEED'}, {...sender, url: 'https://www.youtube.com/watch?v=abcdefghijk'})).blocked, true);
+  for (const url of ['https://www.youtube.com/watch', 'https://www.youtube.com/watch?v=bad', 'https://www.youtube.com/results?search_query=music', 'https://music.youtube.com/', 'https://example.com/']) {
+    assert.equal((await h.send({type: 'GET_FEED'}, {...sender, url})).ok, false, url);
+  }
+  assert.equal((await h.send({type: 'GET_FEED'}, {...sender, frameId: 2})).ok, false);
+  assert.equal((await h.send({type: 'GET_FEED'}, {url: sender.url})).ok, false);
+});
+test('watch recommendations always exclude the playing video using the sender URL', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const fetcher = async url => ({ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: ['abcdefghijk', 'lmnopqrstuv'].map(videoId => ({videoRenderer: {videoId, title: {simpleText: 'Build a useful application'}}}))}}}}}) + ';</script>'});
+  const h = harness({}, undefined, fetcher);
+  const sender = {url: 'https://www.youtube.com/watch?v=abcdefghijk&t=40', tab: {id: 1}, frameId: 0};
+  const response = await h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults()), exclude: []}, sender);
+  assert.equal(response.ok, true);
+  assert.deepEqual(Array.from(response.items, v => v.id), ['lmnopqrstuv']);
+});
+test('extension appearance follows the active top-level YouTube page and survives worker restart', async () => {
+  const h = harness();
+  const sender = {url: 'https://www.youtube.com/watch?v=abcdefghijk', tab: {id: 1, active: true}, frameId: 0};
+  assert.equal((await h.send({type: 'HEARTBEAT', appearance: 'dark'}, sender)).appearance, 'dark');
+  assert.equal(h.local.appearance, 'dark');
+  assert.equal((await h.send({type: 'HEARTBEAT', appearance: 'light'}, {...sender, frameId: 2})).appearance, 'dark');
+  assert.equal((await h.send({type: 'HEARTBEAT', appearance: 'light'}, {...sender, tab: {...sender.tab, active: false}})).appearance, 'dark');
+  assert.equal((await h.send({type: 'HEARTBEAT', appearance: 'light'}, {url: 'https://example.com/', tab: {id: 2}})).appearance, 'dark');
+  assert.equal((await harness(h.local).send({type: 'GET_STATE'})).appearance, 'dark');
+  assert.equal((await h.send({type: 'HEARTBEAT', appearance: 'light'}, sender)).appearance, 'light');
 });
 test('a mode change supersedes an in-flight feed and slow search does not block accounting', async () => {
   require('../src/core.js');require('../src/feed.js');

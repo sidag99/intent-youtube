@@ -30,16 +30,22 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   assert.ok(await page.locator('.sample-card.filtered').count()>0);
   await page.getByRole('button',{name:'Hide filtered examples'}).click();
   await page.screenshot({path:path.join(shots,'intent-settings.png'),fullPage:true});
+  const settingsLight=await page.locator('html').evaluate(el=>getComputedStyle(el).backgroundColor);
+  await page.emulateMedia({colorScheme:'dark'});
+  const settingsDark=await page.locator('html').evaluate(el=>getComputedStyle(el).backgroundColor);
+  assert.notEqual(settingsLight,settingsDark,'settings follow system dark mode');
+  await page.screenshot({path:path.join(shots,'intent-settings-dark.png'),fullPage:true});
+  await page.emulateMedia({colorScheme:'light'});
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   const popup=await context.newPage();await popup.setViewportSize({width:400,height:850});
   await popup.goto('file://'+root+'/popup.html');await popup.getByRole('heading',{name:'Your daily budget'}).waitFor();
   await popup.screenshot({path:path.join(shots,'intent-popup.png'),fullPage:true});
   const yt=await context.newPage();yt.on('pageerror',e=>errors.push(e.message));
-  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html><head><style>body{margin:0;background:#f8f8f2;color:#283b30;font-family:system-ui}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-browse{display:block}#primary{max-width:1500px;margin:auto}ytd-rich-item-renderer{display:block}</style></head><body><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf">Shorts shelf</ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
+  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html><head><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-browse{display:block}#primary{max-width:1500px;margin:auto}ytd-rich-item-renderer{display:block}</style></head><body><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf">Shorts shelf</ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
   await yt.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#d8dfc8"/><circle cx="490" cy="230" r="160" fill="#c0cdae"/><path d="M60 240h220M60 190h150" stroke="#718465" stroke-width="12" stroke-linecap="round"/></svg>'}));
   await yt.goto('https://www.youtube.com/');
-  for (const file of ['core.js','feed.js','home.js']) await yt.addScriptTag({path:root+'/src/'+file});
+  for (const file of ['core.js','feed.js','feed-theme.js','home.js']) await yt.addScriptTag({path:root+'/src/'+file});
   await yt.evaluate(()=>{
     window.testSettings={...IntentCore.defaults(),mode:'music'};window.testHandlers=[];window.testRequests=[];window.testFail=false;window.testDelayWork=false;
     const make=(mode,n)=>({id:mode[0]+String(n).padStart(10,'0'),title:mode==='work'?`Python programming lesson ${n+1}`:mode==='study'?`Physics lecture ${n+1}`:`Quiet jazz music ${n+1}`,channel:'Studio North',description:'',duration:'12:40',metadata:'Illustrative video',thumbnail:'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',shorts:false});
@@ -62,7 +68,8 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.includes('jazz music')));
   const boxes=await feed.locator('.card').evaluateAll(cards=>cards.map(c=>{const r=c.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width};}));
   const firstRow=boxes.filter(r=>r.y===boxes[0].y);assert.ok(firstRow.length>=3);
-  for(let i=1;i<firstRow.length;i++)assert.ok(Math.abs(firstRow[i].x-firstRow[i-1].x-firstRow[i-1].w-20)<2,'cards compact without empty slots');
+  const gap=await feed.locator('.grid').evaluate(el=>parseFloat(getComputedStyle(el).columnGap));
+  for(let i=1;i<firstRow.length;i++)assert.ok(Math.abs(firstRow[i].x-firstRow[i-1].x-firstRow[i-1].w-gap)<2,'cards compact without empty slots');
   await feed.getByRole('button',{name:'Find more videos'}).click();
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelectorAll('.card').length===24);
   assert.equal(await feed.locator('.card').count(),24);
@@ -74,7 +81,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await yt.evaluate(()=>{testDelayWork=true;setTestMode('work');});
   await yt.waitForFunction(()=>testRequests.at(-1).key.includes('work'));
   await yt.evaluate(()=>setTestMode('study'));
-  await feed.getByRole('heading',{name:'◒ Study, with intent.'}).waitFor();
+  await feed.getByRole('heading',{name:/Study/}).waitFor();
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
   await yt.waitForTimeout(400);
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.includes('Physics')));
@@ -97,8 +104,72 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await yt.evaluate(()=>{history.pushState({},'', '/results?search_query=python');setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));const card=document.createElement('yt-lockup-view-model');card.id='lazy';card.innerHTML='<h3>You won’t believe this programming trick!!!</h3>';document.querySelector('#primary').append(card);});
   await yt.locator('#lazy[data-intent-hidden]').waitFor({state:'attached'});
   assert.equal(await yt.locator('#work').isVisible(),true);
+  // The same SPA now opens a video. Replace only recommendations, preserving the player and chat.
+  await yt.evaluate(()=>{
+    history.pushState({},'', '/watch?v=w0000000000');
+    document.querySelector('ytd-browse').setAttribute('hidden','');
+    const watch=document.createElement('ytd-watch-flexy');watch.innerHTML='<style>ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px;max-width:1500px;margin:auto}#player{height:360px;background:#181818;color:white}#related{display:block}#below{grid-column:1/-1}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}#secondary{width:100%}}</style><main><div id="player"><video id="playing-video"></video><strong>Current video — keep playing</strong></div><h2>Python programming for useful tools</h2></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related"><ytd-compact-video-renderer id="native-watch-card"><h3 id="video-title">Unrelated cooking recipe</h3></ytd-compact-video-renderer></ytd-watch-next-secondary-results-renderer></div></aside><div id="below"></div>';
+    document.body.append(watch);window.testPlayer=document.querySelector('#playing-video');window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;
+    testDelayWork=false;setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));
+  });
+  const watchFeed=yt.locator('#intent-watch-feed');
+  await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11);
+  assert.equal(await yt.locator('#native-related').isVisible(),false);
+  assert.equal(await yt.locator('#chat').isVisible(),true);
+  assert.equal(await yt.locator('#intent-home-feed').count(),0);
+  assert.equal(await watchFeed.locator('[data-video-id="w0000000000"]').count(),0,'the current video is never recommended');
+  assert.ok(await yt.evaluate(()=>testRequests.at(-1).exclude.includes('w0000000000')),'each batch excludes the current video');
+  const recBoxes=await watchFeed.locator('.card').evaluateAll(cards=>cards.slice(0,4).map(c=>{const r=c.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height};}));
+  assert.ok(recBoxes.every(r=>Math.abs(r.x-recBoxes[0].x)<1),'watch recommendations form one compact column');
+  for(let i=1;i<recBoxes.length;i++)assert.ok(recBoxes[i].y-recBoxes[i-1].y-recBoxes[i-1].h<25,'no empty card slots in recommendations');
+  assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true,'mounting recommendations preserves player state');
+  await yt.evaluate(()=>setTestMode('music'));
+  await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('jazz'));
+  assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true,'switching modes never pauses or replaces the watched video');
+  // Explicit YouTube appearance takes precedence over the OS preference and updates live.
+  await yt.emulateMedia({colorScheme:'dark'});
+  await yt.evaluate(()=>document.documentElement.removeAttribute('dark'));
+  const theme=()=>watchFeed.locator('.title').first().evaluate(el=>{const css=getComputedStyle(el);return{color:css.color,background:getComputedStyle(el.getRootNode().host).backgroundColor};});
+  await yt.waitForTimeout(200);const lightTheme=await theme();
+  assert.equal(await watchFeed.getAttribute('data-theme'),'light');
+  assert.equal(lightTheme.color,'rgb(15, 15, 15)');
+  await yt.evaluate(()=>document.documentElement.setAttribute('dark',''));
+  await yt.waitForTimeout(200);const darkTheme=await theme();
+  assert.equal(await watchFeed.getAttribute('data-theme'),'dark');
+  assert.equal(darkTheme.color,'rgb(241, 241, 241)');
+  assert.notEqual(darkTheme.color,lightTheme.color,'YouTube dark mode changes text colors live');
+  await yt.emulateMedia({colorScheme:'light'});await yt.waitForTimeout(100);
+  assert.equal((await theme()).color,darkTheme.color,'explicit YouTube dark mode wins over OS light');
+  await yt.screenshot({path:path.join(shots,'intent-watch-dark.png'),fullPage:true});
+  await yt.evaluate(()=>document.documentElement.removeAttribute('dark'));await yt.waitForTimeout(200);
+  assert.equal((await theme()).color,lightTheme.color,'returning to YouTube light restores readable text');
+  await yt.screenshot({path:path.join(shots,'intent-watch-light.png'),fullPage:true});
+  // Reparenting related below the player and replacing its native DOM must retain a filled feed.
+  await yt.setViewportSize({width:390,height:844});
+  await yt.evaluate(()=>{document.querySelector('#below').append(document.querySelector('#related'));document.dispatchEvent(new Event('yt-navigate-finish'));});
+  assert.equal(await yt.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'below-player recommendations fit mobile width');
+  await watchFeed.locator('.card').first().waitFor();
+  await yt.evaluate(()=>{const rec=document.createElement('ytd-compact-video-renderer');rec.id='late-native';rec.innerHTML='<h3 id="video-title">Unrelated late native result</h3>';document.querySelector('#related').append(rec);});
+  await yt.locator('#late-native[data-intent-native-watch]').waitFor({state:'attached'});
+  assert.equal(await yt.locator('#late-native').isVisible(),false,'new native recommendations cannot leak through the intent feed');
+  assert.equal(await yt.evaluate(()=>document.querySelector('#below #intent-watch-feed')!==null),true);
+  await yt.setViewportSize({width:1440,height:1100});
+  await yt.evaluate(()=>{testDelayWork=true;setTestMode('work');});
+  await yt.waitForFunction(()=>testRequests.at(-1).key.includes('work'));
+  await yt.evaluate(()=>setTestMode('study'));
+  await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
+  await yt.waitForTimeout(400);
+  assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.includes('Physics')),'old mode results cannot overwrite watch recommendations');
+  await yt.evaluate(()=>{testDelayWork=false;history.pushState({},'', '/watch?v=s0000000001');document.dispatchEvent(new Event('yt-navigate-finish'));});
+  await yt.waitForFunction(()=>testRequests.at(-1).exclude.includes('s0000000001'));
+  await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11);
+  assert.equal(await watchFeed.locator('[data-video-id="s0000000001"]').count(),0,'SPA video navigation refreshes and excludes the new current video');
+  await yt.evaluate(()=>setTestMode('off'));
+  await watchFeed.waitFor({state:'detached'});
+  assert.equal(await yt.locator('#native-related').isVisible(),true,'turning modes off restores native video recommendations');
+  assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
   await yt.goto('https://www.youtube.com/shorts/test');
-  for (const file of ['core.js','feed.js','home.js']) await yt.addScriptTag({path:root+'/src/'+file});
+  for (const file of ['core.js','feed.js','feed-theme.js','home.js']) await yt.addScriptTag({path:root+'/src/'+file});
   await yt.evaluate(()=>{window.testSettings=IntentCore.defaults();window.chrome={runtime:{id:'test',getURL:s=>'https://extension.test/'+s,onMessage:{addListener(){}},sendMessage:async()=>({ok:true,settings:testSettings,blocked:false})}};});
   await yt.addScriptTag({path:root+'/src/content.js'});await yt.locator('#intent-shorts-gate').waitFor();
   const blocked=await context.newPage();
@@ -110,6 +181,6 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mk
   await blocked.getByText('A fresh start is waiting.').waitFor();
   assert.equal(await blocked.locator('#close-tab').innerText(),'Return to YouTube →');
   assert.deepEqual(errors,[]);
-  console.log('PASS: compact intent grid, search batches, mode refresh, load more, deduplication, stale-response protection, error states, native-feed restoration, Shorts gate, UI persistence, mobile layout, popup. Chrome messaging mocked for DOM tests.');
+  console.log('PASS: Home and watch recommendations, player preservation, SPA navigation, current-video exclusion, live YouTube light/dark appearance, compact responsive layouts, stale-response protection, native restoration, Shorts gate, settings persistence and popup. Chrome messaging mocked for DOM tests.');
  }finally{await b.close()}
 })().catch(e=>{console.error(e);process.exitCode=1})
