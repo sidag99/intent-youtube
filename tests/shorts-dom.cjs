@@ -21,8 +21,8 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
       window.IntentHome = class {
         constructor(runtime, surface = 'home') {this.surface = surface; this.destroyCount = 0; controllers.push(this);}
         static theme() {return 'light';}
-        sync() {} updateTheme() {} refreshFeed() {}
-        destroy() {this.destroyCount++; this.host?.remove(); this.host = null;}
+        sync(settings, active) {if (!active || settings.mode === 'off') this.destroy();} updateTheme() {} refreshFeed() {}
+        destroy() {this.destroyCount++; this.host?.remove(); this.host = null; document.querySelectorAll(`[data-intent-native-${this.surface}]`).forEach(node => node.removeAttribute(`data-intent-native-${this.surface}`));}
       };
       window.IntentToolbar = class {sync(settings, active, state) {coverage.push({settings: structuredClone(settings), active, ...state});} updateTheme() {}};
       window.chrome = {runtime: {id: 'test', getURL: value => 'https://extension.test/' + value, onMessage: {addListener: handler => handlers.push(handler)}, sendMessage: async () => ({ok: true, settings: testSettings, tabPaused: testPaused, blocked: false})}};
@@ -147,7 +147,7 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
       history.pushState({}, '', '/');
       document.dispatchEvent(new Event('yt-navigate-finish'));
     });
-    assert.equal(await page.locator('html').getAttribute('data-intent-home-pending'), null, 'unsupported Home layout fails open when navigation settles');
+    assert.equal(await page.locator('html').getAttribute('data-intent-home-pending'), null, 'the transient navigation guard clears when navigation settles');
     await page.clock.install();
     await page.evaluate(() => {
       history.pushState({}, '', '/watch?v=abcdefghijk');
@@ -156,9 +156,37 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
     assert.notEqual(await page.locator('html').getAttribute('data-intent-home-pending'), null);
     await page.clock.fastForward(15001);
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-intent-home-pending'));
-    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'a cancelled transition has a bounded fail-open timeout');
+    assert.equal(await page.locator('#incoming-home').isVisible(), false, 'expiring the transient guard cannot reveal native recommendations while intent remains active');
+    await page.evaluate(() => document.querySelector('#primary').insertAdjacentHTML('beforeend', '<div id="after-timeout-home">Late native Home card</div>'));
+    assert.equal(await page.locator('#after-timeout-home').isVisible(), false, 'new native siblings remain guarded after the transition timer ends');
+    await page.evaluate(() => setTestSettings({mode: 'off'}));
+    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'manual Off immediately releases the persistent Home guard');
+    assert.equal(await page.locator('#after-timeout-home').isVisible(), true);
+
+    // YouTube changes the URL before replacing its visible page-manager child.
+    // Destroying the outgoing watch controller restores its individual markers;
+    // the saved-intent policy must still cover those old and newly inserted cards.
+    await page.evaluate(() => {
+      setTestSettings({mode: 'work'});
+      document.body.insertAdjacentHTML('beforeend', '<ytd-watch-flexy id="outgoing-watch"><div id="secondary"><div id="related"><div id="outgoing-native" data-intent-native-watch>Unrelated native watch recommendation</div></div></div></ytd-watch-flexy>');
+      history.pushState({}, '', '/');
+      document.dispatchEvent(new Event('yt-navigate-finish'));
+    });
+    assert.equal(await page.locator('#outgoing-native').getAttribute('data-intent-native-watch'), null, 'the outgoing watch controller has released its individual native marker');
+    assert.equal(await page.locator('#outgoing-native').isVisible(), false, 'outgoing watch recommendations remain hidden after the URL has already changed to Home');
+    await page.evaluate(() => document.querySelector('#outgoing-watch #related').insertAdjacentHTML('beforeend', '<div id="outgoing-late">New outgoing native recommendation</div>'));
+    assert.equal(await page.locator('#outgoing-late').isVisible(), false, 'native siblings inserted into the outgoing watch surface cannot flash');
+    assert.equal(await page.locator('#normal-nav').isVisible(), true, 'persistent topic guards preserve navigation');
+    assert.equal(await page.locator('#before').isVisible(), true, 'search result cards remain outside the topic guard');
+    await page.evaluate(() => setTestPaused(true));
+    assert.equal(await page.locator('#outgoing-native').isVisible(), true, 'pausing immediately releases outgoing watch native content');
+    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'pausing also releases cached Home native content');
+    await page.evaluate(() => setTestPaused(false));
+    assert.equal(await page.locator('#outgoing-native').isVisible(), false, 'resume restores the saved intent across cached surfaces');
+    await page.evaluate(() => setTestSettings({mode: 'off'}));
+    assert.equal(await page.locator('#outgoing-native').isVisible(), true, 'manual Off releases the persistent watch guard');
     assert.deepEqual(errors, []);
-    console.log('PASS complete modern/legacy Shorts shelves, branded empty modules, Show more/dividers, safe adjacent/mixed results, toggle restoration, asynchronous/reused DOM, explicit reset, toolbar coverage states, modern/legacy sidebar links and bounded no-flash Home transitions');
+    console.log('PASS complete modern/legacy Shorts shelves, branded empty modules, Show more/dividers, safe adjacent/mixed results, toggle restoration, asynchronous/reused DOM, explicit reset, toolbar coverage states, modern/legacy sidebar links and persistent no-flash protection across outgoing watch/Home transitions');
     await context.close();
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

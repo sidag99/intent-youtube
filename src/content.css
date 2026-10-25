@@ -35,7 +35,17 @@ html[data-intent-feed] ytd-browse[page-subtype="home"] #chips-wrapper:has(ytd-fe
 /* Cover incoming native Home cards before YouTube's SPA transition paints them.
    This guard is bounded in content.js and never affects the player or masthead. */
 html[data-intent-home-pending] ytd-browse[page-subtype="home"] #primary > :not(#intent-home-feed),
+html[data-intent-home-pending] ytd-browse:not([page-subtype]):not([hidden]) #primary > :not(#intent-home-feed),
 html[data-intent-home-pending] ytd-browse[page-subtype="home"] ytd-feed-filter-chip-bar-renderer {
+  display: none !important;
+}
+/* Settings policy outlives individual feed hosts and URL transitions. YouTube can
+   replace native siblings or leave the outgoing watch renderer visible after its
+   URL has already become Home. Never expose those recommendations between scans. */
+html[data-intent-topics] ytd-browse[page-subtype="home"] #primary > :not(#intent-home-feed),
+html[data-intent-topics][data-intent-home-route] ytd-browse:not([page-subtype]):not([hidden]) #primary > :not(#intent-home-feed),
+html[data-intent-topics] ytd-watch-flexy #related > :not(#intent-watch-feed),
+html[data-intent-topics] ytd-browse[page-subtype="home"] ytd-feed-filter-chip-bar-renderer {
   display: none !important;
 }
 html[data-intent-shorts] [data-intent-short-nav],

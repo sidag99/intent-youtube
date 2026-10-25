@@ -220,7 +220,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await yt.locator('#native-short').isVisible(),true);
   await yt.evaluate(()=>{testSettings.hideShorts=true;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));});
   // Native cards outside home retain distraction filtering, including newly loaded cards.
-  await yt.evaluate(()=>{history.pushState({},'', '/results?search_query=python');setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));const card=document.createElement('yt-lockup-view-model');card.id='lazy';card.innerHTML='<h3>You won’t believe this programming trick!!!</h3>';document.querySelector('#primary').append(card);});
+  await yt.evaluate(()=>{history.pushState({},'', '/results?search_query=python');document.querySelector('ytd-browse').setAttribute('page-subtype','search');setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));const card=document.createElement('yt-lockup-view-model');card.id='lazy';card.innerHTML='<h3>You won’t believe this programming trick!!!</h3>';document.querySelector('#primary').append(card);});
   await yt.locator('#lazy[data-intent-hidden]').waitFor({state:'attached'});
   await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.filterState==='off-here');
   assert.equal(await toolbar.getByText('Off here',{exact:true}).isVisible(),true,'search results clearly say intent filtering is off here');
@@ -292,22 +292,37 @@ async function chooseMode(toolbar, mode, customName) {
   await watchFeed.waitFor({state:'detached'});
   assert.equal(await yt.locator('#native-related').isVisible(),true,'turning modes off restores native video recommendations');
   assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
-  // A real logo click starts Home navigation before YouTube finishes replacing its DOM.
+  // YouTube can finish changing the URL while the outgoing watch renderer is still visible.
+  await yt.evaluate(()=>setTestMode('study'));
+  await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
   await yt.evaluate(()=>{
-    setTestMode('study');
+    const cached=document.querySelector('ytd-browse');cached.id='cached-home';cached.setAttribute('page-subtype','home');cached.hidden=true;cached.style.display='none';
     document.querySelector('ytd-masthead #start').innerHTML='<a id="logo" href="/">YouTube</a>';
     document.querySelector('#logo').addEventListener('click',event=>{
       event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{url:'/'}}));history.pushState({},'', '/');
-      document.querySelector('ytd-watch-flexy').hidden=true;document.querySelector('ytd-browse').remove();
-      const browse=document.createElement('ytd-browse');browse.setAttribute('page-subtype','home');browse.innerHTML='<div id="primary"><ytd-rich-grid-renderer id="home-flash-native">Unrelated native recommendations</ytd-rich-grid-renderer></div>';document.body.append(browse);
-      window.homeBeforeFinish={nativeDisplay:getComputedStyle(document.querySelector('#home-flash-native')).display};
+      document.dispatchEvent(new Event('yt-navigate-finish'));
+      window.outgoingWatchDisplay=getComputedStyle(document.querySelector('#native-related')).display;
     });
   });
   await yt.locator('#logo').click();
-  assert.equal(await yt.evaluate(()=>homeBeforeFinish.nativeDisplay),'none','native Home recommendations are hidden in the same task that inserts them, before navigate-finish');
-  await yt.evaluate(()=>document.dispatchEvent(new Event('yt-navigate-finish')));
-  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
-  assert.equal(await yt.locator('#home-flash-native').isVisible(),false);
+  assert.equal(await yt.evaluate(()=>outgoingWatchDisplay),'none','navigation finish never reveals outgoing native watch recommendations');
+  await yt.waitForTimeout(180); // Let the normal coalesced DOM scan run with the outgoing renderer still visible.
+  assert.equal(await yt.locator('#native-related').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal(await yt.locator('#playing-video').isVisible(),true,'the player remains visible while YouTube has not replaced its watch renderer');
+  assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
+  const incomingHome=await yt.evaluate(()=>{
+    const browse=document.createElement('ytd-browse');browse.id='live-home';browse.setAttribute('page-subtype','home');browse.innerHTML='<div id="primary"><ytd-rich-grid-renderer id="home-flash-native">Unrelated native recommendations</ytd-rich-grid-renderer></div>';document.body.append(browse);
+    const watch=document.querySelector('ytd-watch-flexy');watch.hidden=true;watch.style.display='none';
+    return getComputedStyle(document.querySelector('#home-flash-native')).display;
+  });
+  assert.equal(incomingHome,'none','Home content arriving after navigate-finish is hidden synchronously');
+  await yt.waitForFunction(()=>document.querySelector('#live-home #intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
+  assert.equal(await yt.locator('#cached-home #intent-home-feed').count(),0,'a hidden cached Home renderer cannot capture the replacement feed');
+  const lateHome=await yt.evaluate(()=>{const native=document.createElement('ytd-rich-grid-renderer');native.id='late-home-native';native.textContent='Late unrelated recommendations';document.querySelector('#live-home #primary').append(native);return{display:getComputedStyle(native).display,marked:native.hasAttribute('data-intent-native-home')};});
+  assert.deepEqual(lateHome,{display:'none',marked:false},'late native Home children are hidden by policy before the mutation observer marks them');
+  await yt.evaluate(()=>{const live=document.querySelector('#live-home');live.hidden=true;live.style.display='none';const cached=document.querySelector('#cached-home');cached.hidden=false;cached.style.display='block';});
+  await yt.waitForFunction(()=>document.querySelector('#cached-home #intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.includes('Physics'));
+  assert.equal(await yt.locator('#live-home #intent-home-feed').count(),0,'hidden renderer changes move the replacement to the visible cached Home');
   await yt.route('https://www.youtube.com/shorts/**',route=>route.fulfill({contentType:'text/html',body:directShortsFixture}));
   await yt.goto('https://www.youtube.com/shorts/test');
   for (const file of ['core.js','feed.js','feed-theme.js','home.js','toolbar.js']) await yt.addScriptTag({path:root+'/src/'+file});

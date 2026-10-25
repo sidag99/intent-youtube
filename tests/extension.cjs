@@ -140,21 +140,34 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
   console.log('PASS real installed extension replaces watch recommendations, excludes current video, follows YouTube appearance and preserves playback during mode changes');
   await settings.locator('#close-editor').click();
-  // The native Home grid must never flash during a watch-to-Home SPA transition.
+  // URL/finish can precede renderer replacement: protect both outgoing and incoming recommendations.
   await yt.evaluate(()=>{
+    window.transitionPlayer=document.querySelector('#playing-video');window.transitionTime=transitionPlayer.currentTime;
+    const cached=document.createElement('ytd-browse');cached.id='cached-home';cached.setAttribute('page-subtype','home');cached.hidden=true;cached.style.display='none';cached.innerHTML='<div id="primary"><ytd-rich-grid-renderer>Cached native Home recommendations</ytd-rich-grid-renderer></div>';document.body.append(cached);
     document.querySelector('ytd-masthead #start').innerHTML='<a id="logo" href="/">YouTube</a>';
     document.querySelector('#logo').addEventListener('click',event=>{
-      event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{endpoint:{commandMetadata:{webCommandMetadata:{url:'/'}}}}}));history.pushState({},'', '/');document.querySelector('ytd-watch-flexy').hidden=true;
-      const browse=document.createElement('ytd-browse');browse.setAttribute('page-subtype','home');browse.innerHTML='<div id="primary"><ytd-rich-grid-renderer id="home-flash-native">Unrelated native recommendations</ytd-rich-grid-renderer></div>';document.body.append(browse);
-      window.homeBeforeFinish=getComputedStyle(document.querySelector('#home-flash-native')).display;
+      event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{endpoint:{commandMetadata:{webCommandMetadata:{url:'/'}}}}}));history.pushState({},'', '/');
+      document.dispatchEvent(new Event('yt-navigate-finish'));
+      window.outgoingWatchDisplay=getComputedStyle(document.querySelector('#native-related')).display;
     });
   });
-  await yt.locator('#logo').click();assert.equal(await yt.evaluate(()=>homeBeforeFinish),'none','the real installed extension hides inserted Home recommendations before navigation finishes');
-  await yt.evaluate(()=>document.dispatchEvent(new Event('yt-navigate-finish')));
-  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Blue notes'),null,{timeout:60000});
-  assert.equal(await yt.locator('#home-flash-native').isVisible(),false);
+  await yt.locator('#logo').click();assert.equal(await yt.evaluate(()=>outgoingWatchDisplay),'none','the outgoing native watch recommendations remain hidden at navigation finish');
+  await yt.waitForTimeout(180); // Exercise the coalesced scan while the old visible watch renderer remains.
+  assert.equal(await yt.locator('#native-related').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal(await yt.locator('#playing-video').isVisible(),true);
+  assert.equal(await yt.evaluate(()=>transitionPlayer===document.querySelector('#playing-video')&&transitionPlayer.currentTime===transitionTime&&playerPauses===0),true,'protecting outgoing recommendations leaves the player untouched');
+  const incomingHome=await yt.evaluate(()=>{
+    const browse=document.createElement('ytd-browse');browse.id='live-home';browse.setAttribute('page-subtype','home');browse.innerHTML='<div id="primary"><ytd-rich-grid-renderer id="home-flash-native">Unrelated native recommendations</ytd-rich-grid-renderer></div>';document.body.append(browse);
+    const watch=document.querySelector('ytd-watch-flexy');watch.hidden=true;watch.style.display='none';
+    return getComputedStyle(document.querySelector('#home-flash-native')).display;
+  });
+  assert.equal(incomingHome,'none','Home arriving after finish is hidden before any DOM observer or another finish event');
+  await yt.waitForFunction(()=>document.querySelector('#live-home #intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Blue notes'),null,{timeout:60000});
+  assert.equal(await yt.locator('#cached-home #intent-home-feed').count(),0);
+  const lateHome=await yt.evaluate(()=>{const native=document.createElement('ytd-rich-grid-renderer');native.id='late-home-native';native.textContent='Late unrelated recommendations';document.querySelector('#live-home #primary').append(native);return{display:getComputedStyle(native).display,marked:native.hasAttribute('data-intent-native-home')};});
+  assert.deepEqual(lateHome,{display:'none',marked:false},'new native Home children stay hidden after the replacement has mounted');
   await yt.goto('https://www.youtube.com/watch?v=M0000000000');await yt.locator('#intent-toolbar').waitFor();
-  console.log('PASS watch-to-Home logo navigation hides native recommendations synchronously until the matching feed replaces them');
+  console.log('PASS watch-to-Home navigation protects outgoing watch recommendations, late Home renderers and post-mount native insertions without pausing the player');
   const directShorts=await context.newPage();await directShorts.goto('https://www.youtube.com/shorts/Q0000000000');
   await directShorts.locator('#intent-shorts-gate').waitFor();
   assert.equal(await directShorts.locator('#shorts-player').isVisible(),false);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),false);assert.equal(await directShorts.locator('#logo').isVisible(),true);assert.equal(await directShorts.locator('#guide-home').isVisible(),true);

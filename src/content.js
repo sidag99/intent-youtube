@@ -22,6 +22,15 @@
   const SHORT_PLAYERS = 'ytd-shorts,ytm-shorts,ytm-shorts-player,ytd-reel-video-renderer,ytm-reel-video-renderer,#shorts-player,#shorts-container,#shorts-inner-container';
   let homePendingTimer;
   const isShortsPage = () => /^\/shorts(?:\/|$)/.test(location.pathname);
+  function syncTopicGuard() {
+    const root = document.documentElement;
+    if (!root) return;
+    // YouTube changes the URL before removing the outgoing renderer. Keep both
+    // recommendation surfaces protected for the lifetime of the selected intent.
+    const active = window.top === window && settings && settings.mode !== 'off' && !tabPaused && !location.hostname.startsWith('music.');
+    root.toggleAttribute('data-intent-topics', Boolean(active));
+    root.toggleAttribute('data-intent-home-route', Boolean(active && isHome()));
+  }
   function clearHomePending() {
     clearTimeout(homePendingTimer); homePendingTimer = null;
     document.documentElement?.removeAttribute('data-intent-home-pending');
@@ -36,6 +45,7 @@
   }
   function applySettings(value) {
     settings = C.sanitize(value);
+    syncTopicGuard();
     if (settings.mode === 'off' || tabPaused) {
       clearHomePending();
       if (settings.mode === 'off') {homeFeed?.destroy(); watchFeed?.destroy();}
@@ -75,6 +85,7 @@
     const paused = value === true;
     if (paused === tabPaused) return;
     tabPaused = paused;
+    syncTopicGuard();
     if (paused) {
       clearHomePending(); homeFeed?.destroy(); watchFeed?.destroy();
       for (const element of markedHiddenElements) element.removeAttribute('data-intent-hidden');
@@ -176,13 +187,16 @@
     const name = C.modes(settings)[settings.mode]?.name || 'Your';
     if (location.pathname === '/results') return {state: 'off-here', detail: `Intent is off on search results. ${name} is saved for Home and video recommendations. Distraction filters and the daily timer still apply.`};
     const feed = home ? homeFeed : watch ? watchFeed : null;
-    if (!feed?.host?.isConnected) return {state: 'off-here', detail: home || watch ? 'Intent is off here because this YouTube layout is unavailable. Distraction filters and the daily timer still apply.' : 'Intent is off on this page. Your selected intent is saved for Home and video recommendations; distraction filters and the daily timer still apply.'};
+    if (!feed?.host?.isConnected) return home || watch
+      ? {state: 'loading', detail: 'Waiting for YouTube recommendations to finish loading. Native recommendations remain hidden while your intent is active.'}
+      : {state: 'off-here', detail: 'Intent is off on this page. Your selected intent is saved for Home and video recommendations; distraction filters and the daily timer still apply.'};
     const state = ['active', 'loading', 'unavailable'].includes(feed.feedState) ? feed.feedState : 'loading';
     return {state, detail: state === 'active' ? `${name} filters these recommendations.` : state === 'loading' ? `Loading recommendations for ${name}.` : 'Intent recommendations are unavailable. Try refreshing the feed. Distraction filters and the daily timer still apply.'};
   }
   function scan() {
     pending = null;
     if (!settings || !document.documentElement) return;
+    syncTopicGuard();
     observeTheme();
     const home = isHome(), watch = isWatch();
     if (tabPaused) {
@@ -242,9 +256,13 @@
     }
   });
   new MutationObserver(() => {
+    syncTopicGuard();
+    // document_start can run before <html> exists. Arm the initial Home guard
+    // as soon as the parser creates it, before native cards can paint.
+    if (!settings && isHome() && !document.documentElement?.hasAttribute('data-intent-home-pending')) armHomePending(true);
     if (settings && !tabPaused) {filterShortsNavigation(); if (isShortsPage()) shortsGate();}
     schedule();
-  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href']});
+  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href', 'hidden', 'page-subtype']});
   function navigationDestination(event) {
     const detail = event.detail || {};
     const value = detail.url || detail.endpoint?.commandMetadata?.webCommandMetadata?.url || detail.navigationData?.endpoint?.commandMetadata?.webCommandMetadata?.url;
@@ -263,12 +281,13 @@
     else clearHomePending();
   });
   document.addEventListener('yt-navigate-finish', () => {
+    syncTopicGuard();
     if (pending) {clearTimeout(pending); pending = null;}
     scan();
     // Navigation has settled: unsupported layouts keep their native content.
     if (settings && (!isHome() || !homeFeed?.host?.isConnected)) clearHomePending();
   });
-  window.addEventListener('popstate', () => {if (isHome()) armHomePending(); else clearHomePending(); schedule();});
+  window.addEventListener('popstate', () => {syncTopicGuard(); if (isHome()) armHomePending(); else clearHomePending(); schedule();});
   if (isHome()) armHomePending(true);
   document.addEventListener('intent-feed-state-change', schedule);
   window.addEventListener('resize', schedule, {passive: true});

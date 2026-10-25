@@ -25,9 +25,13 @@
     sync(settings, active) {
       if (!active || settings.mode === 'off') { this.destroy(); return; }
       this.settings = settings;
+      const renderers = [...document.querySelectorAll(this.surface === 'watch' ? 'ytd-watch-flexy' : 'ytd-browse')]
+        .filter(node => !node.closest('[hidden]') && getComputedStyle(node).display !== 'none');
+      const renderer = this.surface === 'watch' ? renderers[0]
+        : renderers.find(node => node.getAttribute('page-subtype') === 'home') || renderers.find(node => !node.hasAttribute('page-subtype'));
       const primary = this.surface === 'watch'
-        ? document.querySelector('ytd-watch-flexy:not([hidden]) #secondary #related,ytd-watch-flexy:not([hidden]) #below #related,ytd-watch-flexy:not([hidden]) #related')
-        : document.querySelector('ytd-browse[page-subtype="home"] #primary,ytd-browse:not([hidden]) #primary');
+        ? renderer?.querySelector('#secondary #related') || renderer?.querySelector('#below #related') || renderer?.querySelector('#related')
+        : renderer?.querySelector('#primary');
       if (!primary) { this.destroy(); return; }
       if (!this.host) this.create();
       if (this.host.parentElement !== primary) {
