@@ -1,11 +1,11 @@
 (() => {
   const C = IntentCore;
-  let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false;
+  let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false, settingsRevision = 0;
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
   const toolbar = window.top === window ? new IntentToolbar(chrome.runtime, {
-    onSettings: value => { applySettings(value); schedule(); },
-    onPaused: value => { setTabPaused(value); schedule(); },
+    onSettings: value => { settingsRevision++; applySettings(value); schedule(); },
+    onPaused: value => { settingsRevision++; setTabPaused(value); schedule(); },
     onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
   }) : null;
   const SHORT_ITEMS = 'ytd-reel-item-renderer,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2';
@@ -232,10 +232,15 @@
   async function heartbeat() {
     if (running) return;
     running = true;
+    const revision = settingsRevision;
     try {
       const playing = !tabPaused && [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && m.readyState > 1);
       const state = await chrome.runtime.sendMessage({type: 'HEARTBEAT', playing, ...(window.top === window ? {appearance: IntentHome.theme()} : {})});
       if (state?.ok) {
+        // A popup/toolbar change can arrive while an earlier snapshot is in flight.
+        // Never let that older response undo a newer pause or intent selection.
+        if (revision !== settingsRevision) return;
+        toolbar?.updateTimer?.(state);
         if (tabPaused !== (state.tabPaused === true)) {setTabPaused(state.tabPaused); schedule();}
         if (JSON.stringify(settings) !== JSON.stringify(state.settings)) { applySettings(state.settings); schedule(); }
         if (state.blocked) {
@@ -244,14 +249,16 @@
         }
       }
     } catch { /* Reloading an unpacked extension invalidates old scripts; refresh YouTube. */ }
-    finally { running = false; }
+    finally { running = false; if (revision !== settingsRevision) queueMicrotask(heartbeat); }
   }
   chrome.runtime.onMessage.addListener(message => {
     if (message.type === 'SETTINGS') {
+      settingsRevision++;
       if (message.reset) {homeFeed?.destroy(); watchFeed?.destroy();}
       setTabPaused(message.tabPaused);
       applySettings(message.settings);
       if (tabPaused || !settings.hideShorts) {filterShortsNavigation(); restoreShortsGate();}
+      heartbeat();
       schedule();
     }
   });

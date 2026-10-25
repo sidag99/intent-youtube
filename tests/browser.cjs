@@ -95,7 +95,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await popup.locator('a.all-settings').count(),1,'the popup has one clear Settings link');
   await popup.screenshot({path:path.join(shots,'intent-popup.png'),fullPage:true});
   const yt=await context.newPage();yt.on('pageerror',e=>errors.push(e.message));
-  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html><head><meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-masthead{display:flex;height:56px;padding:0 16px;align-items:center;gap:24px}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}ytd-browse{display:block}#primary{width:100%;margin:0}ytd-rich-item-renderer{display:block}</style></head><body><ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form><button id="voice-search-button" aria-label="Search with your voice">Mic</button></div><div id="end">Account</div></ytd-masthead><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf"><h2>Shorts</h2><ytm-shorts-lockup-view-model id="native-short"><a href="/shorts/m0000000096"><h3>Quiet jazz music short</h3></a></ytm-shorts-lockup-view-model></ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
+  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><script>var ytcfg={set:function(value){this.data_=value}};ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"DE"}}});</script><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-masthead{display:flex;height:56px;padding:0 16px;align-items:center;gap:24px}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}ytd-browse{display:block}#primary{width:100%;margin:0}ytd-rich-item-renderer{display:block}</style></head><body><ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form><button id="voice-search-button" aria-label="Search with your voice">Mic</button></div><div id="end">Account</div></ytd-masthead><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf"><h2>Shorts</h2><ytm-shorts-lockup-view-model id="native-short"><a href="/shorts/m0000000096"><h3>Quiet jazz music short</h3></a></ytm-shorts-lockup-view-model></ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
   await yt.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#d8dfc8"/><circle cx="490" cy="230" r="160" fill="#c0cdae"/><path d="M60 240h220M60 190h150" stroke="#718465" stroke-width="12" stroke-linecap="round"/></svg>'}));
   await yt.route('https://extension.test/icons/**',route=>route.fulfill({path:root+'/icons/128.png'}));
   await yt.goto('https://www.youtube.com/');
@@ -103,7 +103,7 @@ async function chooseMode(toolbar, mode, customName) {
   for (const file of ['core.js','feed.js','feed-theme.js','home.js','toolbar.js']) await yt.addScriptTag({path:root+'/src/'+file});
   await yt.evaluate(()=>{
     window.testSettings={...IntentCore.defaults(),mode:'music'};window.testHandlers=[];window.testRequests=[];window.testFail=false;window.testDelayWork=false;
-    const make=(mode,n)=>({id:mode[0]+String(n).padStart(10,'0'),title:mode==='work'?`Python programming lesson ${n+1}`:mode==='study'?`Physics lecture ${n+1}`:`Quiet jazz music ${n+1}`,channel:'Studio North',description:'',duration:'12:40',metadata:'Illustrative video',thumbnail:'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',shorts:false});
+    const make=(mode,n)=>({id:mode[0]+String(n).padStart(10,'0'),title:mode==='work'?`Python programming lesson ${n+1}`:mode==='study'?`Physics lecture ${n+1}`:`Quiet jazz music ${n+1}`,channel:'Studio North',description:'',duration:'12:40',metadata:'3.9M views · 2 years ago',thumbnail:'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',shorts:false});
     window.chrome={runtime:{id:'test',getURL:s=>'https://extension.test/'+s,onMessage:{addListener:fn=>testHandlers.push(fn)},sendMessage:async message=>{
       if(message.type==='SET_MODE'){testSettings.mode=message.mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));}
       if(message.type!=='GET_FEED')return {ok:true,settings:testSettings,blocked:false};
@@ -111,7 +111,7 @@ async function chooseMode(toolbar, mode, customName) {
       if(testFail)return {ok:false,error:'YouTube search unavailable'};
       if(settings.mode==='work'&&testDelayWork)await new Promise(resolve=>setTimeout(resolve,300));
       const videos=Array.from({length:12},(_,n)=>make(settings.mode,n+message.cursor*12));
-      return {ok:true,key:IntentFeed.key(settings),items:[...videos,videos[0],{...make('work',99),title:'You won’t believe this Python music!!!'},{...make('work',98),title:'Cooking recipe'},...Array.from({length:8},(_,n)=>({...make('music',90+n),shorts:true}))],nextCursor:message.cursor+2,hasMore:message.cursor<2,warning:'',metadataStats:{limit:settings.metadataLimit,checked:4,requests:2,cacheHits:2,sharedRequests:0,failed:0,remaining:1}};
+      return {ok:true,key:message.key,items:[...videos,videos[0],{...make('work',99),title:'You won’t believe this Python music!!!'},{...make('work',98),title:'Cooking recipe'},...Array.from({length:8},(_,n)=>({...make('music',90+n),shorts:true}))],nextCursor:message.cursor+2,hasMore:message.cursor<2,warning:'',metadataStats:{limit:settings.metadataLimit,checked:4,requests:2,cacheHits:2,sharedRequests:0,failed:0,remaining:1}};
     }}};
     window.setTestMode=mode=>{testSettings.mode=mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));};
   });
@@ -121,6 +121,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await yt.locator('#music').isVisible(),false,'the native feed is replaced, not left with gaps');
   const feed=yt.locator('#intent-home-feed'),toolbar=yt.locator('#intent-toolbar');
   await toolbar.waitFor();
+  assert.equal(await toolbar.locator('svg.logo').count(),1);assert.equal(await toolbar.locator('.logo').evaluate(el=>el.getAttribute('viewBox')==='0 0 128 128'&&!el.hasAttribute('src')&&!el.querySelector('[href],[src]')),true,'the original brand uses inline geometry without cross-origin image loads');
   assert.equal(await yt.locator('ytd-masthead #center #intent-toolbar').count(),1,'intent controls live beside the search form');
   assert.equal(await yt.evaluate(()=>{const toolbar=document.querySelector('#intent-toolbar'),search=document.querySelector('#search'),mic=document.querySelector('#voice-search-button');return toolbar.nextElementSibling===search&&search.nextElementSibling===mic&&toolbar.getBoundingClientRect().right<=search.getBoundingClientRect().left;}),true,'Intent sits to the left of search while native search and microphone remain grouped');
   assert.equal(await feed.locator('header').isVisible(),false,'there is no separate intent banner above the feed');
@@ -130,6 +131,8 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await feed.locator('.card').count(),12);
   assert.match(await feed.locator('.status').textContent(),/2 extra video-page requests/);
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.includes('jazz music')));
+  assert.equal(await feed.locator('.meta').first().innerText(),'3.9M views · 2 years ago','Home preserves the view-count format supplied for the selected YouTube language and region');
+  assert.deepEqual(await yt.evaluate(()=>testRequests[0].locale),{hl:'en-GB',gl:'DE'},'the feed reads the native YouTube bootstrap language and region');
   const boxes=await feed.locator('.card').evaluateAll(cards=>cards.map(c=>{const r=c.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width};}));
   const firstRow=boxes.filter(r=>r.y===boxes[0].y);assert.ok(firstRow.length>=3);
   const gap=await feed.locator('.first-grid').evaluate(el=>parseFloat(getComputedStyle(el).columnGap));
@@ -204,7 +207,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.evaluate(()=>{testFail=true;});await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
   await feed.getByRole('heading',{name:'Your feed couldn’t load.'}).waitFor();
   await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.filterState==='unavailable');
-  assert.equal(await toolbar.getByText('Unavailable',{exact:true}).isVisible(),true);
+  assert.equal(await toolbar.locator('.compact-state').textContent(),'Unavailable');assert.equal(await toolbar.locator('.compact-state').isVisible(),true);
   assert.equal(await feed.locator('.card').count(),0);assert.equal(await yt.locator('#music').isVisible(),false);
   assert.ok(await feed.getByRole('link',{name:'Open this topic on YouTube search'}).isVisible());
   await yt.evaluate(()=>{testFail=false;setTestMode('off');});
@@ -223,7 +226,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.evaluate(()=>{history.pushState({},'', '/results?search_query=python');document.querySelector('ytd-browse').setAttribute('page-subtype','search');setTestMode('work');document.dispatchEvent(new Event('yt-navigate-finish'));const card=document.createElement('yt-lockup-view-model');card.id='lazy';card.innerHTML='<h3>You won’t believe this programming trick!!!</h3>';document.querySelector('#primary').append(card);});
   await yt.locator('#lazy[data-intent-hidden]').waitFor({state:'attached'});
   await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.filterState==='off-here');
-  assert.equal(await toolbar.getByText('Off here',{exact:true}).isVisible(),true,'search results clearly say intent filtering is off here');
+  assert.equal(await toolbar.locator('.compact-state').textContent(),'Off here');assert.equal(await toolbar.locator('.compact-state').isVisible(),true,'search results clearly say intent filtering is off here');
   assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'work','the selected intent is saved while search filtering is off');
   assert.equal(await yt.locator('#work').isVisible(),true);
   // The same SPA now opens a video. Replace only recommendations, preserving the player and chat.
@@ -240,6 +243,11 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await yt.locator('#chat').isVisible(),true);
   assert.equal(await yt.locator('#intent-home-feed').count(),0);
   assert.equal(await watchFeed.locator('[data-video-id="w0000000000"]').count(),0,'the current video is never recommended');
+  assert.equal(await watchFeed.locator('.meta').first().innerText(),'3.9M views · 2 years ago');
+  await yt.evaluate(()=>{document.querySelector('ytd-watch-flexy').style.gridTemplateColumns='minmax(0,1fr) 330px';document.querySelector('#secondary').style.width='330px';});
+  const compactWatch=await watchFeed.locator('.card').first().evaluate(card=>{const thumb=card.querySelector('.cover').getBoundingClientRect(),title=card.querySelector('.title').getBoundingClientRect();return{width:thumb.width,gap:title.x-thumb.right};});
+  assert.ok(Math.abs(compactWatch.width-168)<1&&compactWatch.gap>=6,'a narrow recommendation sidebar retains YouTube-sized thumbnails instead of shrinking them to 42%');
+  await yt.evaluate(()=>{document.querySelector('ytd-watch-flexy').style.gridTemplateColumns='';document.querySelector('#secondary').style.width='';});
   assert.ok(await yt.evaluate(()=>testRequests.at(-1).exclude.includes('w0000000000')),'each batch excludes the current video');
   const recBoxes=await watchFeed.locator('.card').evaluateAll(cards=>cards.slice(0,4).map(c=>{const r=c.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height};}));
   assert.ok(recBoxes.every(r=>Math.abs(r.x-recBoxes[0].x)<1),'watch recommendations form one compact column');

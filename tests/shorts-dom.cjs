@@ -135,6 +135,8 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
     assert.equal(await page.locator('#late-home').isVisible(), false, 'CSS also covers native cards inserted after the scan');
     await page.evaluate(() => setTestSettings({mode: 'off'}));
     assert.equal(await page.locator('#incoming-home').isVisible(), true, 'manual Off restores the pending native Home immediately');
+    // Work starts an asynchronous accounting refresh; Pause arrives before its
+    // older unpaused snapshot resolves. That response must not undo the pause.
     await page.evaluate(() => {
       setTestSettings({mode: 'work'});
       document.dispatchEvent(new CustomEvent('yt-navigate-start', {detail: {endpoint: {commandMetadata: {webCommandMetadata: {url: '/'}}}}}));

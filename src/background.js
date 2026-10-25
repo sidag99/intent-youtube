@@ -14,7 +14,7 @@ async function classifyLocally(videos, settings) {
   if (!result?.ok || !Array.isArray(result.decisions) || result.decisions.length !== videos.length) throw new Error(result?.error || 'The bundled topic model did not return a valid decision.');
   return result.decisions;
 }
-let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock;
+let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock, timerReminderHistory;
 let feedRevision = 0;
 const tabFeedRevisions = new Map();
 let queue = Promise.resolve();
@@ -106,13 +106,16 @@ function stateFor(tabId, now = Date.now()) {
   const effective = effectiveSettings(tabId), base = C.snapshot(effective, days, now);
   const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
   const timerExempt = tabPaused || !countsMode(effective.mode);
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId};
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId,
+    timerDay: C.dayKey(now), timerUpdatedAt: now, timerRunning: !base.blocked && tracker?.counting === true,
+    tabCounting: !base.blocked && !timerExempt && tracker?.counting === true && (tracker.countingTabs || []).includes(tabId)};
 }
 async function initialize() {
   if (!initialized) initialized = (async () => {
     await chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'});
-    const data = await chrome.storage.local.get(['settings', 'days', 'appearance']);
+    const data = await chrome.storage.local.get(['settings', 'days', 'appearance', 'timerReminderHistory']);
     settings = C.sanitize(data.settings); days = data.days || {};
+    timerReminderHistory = data.timerReminderHistory && typeof data.timerReminderHistory === 'object' && !Array.isArray(data.timerReminderHistory) ? data.timerReminderHistory : {};
     appearance = ['light', 'dark'].includes(data.appearance) ? data.appearance : undefined;
     const session = await chrome.storage.session.get(['tracker', 'tabModes', 'pausedTabs']);
     tracker = session.tracker || {lastAt: Date.now(), counting: false};
@@ -231,13 +234,30 @@ async function tick(message = {}, sender = {}) {
   const state = stateFor(targetTabId, now);
   const youtubeTabs = tabs.filter(hasYouTubeURL);
   const eligible = youtubeTabs.filter(tab => !pausedTabs[tab.id] && countsMode(ensureMode(tab.id)));
-  const foreground = idle === 'active' && focused.focused && eligible.some(tab => tab.active && tab.windowId === focused.id);
-  const playing = settings.countPlayback && eligible.some(tab => tab.audible || [...(reports.get(tab.id)?.values() || [])].some(report => report.playing));
-  tracker = {lastAt: now, counting: !state.budgetExhausted && idle !== 'locked' && Boolean(foreground || playing)};
+  const countingTabs = !state.budgetExhausted && idle !== 'locked' ? eligible.filter(tab =>
+    idle === 'active' && focused.focused && tab.active && tab.windowId === focused.id ||
+    settings.countPlayback && (tab.audible || [...(reports.get(tab.id)?.values() || [])].some(report => report.playing))
+  ).map(tab => tab.id) : [];
+  tracker = {lastAt: now, counting: countingTabs.length > 0, countingTabs};
   await chrome.storage.local.set({days});
   await chrome.storage.session.set({tracker, tabModes, pausedTabs});
   await applyBlock(state.budgetExhausted, tabs);
-  return state;
+  const result = stateFor(targetTabId, now);
+  // Deliver optional reminders only to a foreground tab that is actually counted.
+  // The serialized queue and persisted daily history deduplicate tabs/reloads.
+  const target = tabs.find(tab => tab.id === targetTabId);
+  if (message.type === 'HEARTBEAT' && senderScoped && C.isYouTube(sender.url || sender.tab.url) && settings.timerReminders && settings.limitEnabled &&
+      result.tabCounting && result.remainingMs > 0 && target?.active && focused.focused && target.windowId === focused.id) {
+    const level = result.remainingMs <= 120000 ? 2 : result.remainingMs <= 600000 ? 10 : null;
+    const seen = Array.isArray(timerReminderHistory[result.timerDay]) ? timerReminderHistory[result.timerDay] : [];
+    if (level && !seen.includes(level)) {
+      timerReminderHistory[result.timerDay] = [...new Set([...seen, 10, ...(level === 2 ? [2] : [])])];
+      timerReminderHistory = Object.fromEntries(Object.keys(timerReminderHistory).filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day)).sort().slice(-14).map(day => [day, timerReminderHistory[day]]));
+      await chrome.storage.local.set({timerReminderHistory});
+      result.timerReminder = level;
+    }
+  }
+  return result;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === 'GET_PREVIEW') {
@@ -254,17 +274,18 @@ async function feedRequest(message, sender) {
   const url = new URL(sender.url || 'https://invalid.test/');
   const currentVideo = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
   if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || !(url.pathname === '/' || currentVideo) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
+  const locale = IntentFeed.normalizeLocale(message.locale);
   const state = await serial(() => tick({}, sender));
   if (!Number.isInteger(state.tabId)) return {ok: true, stale: true};
   if (state.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (state.blocked) return {ok: true, blocked: true};
-  if (message.key !== IntentFeed.key(state.settings)) return {ok: true, stale: true};
+  if (message.key !== IntentFeed.key(state.settings, locale)) return {ok: true, stale: true};
   const revision = feedRevision;
   const tabRevision = tabFeedRevisions.get(sender.tab.id) || 0;
-  const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id));
+  const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale);
   const exclude = currentVideo ? [currentVideo, ...(Array.isArray(message.exclude) ? message.exclude : [])] : message.exclude;
   let result;
-  try { result = await feedService.get(state.settings, {...message, exclude, isActive, preview: false}); }
+  try { result = await feedService.get(state.settings, {...message, locale, exclude, isActive, preview: false}); }
   catch (error) {
     if (pausedTabs[sender.tab.id]) return {ok: true, paused: true, tabPaused: true};
     if (!isActive()) return {ok: true, stale: true};
@@ -274,7 +295,7 @@ async function feedRequest(message, sender) {
   const current = stateFor(sender.tab.id);
   if (current.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (current.blocked) return {ok: true, blocked: true};
-  if (!isActive() || result.key !== IntentFeed.key(current.settings)) return {ok: true, stale: true};
+  if (!isActive() || result.key !== IntentFeed.key(current.settings, locale)) return {ok: true, stale: true};
   return {ok: true, ...result};
 }
 async function previewRequest(message, sender) {

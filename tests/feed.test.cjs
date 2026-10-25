@@ -289,3 +289,63 @@ test('normal feeds keep distraction filtering and do not include preview-only re
   const normal = await service.get(C.defaults());
   assert.deepEqual(normal.items.map(video => video.id), ['abcdefghijk']); assert.equal(normal.previewItems, undefined);
 });
+
+
+test('locale codes are bounded, canonical and restricted to public language/region parameters', () => {
+  assert.deepEqual(F.normalizeLocale(), {hl: 'en'});
+  assert.deepEqual(F.normalizeLocale({hl: 'EN-gb', gl: 'gb'}), {hl: 'en-GB', gl: 'GB'});
+  assert.deepEqual(F.normalizeLocale({hl: 'en-in', gl: 'in', url: 'https://evil.example/'}), {hl: 'en-IN', gl: 'IN'});
+  assert.deepEqual(F.normalizeLocale({hl: 'zh-hant', gl: 'tw'}), {hl: 'zh-Hant', gl: 'TW'});
+  for (const hl of ['', null, true, 'en&gl=IN', 'en_US', 'a'.repeat(100), 'en-invalid-toolongsubtag']) assert.equal(F.normalizeLocale({hl}).hl, 'en');
+  for (const gl of ['', null, true, 'IND', 'IN&hl=hi', '../', '123']) assert.equal(F.normalizeLocale({gl}).gl, undefined);
+  assert.equal(F.key(C.defaults()), F.key(C.defaults(), {hl: 'en'}), 'old callers and English page fallbacks share one key');
+  assert.notEqual(F.key(C.defaults(), {hl: 'en-GB', gl: 'GB'}), F.key(C.defaults(), {hl: 'en-IN', gl: 'IN'}));
+});
+const localeDocument = (lang, texts) => ({documentElement: {lang}, scripts: texts.map(textContent => ({textContent}))});
+test('YouTube locale is read from bootstrap JSON without executing scripts and falls back to the document language', () => {
+  const escaped = 'globalThis.localeScriptExecuted = true; ytcfg.set(' + JSON.stringify({HL: 'en', GL: 'US', text: 'brace } and escaped " quote'}) + ');';
+  assert.deepEqual(F.pageLocale(localeDocument('de', [escaped])), {hl: 'en', gl: 'US'}, 'quoted braces and escaped quotes are balanced as JSON');
+  const doc = localeDocument('de', [escaped,
+    'ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"GB"}},"HL":"hi","GL":"IN"});'
+  ]);
+  assert.deepEqual(F.pageLocale(doc), {hl: 'en-GB', gl: 'GB'});
+  assert.equal(globalThis.localeScriptExecuted, undefined);
+  assert.deepEqual(F.pageLocale(localeDocument('en-IN', ['ytcfg.set({"HL":"en-IN","GL":"IN"});'])), {hl: 'en-IN', gl: 'IN'});
+  assert.deepEqual(F.pageLocale(localeDocument('de-DE', ['ytcfg.set({notJSON: true}); ytcfg.set({"GL":"DE"});'])), {hl: 'de-DE', gl: 'DE'});
+  assert.deepEqual(F.pageLocale(localeDocument('fr', ['ytcfg.set({"HL":"en&gl=IN","GL":"IN/US"});'])), {hl: 'fr'});
+  assert.deepEqual(F.pageLocale(localeDocument('ja', [])), {hl: 'ja'});
+  assert.deepEqual(F.pageLocale(undefined), {hl: 'en'});
+});
+test('search requests follow the native YouTube locale and isolate regional search caches without extra requests', async () => {
+  const calls = [];
+  const service = F.createService({fetcher: async (url, options) => {
+    calls.push({url, options});
+    const region = new URL(url).searchParams.get('gl');
+    const viewText = region === 'IN' ? '39 lakh views' : region === 'DE' ? '3,9 Mio. Aufrufe' : '3.9M views';
+    return {ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python programming', {shortViewCountText: {simpleText: viewText}, publishedTimeText: {simpleText: '2 years ago'}, lengthText: {simpleText: '12:35'}})])};
+  }});
+  const settings = C.defaults(), british = {hl: 'en-GB', gl: 'GB'}, indian = {hl: 'en-IN', gl: 'IN'}, german = {hl: 'de', gl: 'DE'};
+  const gb = await service.get(settings, {locale: british});
+  assert.equal(calls.length, 2); assert.equal(gb.items[0].metadata, '3.9M views · 2 years ago'); assert.equal(gb.key, F.key(settings, british));
+  await service.get(settings, {locale: british}); assert.equal(calls.length, 2, 'the same locale reuses both searches');
+  const india = await service.get(settings, {locale: indian});
+  assert.equal(calls.length, 4); assert.equal(india.items[0].metadata, '39 lakh views · 2 years ago', 'regional units stay exactly as YouTube returned them');
+  assert.equal(india.items[0].duration, '12:35'); assert.equal(india.key, F.key(settings, indian));
+  const de = await service.get(settings, {locale: german});
+  assert.equal(calls.length, 6); assert.equal(de.items[0].metadata, '3,9 Mio. Aufrufe · 2 years ago');
+  await service.get(settings, {locale: british}); assert.equal(calls.length, 6, 'a different region does not evict or overwrite a warm locale');
+  for (const [i, locale] of [british, indian, german].entries()) for (const call of calls.slice(i * 2, i * 2 + 2)) {
+    const url = new URL(call.url); assert.equal(url.origin, 'https://www.youtube.com'); assert.equal(url.pathname, '/results');
+    assert.equal(url.searchParams.get('hl'), locale.hl); assert.equal(url.searchParams.get('gl'), locale.gl); assert.equal(call.options.credentials, 'omit');
+  }
+});
+test('simultaneous searches share requests within a locale and do not share results across locales', async () => {
+  let calls = 0, release;
+  const gate = new Promise(resolve => {release = resolve;});
+  const service = F.createService({fetcher: async url => {calls++; await gate; return {ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python programming', {viewCountText: {simpleText: new URL(url).searchParams.get('gl') === 'IN' ? '2.6 crore views' : '26M views'}})])};}});
+  const british = {locale: {hl: 'en-GB', gl: 'GB'}}, indian = {locale: {hl: 'en-IN', gl: 'IN'}};
+  const pending = [service.get(C.defaults(), british), service.get(C.defaults(), british), service.get(C.defaults(), indian)];
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(calls, 4, 'two locale contexts each make only their normal two search requests');
+  release(); const [gb, duplicate, india] = await Promise.all(pending);
+  assert.equal(gb.items[0].metadata, '26M views'); assert.deepEqual(duplicate.items, gb.items); assert.equal(india.items[0].metadata, '2.6 crore views');
+});

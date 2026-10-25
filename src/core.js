@@ -5,6 +5,11 @@
     study: {name: 'Study', symbol: '↗', description: 'Make room for a new idea.', topics: ['lecture', 'lesson', 'course', 'tutorial', 'learn', 'explained', 'education', 'math', 'calculus', 'physics', 'chemistry', 'biology', 'history', 'science', 'language', 'university', 'exam', 'study', 'algebra', 'statistics', 'philosophy', 'documentary']},
     music: {name: 'Music', symbol: '♫', description: 'Find your rhythm.', topics: ['music', 'song', 'album', 'playlist', 'lofi', 'lo-fi', 'jazz', 'piano', 'guitar', 'ambient', 'soundtrack', 'symphony', 'concert', 'orchestra', 'acoustic', 'beats', 'chillhop', 'classical', 'dj set', 'live set', 'lyrics', 'official audio', 'official video', 'synth', 'bossa nova']},
   };
+  const MODE_ICONS = Object.freeze({
+    work: '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 12c5 3 11 3 16 0M12 12v3"/>',
+    study: '<path d="M12 6C9 3 5 3 2 4v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-3-1-7-1-10 2v14"/>',
+    music: '<path d="M5 13v-2a7 7 0 0 1 14 0v2"/><rect x="3" y="11" width="4" height="9" rx="2"/><rect x="17" y="11" width="4" height="9" rx="2"/>',
+  });
   const MAX_CUSTOM_INTENTS = 24;
   const INTENT_ICONS = Object.freeze({code: '⌘', book: '▤', music: '♫', compass: '◈', game: '♟', film: '▣', tools: '⚒', sparkles: '✦', news: '▥', plane: '✈', food: '♨', fitness: '⚡', palette: '◉', camera: '▧', language: '文', science: '⚛', history: '⌛', finance: '¤', leaf: '❧', heart: '♡'});
   const INTENT_TEMPLATES = Object.freeze(Object.fromEntries(Object.entries({
@@ -81,7 +86,7 @@
     const definitions = {...builtins, ...custom};
     return Object.fromEntries(orderIds(Object.keys(definitions), settings.intentOrder).map(id => [id, definitions[id]]));
   }
-  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
+  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, timerReminders: false, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
   function sanitize(input = {}) {
     const out = defaults();
     out.rolePresets = roleRecords(input.rolePresets);
@@ -95,7 +100,7 @@
     if (input.newTabMode === 'last' || validMode(input.newTabMode, out)) out.newTabMode = input.newTabMode;
     else if (input.newTabMode === 'leisure') out.newTabMode = 'work';
     for (const mode of [...ids, 'off']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
-    for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback']) if (typeof input[key] === 'boolean') out[key] = input[key];
+    for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback', 'timerReminders']) if (typeof input[key] === 'boolean') out[key] = input[key];
     if (Number.isFinite(Number(input.dailyMinutes))) out.dailyMinutes = Math.max(1, Math.min(1440, Math.round(Number(input.dailyMinutes))));
     if ((typeof input.metadataLimit === 'number' || typeof input.metadataLimit === 'string' && input.metadataLimit.trim()) && Number.isFinite(Number(input.metadataLimit))) out.metadataLimit = Math.max(0, Math.min(40, Math.round(Number(input.metadataLimit))));
     for (const field of ['customTopics', 'channels']) for (const mode of ids) out[field][mode] = String(input[field]?.[mode] || '').slice(0, 4000);
@@ -163,5 +168,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, MAX_CUSTOM_INTENTS, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, MAX_CUSTOM_INTENTS, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();

@@ -43,8 +43,9 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     const option = name => toolbar.getByRole('option', {name, exact: true});
     assert.equal(await toolbar.locator('select').count(), 0, 'the mode chooser has no native select outline');
     assert.equal(await trigger.getAttribute('data-mode'), 'work');
-    await toolbar.locator('.logo').evaluate(image => image.decode());
-    assert.equal(await toolbar.locator('.logo').getAttribute('src'), 'https://extension.test/icons/128.png', 'the original packaged logo is preserved');
+    assert.equal(await toolbar.locator('svg.logo circle').getAttribute('fill'), '#3b5b3f', 'the original green logo is preserved inline');
+    assert.equal(await toolbar.locator('svg.logo path').getAttribute('fill'), '#f3f5e6');
+    assert.equal(await toolbar.locator('.logo [href],.logo[src]').count(), 0, 'the toolbar logo requires no external extension-resource request');
     assert.equal(await page.evaluate(() => document.querySelector('#center').firstElementChild.id), 'intent-toolbar', 'toolbar stays left of the native search group');
     assert.equal(await page.evaluate(() => document.querySelector('#voice-search').previousElementSibling.tagName), 'YTD-SEARCHBOX', 'search and microphone remain grouped');
     // Mode names and coverage states occupy one stable slot, preserving the native search width.
@@ -118,7 +119,8 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
     assert.equal(await option('Work').getAttribute('aria-selected'), 'true');
     assert.equal(await option('Build things').count(), 1);
-    assert.ok((await option('Work').locator('.option-symbol').innerText()).trim(), 'each mode has its own visible icon');
+    assert.equal(await option('Work').locator('.option-symbol svg').count(),1,'built-in modes have their shared native-style SVG icon');
+    assert.equal(await page.evaluate(()=>Object.keys(IntentCore.MODE_ICONS).every(id=>{const expected=document.createElementNS('http://www.w3.org/2000/svg','svg');expected.innerHTML=IntentCore.MODE_ICONS[id];return toolbar.root.querySelector(`[role=option][data-mode="${id}"] .option-symbol svg`)?.innerHTML===expected.innerHTML;})),true,'toolbar built-in icons use the shared settings icon definitions');
     assert.equal(await option('Work').locator('.option-symbol').getAttribute('aria-hidden'), 'true');
     assert.equal(await toolbar.locator('#intent-mode-popover').evaluate(menu => menu.matches(':popover-open')), true, 'menu uses the top layer outside masthead clipping');
     const positions = await page.evaluate(() => {const host = document.querySelector('#intent-toolbar'), root = host.shadowRoot; const trigger = root.querySelector('#intent-mode-trigger').getBoundingClientRect(), menu = root.querySelector('#intent-mode-popover').getBoundingClientRect();return {triggerBottom: trigger.bottom, menuTop: menu.top, menuLeft: menu.left, menuRight: menu.right};});
@@ -221,7 +223,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await trigger.getAttribute('data-mode'), 'work', 'search coverage does not overwrite the saved tab intent');
     assert.equal(await trigger.getAttribute('data-filter-state'), 'off-here');
     assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Off here');
-    assert.equal(await toolbar.locator('.coverage-badge').isVisible(), true);
+    assert.equal(await toolbar.locator('.compact-state').isVisible(),true);assert.equal(await toolbar.locator('.compact-state').innerText(),'Off here','narrow layouts use the compact coverage label');
     assert.match(await trigger.getAttribute('title'), /filtering is off on search results/);
     assert.equal(await trigger.getAttribute('aria-describedby'), 'intent-filter-status');
     assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
@@ -257,6 +259,74 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await trigger.click(); await option('Work').click();
     await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'work');
     assert.equal(await toolbar.getAttribute('data-filter-state'), 'active', 'the retained Off control can re-enable filtering');
+    // The timer reflects explicit background accounting, independently of filtering coverage.
+    await page.setViewportSize({width:1440,height:900});
+    await page.evaluate(()=>{
+      window.timerBase={ok:true,settings:testSettings,usedMs:600000,remainingMs:3000000,timerDay:IntentCore.dayKey(),timerUpdatedAt:Date.now(),timerRunning:true,tabCounting:true,tabPaused:false,timerExempt:false,blocked:false};
+      window.setTimerState=patch=>toolbar.updateTimer({...timerBase,...patch,settings:{...testSettings,...patch.settings},timerUpdatedAt:Date.now()});
+      toolbar.sync(testSettings,true,{state:'off-here'});setTimerState({});
+    });
+    const clock=toolbar.getByRole('button',{name:'Daily YouTube timer',exact:true}),details=toolbar.locator('#intent-timer-popover');
+    assert.equal(await clock.getAttribute('data-timer-state'),'normal');assert.equal(await clock.getAttribute('data-tab-counting'),'true');
+    assert.equal(await clock.getAttribute('data-timer-running'),'true');assert.match(await toolbar.locator('.timer-value').innerText(),/50/);
+    assert.equal(await clock.locator('circle.timer-progress').count(),1);assert.equal(await clock.locator('circle.timer-progress').evaluate(el=>getComputedStyle(el).animationName),'none','the remaining-budget ring is static rather than animated');
+    assert.equal(await trigger.getAttribute('data-filter-state'),'off-here','search coverage can be off while its actual timer still counts');
+    await page.evaluate(()=>{toolbar.sync(testSettings,true,{state:'paused'});setTimerState({});});assert.equal(await clock.getAttribute('data-timer-state'),'normal','coverage alone cannot invent a paused accounting state');
+    await page.evaluate(()=>toolbar.sync(testSettings,true,{state:'off-here'}));
+    await clock.focus();await page.keyboard.press('Space');await toolbar.getByRole('dialog',{name:'YouTube timer details',exact:true}).waitFor();
+    assert.match(await toolbar.locator('#intent-timer-used').innerText(),/10/);assert.match(await toolbar.locator('#intent-timer-remaining').innerText(),/50/);
+    assert.match(await toolbar.locator('#intent-timer-context').innerText(),/counting|counts/i);
+    await page.screenshot({path:path.join(shots,'intent-toolbar-timer-light.png'),clip:{x:0,y:0,width:900,height:360}});
+    await trigger.click();assert.equal(await details.isVisible(),false);assert.equal(await trigger.getAttribute('aria-expanded'),'true','opening the mode menu closes timer details');
+    await clock.click();assert.equal(await trigger.getAttribute('aria-expanded'),'false');assert.equal(await details.isVisible(),true,'opening timer details closes the mode menu');
+    await page.evaluate(()=>{document.documentElement.setAttribute('dark','');toolbar.updateTheme();});
+    await page.screenshot({path:path.join(shots,'intent-toolbar-timer-dark.png'),clip:{x:0,y:0,width:900,height:360}});
+    await page.evaluate(()=>{document.documentElement.removeAttribute('dark');toolbar.updateTheme();});
+    await page.keyboard.press('Escape');assert.equal(await details.isVisible(),false);assert.equal(await clock.evaluate(el=>el.getRootNode().activeElement===el),true);
+    const runningColor=await clock.evaluate(el=>getComputedStyle(el).color);
+    await page.evaluate(()=>setTimerState({timerRunning:false,tabCounting:false}));const stoppedColor=await clock.evaluate(el=>getComputedStyle(el).color);assert.notEqual(stoppedColor,runningColor,'inactive normal time is muted');
+    await page.evaluate(()=>setTimerState({remainingMs:600000,timerRunning:false,tabCounting:false}));assert.notEqual(await clock.evaluate(el=>getComputedStyle(el).color),stoppedColor,'low time stays distinct even while not counting');
+    await page.evaluate(()=>setTimerState({timerRunning:true,tabCounting:false}));await clock.click();assert.match(await toolbar.locator('#intent-timer-context').innerText(),/another.*tab|other.*tab|elsewhere/i);await page.keyboard.press('Escape');
+    const timerGeometry=await page.evaluate(()=>{
+      const measurements=[];
+      for(const patch of [{remainingMs:3000000},{remainingMs:600000},{remainingMs:120000},{timerExempt:true,tabCounting:false},{tabPaused:true,timerExempt:true,tabCounting:false},{settings:{limitEnabled:false}},{remainingMs:86400000,usedMs:0,settings:{dailyMinutes:1440}}]){
+        setTimerState(patch);const host=toolbar.host.getBoundingClientRect(),search=document.querySelector('ytd-searchbox').getBoundingClientRect(),clock=toolbar.root.querySelector('#intent-timer');measurements.push({hostWidth:host.width,x:search.x,searchWidth:search.width,state:clock.dataset.timerState,value:toolbar.root.querySelector('.timer-value').innerText,color:getComputedStyle(clock).color,right:clock.getBoundingClientRect().right,hostRight:host.right});
+      }
+      return measurements;
+    });
+    assert.deepEqual(timerGeometry.map(row=>row.state),['normal','low','critical','exempt','paused','unlimited','normal']);
+    assert.ok(timerGeometry.every(row=>row.hostWidth===250&&Math.abs(row.x-timerGeometry[0].x)<.1&&Math.abs(row.searchWidth-timerGeometry[0].searchWidth)<.1&&row.right<=row.hostRight+.1),'all timer states and a 24-hour budget preserve search geometry');
+    assert.notEqual(timerGeometry[1].color,timerGeometry[0].color);assert.notEqual(timerGeometry[2].color,timerGeometry[1].color,'low and critical time have distinct readable colors');
+    assert.ok(timerGeometry.at(-1).value.length<=6,'large budgets use a compact label');
+    await page.evaluate(()=>setTimerState({remainingMs:600000}));await page.screenshot({path:path.join(shots,'intent-toolbar-timer-low.png'),clip:{x:0,y:0,width:900,height:150}});
+    await page.setViewportSize({width:390,height:844});
+    const narrowTimer=await page.evaluate(()=>{const rows=[];for(const remainingMs of [3000000,600000,120000,86400000]){setTimerState({remainingMs,settings:{dailyMinutes:1440}});const h=toolbar.host.getBoundingClientRect(),s=document.querySelector('ytd-searchbox').getBoundingClientRect();rows.push({host:h.width,x:s.x,width:s.width});}return rows;});
+    assert.ok(narrowTimer.every(row=>row.host===154&&row.x===narrowTimer[0].x&&row.width===narrowTimer[0].width));
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    const mobileStateLabels=await page.evaluate(()=>{const rows=[];for(const [mode,state]of [['work','paused'],['off','active']]){toolbar.sync({...testSettings,mode},true,{state});setTimerState({tabPaused:state==='paused',timerExempt:state==='paused'});const name=toolbar.modeName;rows.push({mode,state,text:name.textContent,width:name.clientWidth,needed:name.scrollWidth});}toolbar.sync(testSettings,true,{state:'off-here'});return rows;});
+    assert.ok(mobileStateLabels.every(row=>row.needed<=row.width+1),'Paused and Intent off remain readable in the fixed mobile slot: '+JSON.stringify(mobileStateLabels));
+    await page.evaluate(()=>setTimerState({remainingMs:120000}));await clock.click();
+    const timerNarrowBox=await details.boundingBox();assert.ok(timerNarrowBox.x>=8&&timerNarrowBox.x+timerNarrowBox.width<=382,'timer details fit the narrow viewport');
+    await page.screenshot({path:path.join(shots,'intent-toolbar-timer-narrow.png'),clip:{x:0,y:0,width:390,height:480}});await page.keyboard.press('Escape');
+    await page.setViewportSize({width:1440,height:900});
+    await page.locator('input[aria-label="Search"]').focus();
+    await page.evaluate(()=>setTimerState({remainingMs:600000,timerReminder:10,settings:{timerReminders:false}}));
+    assert.equal(await toolbar.locator('#intent-timer-reminder').isVisible(),false,'reminders are opt-in');
+    for(const patch of [{settings:{timerReminders:true,limitEnabled:false}},{settings:{timerReminders:true},timerExempt:true},{settings:{timerReminders:true},tabPaused:true}]){await page.evaluate(patch=>setTimerState({remainingMs:600000,timerReminder:10,...patch}),patch);assert.equal(await toolbar.locator('#intent-timer-reminder').isVisible(),false,'unlimited, exempt and paused snapshots never show budget reminders');}
+    await page.evaluate(()=>setTimerState({remainingMs:600000,timerReminder:10,settings:{timerReminders:true}}));
+    const reminder=toolbar.locator('#intent-timer-reminder');await reminder.waitFor();assert.equal(await reminder.getAttribute('role'),'status');assert.match(await reminder.innerText(),/10/);
+    assert.equal(await page.locator('input[aria-label="Search"]').evaluate(el=>document.activeElement===el),true,'quiet reminders never move focus');
+    assert.equal(await toolbar.getByRole('dialog').isVisible(),false,'reminders do not open a blocking dialog');
+    await reminder.getByRole('button',{name:'Dismiss timer reminder',exact:true}).click();await reminder.waitFor({state:'hidden'});
+    await page.evaluate(()=>setTimerState({remainingMs:600000,timerReminder:10,settings:{timerReminders:true}}));assert.equal(await reminder.isVisible(),false,'the same daily threshold is not repeated after dismissal');
+    await page.evaluate(()=>setTimerState({remainingMs:120000,timerReminder:2,settings:{timerReminders:true}}));await reminder.waitFor();assert.match(await reminder.innerText(),/2/);
+    await reminder.getByRole('button',{name:'Dismiss timer reminder',exact:true}).click();
+    const settingsCalls=await page.evaluate(()=>requests.filter(message=>message.type==='OPEN_SETTINGS').length);
+    await clock.click();await toolbar.getByRole('button',{name:'Timer settings',exact:true}).click();const shortcutResult=await page.evaluate(()=>({last:requests.at(-1)?.type,error:toolbar.error.textContent,timerOpen:toolbar.timerOpen,calls:requests.filter(message=>message.type==='OPEN_SETTINGS').length}));assert.equal(shortcutResult.last,'OPEN_SETTINGS',JSON.stringify(shortcutResult));assert.equal(shortcutResult.calls,settingsCalls+1);
+    await clock.focus();await page.keyboard.press('Space');await page.keyboard.press('Tab');
+    assert.equal(await toolbar.getByRole('button',{name:'Timer settings',exact:true}).evaluate(el=>el.getRootNode().activeElement===el),true,'keyboard focus stays inside timer details while moving to Settings');
+    await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>requests.filter(message=>message.type==='OPEN_SETTINGS').length),settingsCalls+2);
+    await page.keyboard.press('Escape');
     await page.evaluate(() => toolbar.sync(testSettings, false)); assert.equal(await toolbar.count(), 0);
     assert.equal(await page.locator('ytd-masthead').getAttribute('data-intent-toolbar'), null);
     await page.addStyleTag({path: path.join(root, 'src/content.css')});

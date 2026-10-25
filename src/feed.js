@@ -6,9 +6,18 @@
     study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained'],
     music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music'],
   };
-  function key(settings) {
+  function normalizeLocale(input) {
+    let hl = 'en';
+    const value = typeof input?.hl === 'string' ? input.hl.trim() : '';
+    if (value.length <= 35 && /^[a-z]{2,3}(?:-[a-z0-9]{1,8})*$/i.test(value)) {
+      try { hl = Intl.getCanonicalLocales(value)[0] || 'en'; } catch { /* Use the English fallback for malformed language tags. */ }
+    }
+    const gl = typeof input?.gl === 'string' ? input.gl.trim().toUpperCase() : '';
+    return {hl, ...(/^[A-Z]{2}$/.test(gl) ? {gl} : {})};
+  }
+  function key(settings, locale) {
     const s = C.sanitize(settings);
-    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode], s.intentDescriptions, s.customIntents, s.metadataLimit, s.intentNames]);
+    return JSON.stringify([s.mode, s.hideShorts, s.hideClickbait, s.blockedTerms, s.customTopics[s.mode], s.channels[s.mode], s.intentDescriptions, s.customIntents, s.metadataLimit, s.intentNames, normalizeLocale(locale)]);
   }
   function queries(settings, round = 0) {
     const s = C.sanitize(settings);
@@ -19,6 +28,46 @@
     const start = (Math.max(0, Math.trunc(Number(round) || 0)) * 2) % all.length;
     return [...all.slice(start), ...all.slice(0, start)];
   }
+  function jsonObjectAt(text, start) {
+    if (text[start] !== '{') return null;
+    let depth = 0, quoted = false, escaped = false;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === '"') quoted = false;
+      } else if (c === '"') quoted = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+    return null;
+  }
+  function pageLocale(doc) {
+    const locale = {hl: doc?.documentElement?.lang || 'en'};
+    // Read public bootstrap JSON in the content script's isolated world. Never
+    // execute page scripts or access YouTube's account/cookie state.
+    const scripts = doc?.scripts || doc?.querySelectorAll?.('script') || [];
+    let inspected = 0;
+    for (const script of Array.from(scripts).slice(0, 200)) {
+      const text = script.textContent || '';
+      if (text.length > 8000000 || (inspected += text.length) > 8000000) continue;
+      const assignments = /\bytcfg\s*\.\s*set\s*\(\s*/g;
+      let match;
+      while ((match = assignments.exec(text))) {
+        const config = jsonObjectAt(text, assignments.lastIndex);
+        if (!config) continue;
+        const client = config.INNERTUBE_CONTEXT?.client;
+        const hl = typeof client?.hl === 'string' ? client.hl : config.HL;
+        const gl = typeof client?.gl === 'string' ? client.gl : config.GL;
+        if (typeof hl === 'string' && hl.length <= 35 && /^[a-z]{2,3}(?:-[a-z0-9]{1,8})*$/i.test(hl)) locale.hl = hl;
+        if (typeof gl === 'string' && /^[a-z]{2}$/i.test(gl)) locale.gl = gl;
+      }
+    }
+    return normalizeLocale(locale);
+  }
   function initialData(html, player = false) {
     if (typeof html !== 'string' || html.length > 8000000) throw new Error('YouTube returned an unreadable search page.');
     const assignments = player ? /(?:\b(?:var\s+)?ytInitialPlayerResponse\s*|window\s*\[\s*["']ytInitialPlayerResponse["']\s*\]\s*)=\s*/g : /(?:\b(?:var\s+)?ytInitialData\s*|window\s*\[\s*["']ytInitialData["']\s*\]\s*)=\s*/g;
@@ -26,19 +75,8 @@
     while ((match = assignments.exec(html))) {
       const start = assignments.lastIndex;
       if (html[start] !== '{') continue;
-      let depth = 0, quoted = false, escaped = false;
-      for (let i = start; i < html.length; i++) {
-        const c = html[i];
-        if (quoted) {
-          if (escaped) escaped = false;
-          else if (c === '\\') escaped = true;
-          else if (c === '"') quoted = false;
-        } else if (c === '"') quoted = true;
-        else if (c === '{') depth++;
-        else if (c === '}' && --depth === 0) {
-          try { return JSON.parse(html.slice(start, i + 1)); } catch { break; }
-        }
-      }
+      const parsed = jsonObjectAt(html, start);
+      if (parsed) return parsed;
     }
     throw new Error('YouTube did not return readable results. It may be asking for consent or limiting searches.');
   }
@@ -148,34 +186,36 @@
       }
       return bounded(job, deadline - now());
     }
-    async function search(query, fresh) {
-      const cached = cache.get(query);
+    async function search(query, fresh, locale) {
+      const context = normalizeLocale(locale), cacheKey = JSON.stringify([query, context.hl, context.gl || '']);
+      const cached = cache.get(cacheKey);
       if (!fresh && cached && now() - cached.at < 600000) return cached.items;
-      if (inflight.has(query)) return inflight.get(query);
+      if (inflight.has(cacheKey)) return inflight.get(cacheKey);
       const job = (async () => {
         const url = new URL('https://www.youtube.com/results');
-        url.searchParams.set('search_query', query); url.searchParams.set('hl', 'en');
+        url.searchParams.set('search_query', query); url.searchParams.set('hl', context.hl);
+        if (context.gl) url.searchParams.set('gl', context.gl);
         const response = await fetcher(url.href, {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(12000)});
         if (!response.ok) throw new Error(`YouTube search is unavailable (${response.status}). Try again shortly.`);
         if (response.url && new URL(response.url).hostname !== 'www.youtube.com') throw new Error('YouTube redirected this search to a consent or sign-in page. Open YouTube search and try again.');
         const items = extract(await response.text());
-        cache.delete(query); cache.set(query, {at: now(), items});
+        cache.delete(cacheKey); cache.set(cacheKey, {at: now(), items});
         while (cache.size > 32) cache.delete(cache.keys().next().value);
         return items;
       })();
-      inflight.set(query, job);
-      try { return await job; } finally { inflight.delete(query); }
+      inflight.set(cacheKey, job);
+      try { return await job; } finally { inflight.delete(cacheKey); }
     }
     async function get(settings, options = {}) {
       const ensureActive = () => {
         if (typeof options.isActive === 'function' && !options.isActive()) throw new Error('Intent is paused or this feed is no longer active.');
       };
       ensureActive();
-      const preview = options.preview === true;
+      const preview = options.preview === true, locale = normalizeLocale(options.locale);
       const s = C.sanitize(preview ? {...settings, metadataLimit: 0} : settings), pool = queries(s, options.round);
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const selected = pool.slice(cursor, cursor + 2);
-      const batches = await Promise.allSettled(selected.map(q => search(q, options.fresh === true)));
+      const batches = await Promise.allSettled(selected.map(q => search(q, options.fresh === true, locale)));
       ensureActive();
       const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);
       const items = [], seen = new Set(excluded);
@@ -200,7 +240,7 @@
         const previewItems = [...inspected.filter(item => item.accepted).slice(0, 8), ...inspected.filter(item => !item.accepted).slice(0, 4)];
         const seenIds = new Set(previewItems.map(item => item.video.id));
         for (const item of inspected) if (previewItems.length < 12 && !seenIds.has(item.video.id)) {previewItems.push(item); seenIds.add(item.video.id);}
-        return {key: key(s), previewItems, semantic: Boolean(judge), nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry the preview.' : ''};
+        return {key: key(s, locale), previewItems, semantic: Boolean(judge), nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry the preview.' : ''};
       }
       const uncertain = decisions.map((d, i) => d.uncertain ? i : -1).filter(i => i >= 0);
       const metadataStats = {limit: s.metadataLimit, uncertain: uncertain.length, checked: 0, requests: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: uncertain.length};
@@ -233,9 +273,9 @@
       }
       ensureActive();
       metadataStats.remaining = uncertain.length - metadataStats.checked;
-      return {key: key(s), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), metadataStats: {...metadataStats}, nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
+      return {key: key(s, locale), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), metadataStats: {...metadataStats}, nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
     }
     return {get};
   }
-  globalThis.IntentFeed = {key, queries, initialData, extract, createService, hashtags, watchMetadata};
+  globalThis.IntentFeed = {key, queries, initialData, extract, createService, hashtags, watchMetadata, normalizeLocale, pageLocale};
 })();

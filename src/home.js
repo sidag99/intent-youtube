@@ -6,7 +6,7 @@
       this.runtime = runtime; this.surface = surface === 'watch' ? 'watch' : 'home';
       this.nativeMarker = `data-intent-native-${this.surface}`;
       this.pageMarker = this.surface === 'watch' ? 'data-intent-watch-feed' : 'data-intent-feed';
-      this.generation = 0; this.signature = ''; this.items = []; this.round = 0; this.busy = false; this.nativeElements = new Set(); this.regularCards = [];
+      this.generation = 0; this.signature = ''; this.items = []; this.round = 0; this.busy = false; this.nativeElements = new Set(); this.spacingElements = new Set(); this.regularCards = [];
     }
     static theme() {
       const html = document.documentElement;
@@ -48,7 +48,9 @@
         if (columns >= 1 && columns <= 12) { this.host.style.setProperty('--intent-grid-columns', columns); this.host.dataset.nativeColumns = ''; }
         else { this.host.style.removeProperty('--intent-grid-columns'); delete this.host.dataset.nativeColumns; }
       }
+      else this.matchWatchThumbnail(primary);
       document.documentElement.setAttribute(this.pageMarker, '');
+      if (this.surface === 'home') this.collapseEmptySpacing(renderer, primary);
       for (const child of this.nativeElements) if (child.parentElement !== primary) {
         child.removeAttribute(this.nativeMarker); this.nativeElements.delete(child);
       }
@@ -56,10 +58,17 @@
         child.setAttribute(this.nativeMarker, ''); this.nativeElements.add(child);
         if (this.surface === 'home') child.querySelectorAll('video,audio').forEach(m => m.pause());
       }
-      const signature = F.key(settings);
+      // Bootstrap JSON can be large. Read it once per renderer/navigation rather
+      // than reparsing it on every coalesced DOM update.
+      const localeSource = `${location.href}\n${document.documentElement.lang}`;
+      if (!this.locale || this.localeSource !== localeSource || this.localeRenderer !== renderer) {
+        this.locale = F.pageLocale(document); this.localeSource = localeSource; this.localeRenderer = renderer;
+      }
+      const locale = this.locale;
+      const signature = F.key(settings, locale);
       const videoId = this.surface === 'watch' ? new URL(location.href).searchParams.get('v') || '' : '';
       if (signature !== this.signature || videoId !== this.videoId) {
-        this.signature = signature; this.videoId = videoId; this.round = 0; this.restart(false);
+        this.signature = signature; this.locale = locale; this.videoId = videoId; this.round = 0; this.restart(false);
       }
       this.layoutHome();
     }
@@ -95,6 +104,43 @@
       const note = document.createElement('p'); note.className = 'note'; note.textContent = 'Public YouTube searches, analysed locally using titles, available descriptions and hashtags. The topic model is bundled with Intent; this does not change your YouTube recommendation algorithm.';
       root.append(style, this.title, this.status, this.grid, this.shortShelf, this.restGrid, this.more, note);
     }
+    collapseEmptySpacing(renderer, primary) {
+      // YouTube sometimes removes the chip renderer but leaves its fixed-height
+      // wrappers behind. Only known, otherwise empty Home chrome can be collapsed.
+      const meaningful = node => {
+        if (node.nodeType === Node.TEXT_NODE) return Boolean(node.textContent.trim());
+        if (node.nodeType !== Node.ELEMENT_NODE) return false;
+        if (node.matches('[hidden],[aria-hidden="true"],script,style,template,ytd-feed-filter-chip-bar-renderer,yt-chip-cloud-renderer')) return false;
+        const style = getComputedStyle(node);
+        if ((style.display === 'none' && !node.hasAttribute('data-intent-empty-home-spacing')) || style.visibility === 'hidden') return false;
+        if (node.matches('img,video,audio,canvas,svg,iframe,button,input,select,textarea,a[href],[role="button"],[role="link"],[contenteditable="true"]')) return true;
+        return [...node.childNodes].some(meaningful);
+      };
+      const next = new Map();
+      for (const node of renderer.querySelectorAll('#header,#chips-wrapper,#chip-bar,#filter-chip-bar,#frosted-glass')) {
+        if (primary.contains(node) || node.contains(primary)) continue;
+        if (![...node.childNodes].some(meaningful)) next.set(node, 'data-intent-empty-home-spacing');
+      }
+      // The empty app-level glass is decorative. Retain the masthead portion,
+      // removing only the extra chip-bar layer rather than changing navigation.
+      for (const node of document.querySelectorAll('ytd-app > #frosted-glass.with-chipbar')) {
+        if (![...node.childNodes].some(meaningful)) next.set(node, 'data-intent-home-glass');
+      }
+      for (const node of this.spacingElements) if (!next.has(node)) {
+        node.removeAttribute('data-intent-empty-home-spacing'); node.removeAttribute('data-intent-home-glass');
+      }
+      this.spacingElements = new Set(next.keys());
+      for (const [node, marker] of next) if (!node.hasAttribute(marker)) node.setAttribute(marker, '');
+    }
+    matchWatchThumbnail(primary) {
+      const selector = 'ytd-compact-video-renderer ytd-thumbnail,ytd-compact-video-renderer a#thumbnail,yt-lockup-view-model .yt-lockup-view-model__content-image';
+      for (const thumbnail of primary.querySelectorAll(selector)) {
+        const computed = getComputedStyle(thumbnail).width;
+        const width = thumbnail.getBoundingClientRect().width || (/^[\d.]+px$/.test(computed) ? parseFloat(computed) : 0);
+        if (width >= 100 && width <= 320) {this.watchThumbnailWidth = width; break;}
+      }
+      if (this.watchThumbnailWidth) this.host.style.setProperty('--intent-watch-thumbnail-width', `${this.watchThumbnailWidth}px`);
+    }
     restart(fresh) {
       this.generation++; this.items = []; this.cursor = 0; this.hasMore = true; this.busy = false; this.autoBatches = 0;
       this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
@@ -124,7 +170,7 @@
       try {
         let timer;
         const response = await Promise.race([
-          this.runtime.sendMessage({type: 'GET_FEED', key: signature, cursor: this.cursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
+          this.runtime.sendMessage({type: 'GET_FEED', key: signature, locale: this.locale, cursor: this.cursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
           new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The feed took too long to load. Try refreshing or lowering the fuller-check limit in settings.')), 180000); })
         ]).finally(() => clearTimeout(timer));
         if (generation !== this.generation) return;
@@ -223,9 +269,11 @@
       // Keep references so even detached nodes are restored before YouTube reuses them.
       for (const el of this.nativeElements) el.removeAttribute(this.nativeMarker);
       this.nativeElements.clear();
+      for (const el of this.spacingElements) {el.removeAttribute('data-intent-empty-home-spacing'); el.removeAttribute('data-intent-home-glass');}
+      this.spacingElements.clear();
     }
     destroy() {
-      if (!this.signature && !this.host?.isConnected && !this.nativeElements.size) return;
+      if (!this.signature && !this.host?.isConnected && !this.nativeElements.size && !this.spacingElements.size) return;
       this.generation++; this.signature = ''; this.videoId = ''; this.busy = false;
       this.resizeObserver?.disconnect(); this.observing = false;
       this.host?.remove(); document.documentElement.removeAttribute(this.pageMarker);
