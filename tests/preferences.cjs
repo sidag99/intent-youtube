@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const file = name => 'file://' + path.join(root, name);
 const idle = page => page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') !== 'true');
+let builtinDefaults;
 const saved = page => page.getByText('All preferences saved on this device.', {exact: true}).waitFor();
 async function selectMode(page, mode) {
   await page.locator(`[data-mode="${mode}"]`).click();
@@ -17,6 +18,29 @@ async function openEditor(page, mode) {
 async function closeEditor(page) {
   await page.locator('#close-editor').click();
   await page.locator('#intent-editor').waitFor({state: 'detached'});
+}
+async function builtinReference(page, mode) {
+  const expected = builtinDefaults[mode];
+  const panel = page.locator('#builtin-defaults');
+  assert.equal(await panel.getByRole('heading', {name: `Built-in ${expected.name} defaults`, exact: true}).count(), 1);
+  assert.equal((await page.locator('#default-intent-name').textContent()).trim(), expected.name);
+  assert.deepEqual(await page.locator('#default-scope li').allTextContents(), expected.scope, 'editor shows every exact semantic description used by the built-in mode');
+  assert.deepEqual(await page.locator('#default-topics li').allTextContents(), expected.topics, 'all built-in topic rules remain visible');
+  const details = page.locator('#intent-editor details').filter({has: page.locator('#default-searches')});
+  assert.equal(await details.count(), 1, 'default search queries have an expandable reference');
+  if (await details.evaluate(element => element.open)) await details.locator('summary').click();
+  assert.equal(await page.locator('#default-searches').isVisible(), false);
+  await details.locator('summary').click();
+  assert.equal(await page.locator('#default-searches').isVisible(), true);
+  assert.deepEqual(await page.locator('#default-searches li').allTextContents(), expected.searches, 'reference queries use factory defaults rather than the customized intent');
+  await details.locator('summary').click();
+  assert.match(await page.locator('#intent-editor').textContent(), /extra topics[\s\S]*add[\s\S]*scope/i);
+  assert.match(await panel.textContent(), /default[\s\S]*channels?[\s\S]*none|channels?[\s\S]*none[\s\S]*default/i);
+}
+async function scopeStatus(page, text) {
+  await page.waitForFunction(text => document.querySelector('#intent-scope-status')?.textContent.trim() === text, text);
+  const status = page.locator('#intent-scope-status');
+  assert.ok((await status.getAttribute('aria-live')) || (await status.getAttribute('role')) === 'status', 'scope changes are announced as a live status');
 }
 async function stored(page) { return page.evaluate(() => JSON.parse(localStorage.getItem('intent-demo'))); }
 async function toggleCount(page, name, enabled) {
@@ -34,21 +58,25 @@ async function toggleCount(page, name, enabled) {
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(file('settings.html'));
     await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
+    builtinDefaults = await page.evaluate(() => Object.fromEntries(Object.entries(IntentCore.MODES).map(([mode, definition]) => [mode, {name: definition.name, scope: IntentSemantic.PROFILES[mode], topics: definition.topics, searches: IntentFeed.queries({...IntentCore.defaults(), mode})}])));
     assert.equal(await page.locator('.rules-panel').count(), 0, 'intent fields stay in an editor rather than a permanent page panel');
     assert.equal(await page.locator('#tab-pause').count(), 0, 'full settings never expose a tab-specific pause control');
     const demoPopup = await context.newPage(); await demoPopup.goto(file('popup.html')); await demoPopup.getByRole('heading', {name: 'Your daily budget'}).waitFor();
     assert.equal(await demoPopup.locator('#tab-pause').count(), 0, 'a demo popup cannot pause a tab'); await demoPopup.close();
     const initialMode = (await stored(page)).mode;
     await openEditor(page, 'study');
+    await builtinReference(page, 'study'); await scopeStatus(page, 'Using built-in scope');
+    await page.locator('#intent-description').fill('   '); await scopeStatus(page, 'Using built-in scope');
     assert.equal((await stored(page)).mode, initialMode, 'a pencil opens its intent without changing the selected mode');
     assert.equal(await page.locator(`[data-mode="${initialMode}"]`).getAttribute('aria-pressed'), 'true');
     await page.getByLabel('Intent name', {exact: true}).fill('Discard this name');
-    await page.locator('#intent-description').fill('Discard this description');
+    await page.locator('#intent-description').fill('Discard this description'); await scopeStatus(page, 'Custom scope replaces the built-in scope');
     await page.locator('#cancel-editor').click(); await page.locator('#intent-editor').waitFor({state: 'detached'});
     assert.equal(await page.evaluate(() => document.activeElement.dataset.edit), 'study', 'Cancel restores focus to the pencil');
     await openEditor(page, 'study');
     assert.equal(await page.getByLabel('Intent name', {exact: true}).inputValue(), 'Study');
     assert.equal(await page.locator('#intent-description').inputValue(), '', 'Cancel discards unsaved changes');
+    await scopeStatus(page, 'Using built-in scope'); await builtinReference(page, 'study');
     await page.locator('#intent-description').fill('Also discard on Escape');
     await page.keyboard.press('Escape'); await page.locator('#intent-editor').waitFor({state: 'detached'});
     assert.equal(await page.evaluate(() => document.activeElement.dataset.edit), 'study', 'Escape restores pencil focus');
@@ -78,22 +106,93 @@ async function toggleCount(page, name, enabled) {
       work: 'Accessible website engineering and client project planning',
       study: 'European contract law and legal case analysis',
       music: 'Instrumental jazz trio performances and improvised piano',
-      leisure: 'Bicycle restoration and recreational hiking routes'
     };
     for (const [mode, description] of Object.entries(descriptions)) {
-      await openEditor(page, mode); await page.locator('#intent-description').fill(description);
+      await openEditor(page, mode); await builtinReference(page, mode); await scopeStatus(page, 'Using built-in scope');
+      await page.locator('#intent-description').fill(' \n '); await scopeStatus(page, 'Using built-in scope');
+      await page.locator('#intent-description').fill(description); await scopeStatus(page, 'Custom scope replaces the built-in scope');
       await page.getByRole('button', {name: 'Save preferences'}).click(); await saved(page);
       assert.equal(await page.locator('#intent-editor').evaluate(dialog => dialog.open), true, 'saving leaves the editor open');
+      await builtinReference(page, mode); await scopeStatus(page, 'Custom scope replaces the built-in scope');
       assert.equal((await stored(page)).mode, initialMode, 'editing another intent does not switch the active mode');
       await closeEditor(page);
     }
     await page.reload(); await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
     for (const [mode, description] of Object.entries(descriptions)) {
-      await openEditor(page, mode); assert.equal(await page.locator('#intent-description').inputValue(), description); await closeEditor(page);
+      await openEditor(page, mode); assert.equal(await page.locator('#intent-description').inputValue(), description);
+      await builtinReference(page, mode); await scopeStatus(page, 'Custom scope replaces the built-in scope'); await closeEditor(page);
     }
     assert.deepEqual((await stored(page)).intentDescriptions, descriptions);
+
+    // Presets are an editable library; applying them changes descriptions only.
+    const beforeRole = await stored(page);
+    await page.locator('#role-preset-select').selectOption('accountant');
+    await page.locator('#apply-role-preset').click(); await idle(page);
+    const applied = await stored(page);
+    assert.equal(applied.lastRolePreset, 'accountant');
+    assert.equal(applied.intentDescriptions.work, applied.rolePresets.accountant.workDescription);
+    assert.equal(applied.intentDescriptions.study, applied.rolePresets.accountant.studyDescription);
+    assert.equal(applied.intentDescriptions.music, beforeRole.intentDescriptions.music);
+    assert.equal(applied.mode, beforeRole.mode);
+    assert.deepEqual(applied.countModes, beforeRole.countModes);
+    await page.locator('#edit-role-preset').click();
+    await page.locator('#role-preset-name').fill('Accounting practice');
+    await page.locator('#role-work-description').fill('Reconciling client accounts and preparing bookkeeping reports');
+    await page.getByRole('button', {name: 'Save preset', exact: true}).click(); await idle(page);
+    await page.locator('#role-preset-editor').waitFor({state: 'detached'});
+    assert.equal((await stored(page)).intentDescriptions.work, applied.intentDescriptions.work, 'editing a preset never silently changes applied intents');
+    await page.locator('#apply-role-preset').click(); await idle(page);
+    assert.equal((await stored(page)).intentDescriptions.work, 'Reconciling client accounts and preparing bookkeeping reports');
+    await openEditor(page, 'work'); await page.locator('#intent-description').fill('My own weekly client workflow');
+    await page.getByRole('button', {name: 'Save preferences', exact: true}).click(); await saved(page); await closeEditor(page);
+    assert.equal((await stored(page)).rolePresets.accountant.workDescription, 'Reconciling client accounts and preparing bookkeeping reports', 'intent edits are independent of preset edits');
+    const beforeDelete = (await stored(page)).intentDescriptions;
+    await page.locator('#delete-role-preset').click();
+    await page.locator('#delete-role-preset-dialog').getByRole('button', {name: 'Cancel', exact: true}).click();
+    assert.ok((await stored(page)).rolePresets.accountant);
+    await page.locator('#delete-role-preset').click(); await page.locator('#confirm-delete-role-preset').click(); await idle(page);
+    await page.locator('#delete-role-preset-dialog').waitFor({state: 'detached'});
+    assert.equal((await stored(page)).rolePresets.accountant, undefined);
+    assert.equal((await stored(page)).lastRolePreset, null);
+    assert.deepEqual((await stored(page)).intentDescriptions, beforeDelete);
+    await page.locator('#new-role-preset').click();
+    await page.locator('#role-preset-name').fill('Game development');
+    await page.locator('#role-work-description').fill('Shipping video games and debugging game engines');
+    await page.locator('#role-study-description').fill('Learning game physics and real time rendering');
+    await page.getByRole('button', {name: 'Save preset', exact: true}).click(); await idle(page);
+    await page.locator('#role-preset-editor').waitFor({state: 'detached'});
+    assert.equal((await stored(page)).lastRolePreset, null, 'creating a preset does not apply it');
+    assert.ok(Object.values((await stored(page)).rolePresets).some(preset => preset.name === 'Game development'));
+
+    // Optional intent templates do not crowd or switch the installed defaults.
+    assert.equal(await page.locator('[data-mode="leisure"]').count(), 0);
+    await page.locator('#intent-catalogue > summary').click();
+    for (const id of ['gaming', 'tv-film', 'maker', 'ai', 'news', 'travel']) {
+      await page.locator(`[data-add-template="${id}"]`).click(); await idle(page);
+      const value = (await stored(page)).customIntents['custom-' + id];
+      assert.equal(value.templateId, id); assert.ok(value.description); assert.ok(value.icon);
+      assert.equal((await stored(page)).mode, beforeRole.mode, 'adding a template does not switch the current intent');
+    }
+    assert.equal(await page.locator('[data-add-template="ai"]').isDisabled(), true, 'installed templates cannot be duplicated');
+    await openEditor(page, 'custom-ai'); await page.locator('#intent-icon').selectOption('plane');
+    await page.getByRole('button', {name: 'Save preferences', exact: true}).click(); await saved(page); await closeEditor(page);
+    assert.equal((await stored(page)).customIntents['custom-ai'].icon, 'plane');
+    await page.locator('#intent-order > summary').click();
+    while ((await stored(page)).intentOrder[0] !== 'custom-ai') {
+      await page.locator('[data-move-intent="custom-ai"][data-direction="-1"]').click(); await idle(page);
+    }
+    await page.reload(); await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
+    assert.equal((await stored(page)).intentOrder[0], 'custom-ai');
+    assert.equal(await page.locator('.mode-grid [data-mode]').first().getAttribute('data-mode'), 'custom-ai');
+    assert.equal((await stored(page)).customIntents['custom-ai'].icon, 'plane');
+    assert.equal(await page.locator('[data-mode="custom-ai"] .intent-symbol').textContent(), await page.evaluate(() => IntentCore.INTENT_ICONS.plane));
+    console.log('PASS role preset apply/edit/delete/create independence, optional intent library, custom icons, removal of Leisure and persistent intent ordering');
+
     await openEditor(page, 'study'); await page.getByLabel('Intent name', {exact: true}).fill('Exam revision');
-    await page.getByRole('button', {name: 'Save preferences'}).click(); await saved(page); await closeEditor(page);
+    await page.getByRole('button', {name: 'Save preferences'}).click(); await saved(page);
+    await builtinReference(page, 'study'); await scopeStatus(page, 'Custom scope replaces the built-in scope');
+    assert.equal(await page.getByRole('heading', {name: 'Edit Exam revision intent', exact: true}).count(), 1);
+    await closeEditor(page);
     assert.equal((await stored(page)).intentNames.study, 'Exam revision');
     assert.equal((await stored(page)).mode, initialMode);
     assert.match(await page.locator('[data-mode="study"]').textContent(), /Exam revision/);
@@ -113,6 +212,7 @@ async function toggleCount(page, name, enabled) {
     assert.equal(await page.locator('#intent-editor').count(), 0, 'creation does not leave an unexpected modal over the page');
     assert.equal(await page.getByRole('switch', {name: 'Count Bicycle & repair time', exact: true}).getAttribute('aria-checked'), 'true');
     await openEditor(page, customId);
+    assert.equal(await page.locator('#builtin-defaults').count(), 0, 'custom intents do not claim to have built-in defaults');
     assert.equal(await page.getByLabel('Intent name', {exact: true}).inputValue(), 'Bicycle & repair');
     await page.getByLabel('Intent name', {exact: true}).fill('Bike workshop');
     await page.locator('#intent-description').fill('Restoring steel bicycles, adjusting derailleurs and rebuilding wheels');
@@ -126,7 +226,7 @@ async function toggleCount(page, name, enabled) {
     await policy.selectOption(customId); await idle(page);
     await page.reload(); await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
     const withCustom = await stored(page);
-    assert.deepEqual(withCustom.customIntents[customId], {name: 'Bike workshop', description: 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels'});
+    assert.deepEqual(withCustom.customIntents[customId], {name: 'Bike workshop', description: 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels', icon: 'compass'});
     assert.equal(withCustom.countModes[customId], false); assert.equal(withCustom.newTabMode, customId);
     assert.equal(withCustom.customTopics[customId], 'wheelbuilding, touring bikes'); assert.equal(withCustom.channels[customId], 'Workshop North');
     assert.equal(withCustom.metadataLimit, 12);
@@ -134,6 +234,7 @@ async function toggleCount(page, name, enabled) {
     await page.setViewportSize({width: 390, height: 844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'settings fit a narrow dark viewport');
     await openEditor(page, customId);
+    assert.equal(await page.locator('#builtin-defaults').count(), 0, 'custom intents do not claim to have built-in defaults');
     assert.equal(await page.getByLabel('Intent name', {exact: true}).inputValue(), 'Bike workshop');
     assert.equal(await page.locator('#intent-editor').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth), true, 'editor fits a narrow viewport');
     await page.getByRole('button', {name: 'Delete intent', exact: true}).click(); await idle(page);
@@ -155,7 +256,7 @@ async function toggleCount(page, name, enabled) {
     assert.equal(await metadataLimit.inputValue(), '4'); assert.equal(await page.locator('.mode-grid [data-mode^="custom-"]').count(), 0);
     assert.equal(await page.locator('[data-mode="study"] strong').textContent(), 'Study');
     assert.equal(await page.locator('#intent-editor').count(), 0);
-    console.log('PASS pencil editors, independent intent selection, cancel/Escape focus and draft discard, built-in renaming, custom intent editing, metadata controls, timer/new-tab options and confirmed factory reset');
+    console.log('PASS transparent built-in scope/topic/search references and live replacement status, independent pencil editors, renaming, custom intents, metadata controls, timer/new-tab options and confirmed factory reset');
 
     const liveReset = await context.newPage(); liveReset.on('pageerror', error => errors.push(error.message));
     await liveReset.addInitScript(() => {
@@ -258,7 +359,7 @@ async function toggleCount(page, name, enabled) {
       await selectMode(popup, 'music');
       await popup.getByRole('button', {name: 'Resume on this tab', exact: true}).click();
       await popup.getByRole('button', {name: 'Pause on this tab', exact: true}).waitFor(); await idle(popup);
-      assert.equal(await popup.locator('.tab-pause-state').textContent(), 'Active');
+      assert.equal(await popup.locator('.tab-pause-state').count(), 0);
       assert.deepEqual(await popup.evaluate(() => mockTabPaused), {'42': false, '88': false});
       assert.deepEqual(await popup.evaluate(() => mockRequests.filter(message => message.type === 'SET_TAB_PAUSED')), [{type: 'SET_TAB_PAUSED', paused: true, targetTabId: 42}, {type: 'SET_TAB_PAUSED', paused: false, targetTabId: 42}]);
       await selectMode(popup, 'work');

@@ -12,7 +12,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
 :root{--yt-spec-text-primary:#0f0f0f;--yt-spec-base-background:#fff}html[dark]{--yt-spec-text-primary:#f1f1f1;--yt-spec-base-background:#0f0f0f}*{box-sizing:border-box}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font:14px Arial}ytd-masthead{display:flex;align-items:center;gap:16px;height:56px;padding:0 16px;overflow:hidden;border-bottom:1px solid #8883}#start,#end{width:100px;flex-shrink:0}#center{display:flex;align-items:center;flex:1;min-width:0;max-width:850px;margin:auto}#native-search-group{display:flex;align-items:center;gap:8px;flex:1;min-width:0}ytd-searchbox{display:block;flex:1;min-width:0}input{width:100%;height:36px;border:1px solid #888;border-radius:18px;padding:8px 12px;background:transparent;color:inherit}#voice-search{width:36px;height:36px;border:0;border-radius:50%;flex-shrink:0}main{padding:32px}#outside{margin-top:20px}@media(max-width:700px){ytd-masthead{gap:8px;padding:0 8px}#start{width:28px;font-size:0}#end{display:none}#voice-search{width:28px}#native-search-group{gap:4px}}</style><ytd-masthead><div id="start">YouTube</div><div id="center"><div id="native-search-group"><ytd-searchbox><input aria-label="Search"></ytd-searchbox><button id="voice-search" aria-label="Voice search">♪</button></div></div><div id="end">Account</div></ytd-masthead><main><h1>Intent toolbar preview</h1><button id="outside">Outside the menu</button></main>`}));
     await page.route('https://extension.test/icons/128.png', route => route.fulfill({contentType: 'image/png', body: fs.readFileSync(path.join(root, 'icons/128.png'))}));
     await page.goto('https://www.youtube.com/');
-    for (const file of ['core.js', 'feed.js', 'home.js', 'toolbar.js']) await page.addScriptTag({path: path.join(root, 'src', file)});
+    for (const file of ['core.js', 'feed.js', 'feed-theme.js', 'home.js', 'toolbar.js']) await page.addScriptTag({path: path.join(root, 'src', file)});
     await page.evaluate(() => {
       window.testSettings = IntentCore.sanitize({mode: 'work', customIntents: {'custom-build': {name: 'Build things', description: 'Make furniture and useful wooden objects'}}});
       window.requests = []; window.changes = []; window.refreshes = 0; window.testCoverage = {state: 'active'}; window.pausedChanges = []; window.testPaused = false;
@@ -47,11 +47,52 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await toolbar.locator('.logo').getAttribute('src'), 'https://extension.test/icons/128.png', 'the original packaged logo is preserved');
     assert.equal(await page.evaluate(() => document.querySelector('#center').firstElementChild.id), 'intent-toolbar', 'toolbar stays left of the native search group');
     assert.equal(await page.evaluate(() => document.querySelector('#voice-search').previousElementSibling.tagName), 'YTD-SEARCHBOX', 'search and microphone remain grouped');
+    // Mode names and coverage states occupy one stable slot, preserving the native search width.
+    const stableSearch = await page.evaluate(() => {
+      const original = structuredClone(testSettings), results = [];
+      const variants = [
+        {mode: 'work', state: 'active'},
+        {mode: 'custom-wide', state: 'active'},
+        {mode: 'custom-wide', state: 'loading'},
+        {mode: 'custom-wide', state: 'off-here'},
+        {mode: 'custom-wide', state: 'unavailable'},
+        {mode: 'custom-wide', state: 'paused'},
+        {mode: 'off', state: 'active'}
+      ];
+      for (const {mode, state} of variants) {
+        const settings = IntentCore.sanitize({...original, customIntents: {...original.customIntents, 'custom-wide': {name: 'An exceptionally long saved intent for this tab', description: 'Make useful things', symbol: '🔧'}}, mode});
+        toolbar.sync(settings, true, {state});
+        const search = document.querySelector('ytd-searchbox').getBoundingClientRect(), host = toolbar.host.getBoundingClientRect();
+        results.push({x: search.x, width: search.width, hostWidth: host.width, label: toolbar.modeName.textContent, title: toolbar.trigger.title});
+      }
+      toolbar.sync(original, true, testCoverage); return results;
+    });
+    assert.ok(stableSearch.every(item => item.hostWidth === 250 && Math.abs(item.x - stableSearch[0].x) < .1 && Math.abs(item.width - stableSearch[0].width) < .1), 'desktop search geometry is stable across intent names, loading, errors, pauses and Off');
+    assert.equal(stableSearch.at(-2).label, 'Paused'); assert.match(stableSearch.at(-2).title, /An exceptionally long saved intent/);
+    assert.equal(stableSearch.at(-1).label, 'Intent off');
+    const selectedIcons = await page.evaluate(() => {
+      const original = structuredClone(testSettings), records = [];
+      for (const icon of ['tools', 'science']) {
+        const settings = IntentCore.sanitize({...original, mode: 'custom-build', customIntents: {...original.customIntents, 'custom-build': {...original.customIntents['custom-build'], icon}}});
+        toolbar.sync(settings, true, {state: 'active'});
+        records.push({symbol: toolbar.selectedSymbol.textContent, hidden: toolbar.selectedSymbol.hidden, expected: IntentCore.INTENT_ICONS[icon], toolbarWidth: toolbar.host.getBoundingClientRect().width, searchWidth: document.querySelector('ytd-searchbox').getBoundingClientRect().width});
+      }
+      toolbar.sync({...original, mode: 'custom-build'}, true, {state: 'paused'}); const hiddenPaused = toolbar.selectedSymbol.hidden;
+      toolbar.sync({...original, mode: 'off'}, true, {state: 'active'}); const hiddenOff = toolbar.selectedSymbol.hidden;
+      toolbar.sync(original, true, testCoverage); return {records, hiddenPaused, hiddenOff, hiddenBuiltin: toolbar.selectedSymbol.hidden};
+    });
+    assert.ok(selectedIcons.records.every(record => !record.hidden && record.symbol === record.expected && record.toolbarWidth === 250), 'selected custom intent displays its chosen icon on the toolbar button');
+    assert.notEqual(selectedIcons.records[0].symbol, selectedIcons.records[1].symbol, 'editing a custom icon updates the selected button immediately');
+    assert.equal(selectedIcons.records[0].searchWidth, selectedIcons.records[1].searchWidth, 'custom icon changes preserve search width');
+    assert.equal(selectedIcons.hiddenPaused, true); assert.equal(selectedIcons.hiddenOff, true); assert.equal(selectedIcons.hiddenBuiltin, true);
+    assert.equal(await toolbar.locator('.selected-symbol').getAttribute('aria-hidden'), 'true');
     await trigger.click();
     await toolbar.getByRole('listbox').waitFor();
     assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
     assert.equal(await option('Work').getAttribute('aria-selected'), 'true');
     assert.equal(await option('Build things').count(), 1);
+    assert.ok((await option('Work').locator('.option-symbol').innerText()).trim(), 'each mode has its own visible icon');
+    assert.equal(await option('Work').locator('.option-symbol').getAttribute('aria-hidden'), 'true');
     assert.equal(await toolbar.locator('#intent-mode-popover').evaluate(menu => menu.matches(':popover-open')), true, 'menu uses the top layer outside masthead clipping');
     const positions = await page.evaluate(() => {const host = document.querySelector('#intent-toolbar'), root = host.shadowRoot; const trigger = root.querySelector('#intent-mode-trigger').getBoundingClientRect(), menu = root.querySelector('#intent-mode-popover').getBoundingClientRect();return {triggerBottom: trigger.bottom, menuTop: menu.top, menuLeft: menu.left, menuRight: menu.right};});
     assert.ok(positions.menuTop > positions.triggerBottom && positions.menuLeft >= 8 && positions.menuRight <= 1440 - 8);
@@ -96,7 +137,8 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
     assert.equal(await trigger.getAttribute('data-mode'), 'study');
-    assert.equal(await toolbar.locator('.coverage-badge').innerText(), 'Paused');
+    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Paused');
+    assert.equal(await toolbar.locator('.coverage-badge').isVisible(), false, 'the paused label avoids a duplicate badge');
     assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
     assert.match(await trigger.getAttribute('title'), /paused for this tab/);
     assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_TAB_PAUSED', paused: true});
@@ -126,6 +168,15 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     const narrow = await toolbar.locator('#intent-mode-popover').evaluate(menu => {const r = menu.getBoundingClientRect(); return {left: r.left, right: r.right, bottom: r.bottom};});
     assert.ok(narrow.left >= 8 && narrow.right <= 382 && narrow.bottom <= 836);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'toolbar and menu fit a 390px viewport');
+    const narrowStable = await page.evaluate(() => {
+      const original = structuredClone(testSettings), sizes = [];
+      for (const state of ['active', 'off-here', 'unavailable', 'paused']) {
+        toolbar.sync(original, true, {state});
+        const r = document.querySelector('ytd-searchbox').getBoundingClientRect(); sizes.push({x: r.x, width: r.width, toolbar: toolbar.host.getBoundingClientRect().width});
+      }
+      toolbar.sync(original, true, testCoverage); return sizes;
+    });
+    assert.ok(narrowStable.every(item => item.toolbar === 154 && Math.abs(item.x - narrowStable[0].x) < .1 && Math.abs(item.width - narrowStable[0].width) < .1), 'mobile search geometry is stable too');
     await page.setViewportSize({width: 360, height: 640});
     const resized = await toolbar.locator('#intent-mode-popover').boundingBox(); assert.ok(resized.x >= 8 && resized.x + resized.width <= 352, 'open menu repositions on resize');
     await page.keyboard.press('Escape');
@@ -167,7 +218,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await page.evaluate(() => {testSettings = IntentCore.sanitize({...testSettings, mode: 'off'}); toolbar.sync(testSettings, true, testCoverage);});
     assert.equal(await toolbar.count(), 1, 'turning filtering off keeps the mode control available');
     assert.equal(await trigger.getAttribute('data-mode'), 'off'); assert.equal(await trigger.getAttribute('data-filter-state'), 'off');
-    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Off');
+    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Intent off');
     assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
     await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
     await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
@@ -180,7 +231,31 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await toolbar.getAttribute('data-filter-state'), 'active', 'the retained Off control can re-enable filtering');
     await page.evaluate(() => toolbar.sync(testSettings, false)); assert.equal(await toolbar.count(), 0);
     assert.equal(await page.locator('ytd-masthead').getAttribute('data-intent-toolbar'), null);
+    await page.addStyleTag({path: path.join(root, 'src/content.css')});
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('dark', '');
+      const style = document.createElement('style'); style.textContent = 'ytd-browse[page-subtype="home"]{display:block;margin-top:56px;padding-top:56px;--ytd-rich-grid-header-height:56px;--ytd-feed-filter-chip-bar-height:56px}ytd-browse[page-subtype="home"] #primary{margin-top:56px;padding-top:56px;background:#181818}ytd-browse[page-subtype="home"] #header{height:56px;padding:8px}ytd-feed-filter-chip-bar-renderer{display:block;height:40px}ytd-rich-grid-renderer{display:block;height:80px}ytd-watch-flexy #header{height:72px;padding:10px}';
+      document.head.append(style);
+      const browse = document.createElement('ytd-browse'); browse.setAttribute('page-subtype', 'home'); browse.innerHTML = '<div id="header"><ytd-feed-filter-chip-bar-renderer>All · Music · Gaming</ytd-feed-filter-chip-bar-renderer></div><div id="primary"><ytd-rich-grid-renderer>Native grid</ytd-rich-grid-renderer></div>';
+      const watch = document.createElement('ytd-watch-flexy'); watch.innerHTML = '<div id="header">Native video header</div>'; document.body.append(browse, watch);
+      const settings = IntentCore.defaults();
+      window.layoutSettings = settings;
+      window.measureHome = () => {const browse = document.querySelector('ytd-browse'), primary = browse.querySelector('#primary'); return {margin: getComputedStyle(browse).marginTop, padding: getComputedStyle(browse).paddingTop, primaryMargin: getComputedStyle(primary).marginTop, primaryPadding: getComputedStyle(primary).paddingTop, chipsHeight: browse.querySelector('#header').getBoundingClientRect().height, watchHeight: document.querySelector('ytd-watch-flexy #header').getBoundingClientRect().height, mastheadHeight: document.querySelector('ytd-masthead').getBoundingClientRect().height};};
+      window.nativeHomeGeometry = measureHome();
+      window.layoutFeed = new IntentHome({sendMessage: async () => ({ok: true, key: IntentFeed.key(settings), items: [], nextCursor: 2, hasMore: false})});
+      layoutFeed.sync(settings, true);
+    });
+    await page.waitForFunction(() => layoutFeed.status.textContent.startsWith('0 videos'));
+    const compactHome = await page.evaluate(() => ({...measureHome(), feedBackground: getComputedStyle(layoutFeed.host).backgroundColor, statusBackground: getComputedStyle(layoutFeed.status).backgroundColor, statusHeight: layoutFeed.status.getBoundingClientRect().height}));
+    assert.equal(compactHome.margin, '0px'); assert.equal(compactHome.padding, '0px'); assert.equal(compactHome.primaryMargin, '0px'); assert.equal(compactHome.primaryPadding, '0px'); assert.equal(compactHome.chipsHeight, 0);
+    assert.equal(compactHome.watchHeight, 72); assert.equal(compactHome.mastheadHeight, 56, 'Home cleanup never shrinks the native masthead or video header');
+    assert.equal(compactHome.feedBackground, 'rgba(0, 0, 0, 0)'); assert.equal(compactHome.statusBackground, 'rgba(0, 0, 0, 0)', 'dark feed surfaces stay transparent over the actual parent color');
+    assert.ok(compactHome.statusHeight <= 25, 'feed status uses a compact single line');
+    await page.evaluate(() => layoutFeed.sync({...layoutSettings, mode: 'off'}, true));
+    assert.deepEqual(await page.evaluate(() => measureHome()), await page.evaluate(() => nativeHomeGeometry), 'turning intent off restores all original chip spacing');
+    await page.evaluate(() => {layoutFeed.sync(layoutSettings, true); layoutFeed.sync(layoutSettings, false);});
+    assert.deepEqual(await page.evaluate(() => measureHome()), await page.evaluate(() => nativeHomeGeometry), 'pausing removes the same scoped layout overrides');
     assert.deepEqual(errors, []);
-    console.log('PASS custom toolbar: packaged logo, top-layer menu, keyboard selection, pointer dismissal, per-tab callback, loading/errors, light/dark themes, SPA reattachment, dynamic custom intents, explicit search/off/loading/unavailable coverage, independent tab pause/resume and narrow viewport.');
+    console.log('PASS custom toolbar: packaged logo, top-layer menu, keyboard selection, pointer dismissal, per-tab callback, loading/errors, light/dark themes, SPA reattachment, dynamic custom intents, explicit search/off/loading/unavailable coverage, independent tab pause/resume, stable search width, transparent feed surfaces, Home spacer restoration and narrow viewport.');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

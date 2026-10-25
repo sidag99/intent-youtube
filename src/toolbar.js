@@ -1,11 +1,12 @@
 /* Explicit intent controls to the left of YouTube's search field. */
 (() => {
   const CSS = `
-:host{position:relative;display:block;flex:0 0 auto;min-width:0;margin-right:12px;font:14px Roboto,Arial,sans-serif;color:var(--yt-spec-text-primary,#0f0f0f);color-scheme:light;--intent-chip:#f2f2f2;--intent-hover:#e5e5e5;--intent-ink:#0f0f0f;--intent-menu:#fff;--intent-muted:#606060;--intent-line:#e5e5e5}
+:host{position:relative;display:block;flex:0 0 250px;width:250px;min-width:250px;max-width:250px;margin-right:12px;font:14px Roboto,Arial,sans-serif;color:var(--yt-spec-text-primary,#0f0f0f);color-scheme:light;--intent-chip:#f2f2f2;--intent-hover:#e5e5e5;--intent-ink:#0f0f0f;--intent-menu:#fff;--intent-muted:#606060;--intent-line:#e5e5e5}
 :host([data-theme=dark]){color-scheme:dark;--intent-chip:#272727;--intent-hover:#3f3f3f;--intent-ink:#f1f1f1;--intent-menu:#282828;--intent-muted:#aaa;--intent-line:#3f3f3f;color:var(--yt-spec-text-primary,var(--intent-ink))}
-*{box-sizing:border-box}.controls{display:flex;align-items:center;gap:0;white-space:nowrap;background:var(--yt-spec-badge-chip-background,var(--intent-chip));border:0;border-radius:20px;padding:0 3px;height:36px}button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}button:hover{background:var(--intent-hover)}button:disabled{opacity:.5;cursor:wait}button:focus-visible{outline:2px solid #3ea6ff;outline-offset:2px}.trigger{height:36px;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px 0 6px;border-radius:20px;font-size:14px;font-weight:500}.logo{display:block;width:20px;height:20px;flex:0 0 20px}.mode-name{display:block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chevron{width:12px;height:12px;flex:0 0 12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.8}.trigger[aria-expanded=true] .chevron{transform:rotate(180deg)}.coverage-badge{display:inline-flex;align-items:center;max-width:90px;border:1px solid var(--intent-line);border-radius:5px;padding:2px 5px;font-size:10px;font-weight:500;line-height:1.2;color:var(--intent-muted);white-space:nowrap}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}[hidden]{display:none!important}.icon-button{border-radius:50%;width:30px;height:30px;display:grid;place-items:center;padding:6px}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:hidden;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-muted);padding:8px 16px 12px;margin:0}.coverage-detail{font-size:12px;line-height:1.5;color:var(--intent-muted);padding:0 16px 12px;margin:0}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.pause-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.pause-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
-@media(max-width:1100px){.settings{display:none}:host{margin-right:8px}.mode-name{max-width:100px}}@media(max-width:700px){:host{margin-right:4px}.controls{height:34px;padding:0 2px}.trigger{height:34px;gap:5px;padding:0 6px 0 4px}.mode-name{max-width:78px;font-size:12px}.icon-button{width:28px;height:28px}}@media(max-width:480px){.mode-name{max-width:62px}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=paused]) .mode-name{max-width:44px}.coverage-badge{max-width:65px;padding:2px 4px}.trigger{gap:4px}.chevron{width:10px;flex-basis:10px}}
+*{box-sizing:border-box}.controls{width:100%;display:flex;align-items:center;gap:0;white-space:nowrap;background:var(--yt-spec-badge-chip-background,var(--intent-chip));border:0;border-radius:20px;padding:0 3px;height:36px}button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}button:hover{background:var(--intent-hover)}button:disabled{opacity:.5;cursor:wait}button:focus-visible{outline:2px solid #3ea6ff;outline-offset:2px}.trigger{height:36px;flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px 0 6px;border-radius:20px;font-size:14px;font-weight:500}.logo{display:block;width:20px;height:20px;flex:0 0 20px}.selected-symbol{display:block;flex:0 0 14px;width:14px;font-size:14px;line-height:1;text-align:center}.mode-name{display:block;flex:1 1 0;min-width:0;text-align:left;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chevron{width:12px;height:12px;flex:0 0 12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.8}.trigger[aria-expanded=true] .chevron{transform:rotate(180deg)}.coverage-badge{display:inline-flex;flex:0 0 auto;align-items:center;max-width:90px;border:1px solid var(--intent-line);border-radius:5px;padding:2px 5px;font-size:10px;font-weight:500;line-height:1.2;color:var(--intent-muted);white-space:nowrap}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}[hidden]{display:none!important}.icon-button{flex:0 0 30px;border-radius:50%;width:30px;height:30px;display:grid;place-items:center;padding:6px}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:hidden;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-muted);padding:8px 16px 12px;margin:0}.coverage-detail{font-size:12px;line-height:1.5;color:var(--intent-muted);padding:0 16px 12px;margin:0}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-symbol{display:inline-grid;place-items:center;width:20px;height:24px;flex:0 0 20px;font-size:19px;line-height:1}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.pause-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.pause-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
+@media(max-width:1100px){.settings{display:none}:host{width:210px;min-width:210px;max-width:210px;flex-basis:210px;margin-right:8px}}@media(max-width:700px){:host{width:170px;min-width:170px;max-width:170px;flex-basis:170px;margin-right:4px}.controls{height:34px;padding:0 2px}.trigger{height:34px;gap:5px;padding:0 6px 0 4px}.mode-name{font-size:12px}.trigger:has(.selected-symbol:not([hidden])){gap:3px;padding-right:4px}.icon-button{width:28px;height:28px;flex-basis:28px}}@media(max-width:480px){:host{width:154px;min-width:154px;max-width:154px;flex-basis:154px}.coverage-badge{max-width:65px;padding:2px 4px}.trigger{gap:4px}.trigger:has(.selected-symbol:not([hidden])){gap:2px;padding-right:2px}.selected-symbol{width:12px;flex-basis:12px;font-size:12px}.chevron{width:10px;flex-basis:10px}}
+
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 `;
   const svg = (path, className = '') => {
@@ -52,8 +53,9 @@
       this.trigger.setAttribute('role', 'combobox'); this.trigger.setAttribute('aria-label', 'Intent mode'); this.trigger.setAttribute('aria-haspopup', 'listbox'); this.trigger.setAttribute('aria-expanded', 'false'); this.trigger.setAttribute('aria-controls', 'intent-mode-menu'); this.trigger.setAttribute('aria-describedby', 'intent-filter-status');
       const logo = document.createElement('img'); logo.className = 'logo'; logo.src = this.runtime.getURL('icons/128.png'); logo.alt = ''; logo.setAttribute('aria-hidden', 'true');
       this.modeName = document.createElement('span'); this.modeName.className = 'mode-name';
+      this.selectedSymbol = document.createElement('span'); this.selectedSymbol.className = 'selected-symbol'; this.selectedSymbol.setAttribute('aria-hidden', 'true'); this.selectedSymbol.hidden = true;
       this.coverageBadge = document.createElement('span'); this.coverageBadge.className = 'coverage-badge'; this.coverageBadge.setAttribute('aria-hidden', 'true');
-      this.trigger.append(logo, this.modeName, this.coverageBadge, svg('m6 9 6 6 6-6', 'chevron'));
+      this.trigger.append(logo, this.selectedSymbol, this.modeName, this.coverageBadge, svg('m6 9 6 6 6-6', 'chevron'));
       this.coverageStatus = document.createElement('span'); this.coverageStatus.className = 'sr-only'; this.coverageStatus.id = 'intent-filter-status'; this.coverageStatus.setAttribute('role', 'status'); this.coverageStatus.setAttribute('aria-live', 'polite');
       this.trigger.addEventListener('click', () => this.open ? this.closeMenu(true) : this.openMenu());
       this.trigger.addEventListener('keydown', event => {
@@ -91,15 +93,16 @@
       controls.append(this.trigger, refresh, settings); root.append(style, controls, this.coverageStatus, this.error, this.menu);
     }
     updateOptions(settings) {
-      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name]), ['off', 'Off']];
+      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒']), ['off', 'Off', '○']];
       const signature = JSON.stringify(options);
       if (signature === this.optionSignature) return;
       const hadFocus = this.open && this.options?.includes(this.root.activeElement);
       this.optionSignature = signature;
-      this.options = options.map(([id, name]) => {
+      this.options = options.map(([id, name, symbol]) => {
         const option = document.createElement('button'); option.type = 'button'; option.className = 'option'; option.dataset.mode = id; option.id = `intent-option-${id}`; option.tabIndex = -1; option.setAttribute('role', 'option');
         const label = document.createElement('span'); label.className = 'option-name'; label.textContent = name;
-        option.append(label, svg('m5 12 4 4L19 6', 'check'));
+        const glyph = document.createElement('span'); glyph.className = 'option-symbol'; glyph.setAttribute('aria-hidden', 'true'); glyph.textContent = symbol;
+        option.append(glyph, label, svg('m5 12 4 4L19 6', 'check'));
         option.addEventListener('click', () => this.choose(id)); return option;
       });
       this.list.replaceChildren(...this.options);
@@ -107,7 +110,7 @@
     }
     paintSelection() {
       const mode = this.settings.mode, name = IntentCore.modes(this.settings)[mode]?.name || 'Off';
-      this.trigger.dataset.mode = mode; this.trigger.value = mode; this.modeName.textContent = name;
+      this.trigger.dataset.mode = mode; this.trigger.value = mode; this.savedModeName = name; this.modeName.textContent = name;
       for (const option of this.options) option.setAttribute('aria-selected', String(option.dataset.mode === mode));
       this.paintCoverage();
     }
@@ -123,7 +126,11 @@
         off: 'Intent filtering is turned off for this tab. Choose an intent to filter Home/video recommendations. Shorts/clickbait rules and timer still apply.'
       };
       const detail = state === 'off' ? defaults.off : this.coverage?.detail || defaults[state];
-      const label = {'off-here': 'Off here', loading: 'Loading', unavailable: 'Unavailable', paused: 'Paused'}[state] || '';
+      const label = {'off-here': 'Off here', loading: 'Loading', unavailable: 'Unavailable'}[state] || '';
+      const custom = Object.hasOwn(this.settings.customIntents || {}, this.settings.mode);
+      this.selectedSymbol.textContent = IntentCore.modes(this.settings)[this.settings.mode]?.symbol || '◒';
+      this.selectedSymbol.hidden = !custom || state === 'paused' || this.settings.mode === 'off';
+      this.modeName.textContent = state === 'paused' ? 'Paused' : this.settings.mode === 'off' ? 'Intent off' : this.savedModeName;
       this.host.dataset.filterState = state; this.trigger.dataset.filterState = state;
       this.coverageBadge.textContent = label; this.coverageBadge.hidden = !label;
       if (this.coverageStatus.textContent !== detail) this.coverageStatus.textContent = detail;
@@ -132,7 +139,7 @@
       const paused = state === 'paused';
       this.pauseLabel.textContent = paused ? 'Resume on this tab' : 'Pause on this tab'; this.pauseButton.dataset.paused = String(paused); this.pauseButton.disabled = Boolean(this.pausePending);
       this.pauseIcon.firstElementChild.setAttribute('d', paused ? 'm8 5 11 7-11 7z' : 'M8 5v14M16 5v14');
-      this.trigger.title = `Intent: ${this.modeName.textContent}. ${detail}`;
+      this.trigger.title = `Saved intent: ${this.savedModeName}. ${detail}`;
       this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused';
     }
     selectedIndex() { return Math.max(0, this.options.findIndex(option => option.dataset.mode === this.settings.mode)); }

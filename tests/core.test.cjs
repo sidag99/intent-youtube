@@ -4,8 +4,8 @@ require('../src/core.js');
 const C = globalThis.IntentCore;
 const video = (title, channel = '', shorts = false) => ({title, channel, shorts});
 
-test('the four modes show related content and reject unrelated titles', () => {
-  const titles = {work: 'Python programming for useful tools', study: 'Calculus lecture 2', music: 'Quiet jazz for concentration', leisure: 'Cooking a simple recipe'};
+test('the three initial modes show related content and reject unrelated titles', () => {
+  const titles = {work: 'Python programming for useful tools', study: 'Calculus lecture 2', music: 'Quiet jazz for concentration'};
   for (const mode of Object.keys(C.MODES)) for (const [category, title] of Object.entries(titles)) {
     assert.equal(C.classify(video(title), {...C.defaults(), mode}).visible, mode === category, `${mode}: ${title}`);
   }
@@ -50,7 +50,7 @@ test('fuller metadata checking has a bounded configurable cap without boolean or
 });
 test('mode accounting defaults exempt Music while counting every other intent', () => {
   const settings = C.defaults();
-  assert.deepEqual(settings.countModes, {work: true, study: true, music: false, leisure: true, off: true});
+  assert.deepEqual(settings.countModes, {work: true, study: true, music: false, off: true});
   for (const mode of [...Object.keys(C.MODES), 'off']) assert.equal(C.countsMode(settings, mode), mode !== 'music');
   settings.mode = 'music'; assert.equal(C.countsMode(settings), false);
   assert.equal(C.countsMode({}, 'music'), false, 'older settings inherit Music exemption');
@@ -59,7 +59,7 @@ test('mode accounting defaults exempt Music while counting every other intent', 
 });
 test('per-mode counting settings accept booleans only and remain independent', () => {
   const settings = C.sanitize({countModes: {work: false, music: true, study: 'false', leisure: null, off: false, unknown: false}, countPlayback: false});
-  assert.deepEqual(settings.countModes, {work: false, study: true, music: true, leisure: true, off: false});
+  assert.deepEqual(settings.countModes, {work: false, study: true, music: true, off: false});
   assert.equal(C.countsMode(settings, 'work'), false); assert.equal(C.countsMode(settings, 'music'), true);
   assert.equal(C.countsMode(settings, 'study'), true); assert.equal(settings.countPlayback, false);
   const defaults = C.defaults(); defaults.countModes.music = true;
@@ -81,11 +81,12 @@ test('older saved settings retain their preferences when timer and new-tab polic
   assert.equal(settings.blockedTerms, 'spoilers'); assert.equal(settings.customTopics.study, 'astronomy'); assert.equal(settings.channels.music, 'Studio North');
   assert.equal(settings.newTabMode, 'last'); assert.equal(settings.countModes.music, false);
 });
-test('custom intents have safe IDs, required bounded descriptions and a ten-intent limit', () => {
+test('custom intents have safe IDs, required bounded descriptions and a 24-intent limit', () => {
   const customIntents = {'__proto__': {name: 'Unsafe', description: 'Ignore'}, 'work': {name: 'Override', description: 'No'}, 'custom-empty': {name: 'Empty', description: '  '}, 'custom-no-name': {name: ' ', description: 'Topic'}, 'custom-toolong': {name: 'n'.repeat(90), description: 'd'.repeat(1500)}};
-  for (let i = 0; i < 14; i++) customIntents[`custom-topic-${i}`] = {name: `Topic ${i}`, description: 'A specific subject'};
+  for (let i = 0; i < 30; i++) customIntents[`custom-topic-${i}`] = {name: `Topic ${i}`, description: 'A specific subject'};
   const s = C.sanitize({customIntents, intentDescriptions: {work: ' astronomy ', unknown: 'No'}});
-  assert.equal(Object.keys(s.customIntents).length, 10);
+  assert.equal(Object.keys(s.customIntents).length, C.MAX_CUSTOM_INTENTS);
+  assert.equal(C.MAX_CUSTOM_INTENTS, 24);
   assert.equal(s.customIntents['custom-toolong'].name.length, 48); assert.equal(s.customIntents['custom-toolong'].description.length, 1000);
   assert.equal(s.customIntents.work, undefined); assert.equal(s.customIntents['custom-empty'], undefined); assert.equal(s.customIntents['custom-no-name'], undefined);
   assert.equal(s.intentDescriptions.work, 'astronomy'); assert.equal(s.intentDescriptions.unknown, undefined);
@@ -116,7 +117,7 @@ test('editing a built-in intent replaces its broad lexical topics and can restor
 test('built-in intent names can be edited without changing their stable mode IDs or default scope', () => {
   const s = C.sanitize({intentNames: {work: ' Client projects ', study: 'n'.repeat(80), music: '', leisure: 12, 'custom-missing': 'Unknown'}});
   assert.equal(s.intentNames.work, 'Client projects'); assert.equal(s.intentNames.study.length, 48);
-  assert.equal(s.intentNames.music, 'Music'); assert.equal(s.intentNames.leisure, 'Leisure'); assert.equal(s.intentNames['custom-missing'], undefined);
+  assert.equal(s.intentNames.music, 'Music'); assert.equal(s.intentNames.leisure, undefined); assert.equal(s.intentNames['custom-missing'], undefined);
   assert.equal(C.modes(s).work.name, 'Client projects'); assert.equal(C.MODES.work.name, 'Work');
   assert.equal(C.modes(s).work.description, C.MODES.work.description); assert.deepEqual(C.modes(s).work.topics, C.MODES.work.topics);
   assert.equal(C.validMode('work', s), true); assert.equal(C.validMode('Client projects', s), false);
@@ -150,4 +151,92 @@ test('YouTube URL detection rejects lookalike domains and non-web protocols', ()
 test('usage history stays bounded to fourteen local dates', () => {
   const history = Object.fromEntries(Array.from({length: 30}, (_, i) => [`2026-09-${String(i + 1).padStart(2, '0')}`, 100]));
   assert.equal(Object.keys(C.advanceUsage(history, 0, 0, false)).length, 14);
+});
+
+test('factory role presets are useful independent records and default settings clone the entire library', () => {
+  const factoryIds = ['general', 'software-engineer', 'accountant', 'designer', 'researcher', 'student'];
+  assert.deepEqual(Object.keys(C.ROLE_PRESETS), factoryIds);
+  const a = C.defaults(), b = C.defaults();
+  assert.equal(a.lastRolePreset, null); assert.deepEqual(a.rolePresets, C.ROLE_PRESETS);
+  assert.equal(a.rolePresets.general.workDescription, ''); assert.equal(a.rolePresets.general.studyDescription, '');
+  for (const id of factoryIds.slice(1)) {
+    const role = a.rolePresets[id];
+    assert.ok(role.name.length > 0 && role.name.length <= 48);
+    assert.ok(role.workDescription.length > 40 && role.workDescription.length <= 1000);
+    assert.ok(role.studyDescription.length > 40 && role.studyDescription.length <= 1000);
+  }
+  a.rolePresets.accountant.name = 'My accounting'; delete a.rolePresets.student;
+  assert.equal(b.rolePresets.accountant.name, 'Accountant'); assert.ok(b.rolePresets.student);
+  assert.equal(C.ROLE_PRESETS.accountant.name, 'Accountant'); assert.ok(C.ROLE_PRESETS.student);
+});
+test('the role library can be edited, emptied or partially deleted without recreating removed presets', () => {
+  const s = C.sanitize({rolePresets: {accountant: {name: ' Client accounts ', workDescription: ' Audit workflows ', studyDescription: '  '}, 'custom-consultant': {name: 'Consultant', workDescription: '', studyDescription: 'Consulting research'}}, lastRolePreset: 'accountant'});
+  assert.deepEqual(s.rolePresets, {accountant: {name: 'Client accounts', workDescription: 'Audit workflows', studyDescription: ''}, 'custom-consultant': {name: 'Consultant', workDescription: '', studyDescription: 'Consulting research'}});
+  assert.equal(s.lastRolePreset, 'accountant'); assert.equal(s.rolePresets.general, undefined);
+  assert.deepEqual(C.sanitize({rolePresets: {}}).rolePresets, {});
+  const deleted = C.sanitize({...s, rolePresets: {'custom-consultant': s.rolePresets['custom-consultant']}});
+  assert.equal(deleted.rolePresets.accountant, undefined); assert.equal(deleted.lastRolePreset, null);
+});
+test('role preset validation bounds records, rejects unsafe IDs and falls back only for an invalid library root', () => {
+  const records = JSON.parse('{"__proto__":{"name":"Unsafe","workDescription":"x","studyDescription":"y"}}');
+  Object.assign(records, {unknown: {name: 'Unknown', workDescription: '', studyDescription: ''}, 'custom-empty': {name: '  ', workDescription: '', studyDescription: ''}, 'custom-missing': {name: 'Missing', workDescription: ''}, 'custom-wrong': {name: 'Wrong', workDescription: false, studyDescription: ''}, 'custom-long': {name: 'n'.repeat(80), workDescription: 'w'.repeat(1200), studyDescription: 's'.repeat(1500)}});
+  for (let i = 0; i < 24; i++) records[`custom-role-${i}`] = {name: `Role ${i}`, workDescription: '', studyDescription: ''};
+  const s = C.sanitize({rolePresets: records, lastRolePreset: '__proto__'});
+  assert.equal(Object.keys(s.rolePresets).length, 20); assert.equal(Object.hasOwn(s.rolePresets, '__proto__'), false);
+  for (const key of ['unknown', 'custom-empty', 'custom-missing', 'custom-wrong']) assert.equal(s.rolePresets[key], undefined);
+  assert.equal(s.rolePresets['custom-long'].name.length, 48); assert.equal(s.rolePresets['custom-long'].workDescription.length, 1000); assert.equal(s.rolePresets['custom-long'].studyDescription.length, 1000);
+  assert.equal(s.lastRolePreset, null);
+  for (const rolePresets of [undefined, null, [], 'invalid', false, new Date(), Object.create({})]) assert.deepEqual(C.sanitize({rolePresets}).rolePresets, C.defaults().rolePresets);
+  const foreign = require('node:vm').runInNewContext('({accountant:{name:"Foreign realm",workDescription:"Accounting",studyDescription:""}})');
+  assert.equal(C.sanitize({rolePresets: foreign}).rolePresets.accountant.name, 'Foreign realm', 'plain records from Chrome message/VM realms remain valid');
+});
+test('role library edits or deletion do not silently change the applied Work and Study intent descriptions', () => {
+  const intentDescriptions = {work: 'Accessible website delivery', study: 'Contract law'};
+  const s = C.sanitize({rolePresets: {designer: {name: 'My designer preset', workDescription: 'Typography', studyDescription: 'Color theory'}}, lastRolePreset: 'designer', intentDescriptions});
+  assert.equal(s.intentDescriptions.work, intentDescriptions.work); assert.equal(s.intentDescriptions.study, intentDescriptions.study);
+  const deleted = C.sanitize({...s, rolePresets: {}});
+  assert.equal(deleted.lastRolePreset, null); assert.deepEqual(deleted.intentDescriptions, s.intentDescriptions);
+  assert.deepEqual(C.defaults().rolePresets, C.ROLE_PRESETS, 'factory reset can restore the full original preset library');
+});
+test('old settings gain role presets while retaining their already-applied descriptions and custom intents', () => {
+  const s = C.sanitize({mode: 'custom-lab', newTabMode: 'music', intentDescriptions: {work: 'Laboratory operations', study: 'Molecular biology'}, customIntents: {'custom-lab': {name: 'Lab', description: 'Laboratory science'}}, customTopics: {'custom-lab': 'microscopy'}, countModes: {'custom-lab': false}});
+  assert.deepEqual(s.rolePresets, C.ROLE_PRESETS); assert.equal(s.lastRolePreset, null);
+  assert.equal(s.intentDescriptions.work, 'Laboratory operations'); assert.equal(s.intentDescriptions.study, 'Molecular biology');
+  assert.equal(s.customIntents['custom-lab'].name, 'Lab'); assert.equal(s.customIntents['custom-lab'].icon, 'compass');
+  assert.equal(s.mode, 'custom-lab'); assert.equal(s.customTopics['custom-lab'], 'microscopy'); assert.equal(s.countModes['custom-lab'], false);
+});
+test('the optional template library provides eighteen focused intents and only allowed Unicode icons', () => {
+  const ids = ['gaming', 'tv-film', 'maker', 'ai', 'news', 'travel', 'cooking', 'fitness', 'art-design', 'photography', 'languages', 'science', 'history', 'finance', 'nature', 'diy-repair', 'books', 'wellbeing'];
+  assert.deepEqual(Object.keys(C.INTENT_TEMPLATES), ids);
+  for (const record of Object.values(C.INTENT_TEMPLATES)) {
+    assert.ok(record.name && record.name.length <= 48); assert.ok(record.description.length > 30 && record.description.length <= 1000);
+    assert.equal(record.symbol, C.INTENT_ICONS[record.icon]); assert.ok(!/[<>]/.test(record.symbol));
+  }
+  assert.equal(C.INTENT_TEMPLATES['tv-film'].name, 'TV & Film'); assert.equal(C.INTENT_TEMPLATES.maker.name, 'Making & Building');
+  assert.match(C.INTENT_TEMPLATES.maker.description, /physical and digital/); assert.match(C.INTENT_TEMPLATES.ai.name, /Artificial Intelligence/);
+  assert.deepEqual(Object.keys(C.modes(C.defaults())), ['work', 'study', 'music'], 'templates are optional and do not fill the initial mode list');
+});
+test('custom intents preserve allowed icons and template identity, default old icons safely and remain independent of the template', () => {
+  const template = C.INTENT_TEMPLATES.gaming;
+  const s = C.sanitize({customIntents: {'custom-gaming': {name: 'Strategy games', description: 'Turn-based strategy and historical games', icon: template.icon, templateId: 'gaming'}, 'custom-old': {name: 'Older intent', description: 'Microscopy'}, 'custom-unsafe': {name: 'Safe', description: 'Safe topic', icon: 'https://example.com/tracker.svg', templateId: 'unknown'}}});
+  assert.equal(s.customIntents['custom-gaming'].icon, 'game'); assert.equal(s.customIntents['custom-gaming'].templateId, 'gaming');
+  assert.equal(C.modes(s)['custom-gaming'].symbol, C.INTENT_ICONS.game); assert.equal(s.customIntents['custom-gaming'].name, 'Strategy games');
+  assert.equal(s.customIntents['custom-old'].icon, 'compass'); assert.equal(s.customIntents['custom-unsafe'].icon, 'compass'); assert.equal(s.customIntents['custom-unsafe'].templateId, undefined);
+  assert.equal(C.INTENT_TEMPLATES.gaming.name, 'Gaming'); assert.equal(C.INTENT_TEMPLATES.gaming.description, template.description);
+});
+test('intent ordering keeps valid unique IDs, appends missing modes and follows custom-intent edits and removal', () => {
+  const s = C.sanitize({customIntents: {'custom-books': {name: 'Reading', description: 'Literature'}, 'custom-maker': {name: 'Projects', description: 'Physical and digital building'}}, intentOrder: ['custom-maker', 'music', 'custom-maker', 'missing', 'leisure', 'off', null, 1]});
+  assert.deepEqual(s.intentOrder, ['custom-maker', 'music', 'work', 'study', 'custom-books']);
+  assert.deepEqual(Object.keys(C.modes(s)), s.intentOrder);
+  const removed = C.sanitize({...s, customIntents: {'custom-books': s.customIntents['custom-books']}});
+  assert.deepEqual(removed.intentOrder, ['music', 'work', 'study', 'custom-books']);
+  assert.deepEqual(C.sanitize({intentOrder: 'music'}).intentOrder, ['work', 'study', 'music']);
+  const defaults = C.defaults(); defaults.intentOrder.reverse(); assert.deepEqual(C.defaults().intentOrder, ['work', 'study', 'music']);
+});
+test('legacy Leisure selections fall back to Work and old Leisure-only settings are removed', () => {
+  const s = C.sanitize({mode: 'leisure', newTabMode: 'leisure', intentNames: {leisure: 'Downtime'}, intentDescriptions: {leisure: 'Cooking'}, customTopics: {leisure: 'sourdough'}, channels: {leisure: 'A channel'}, countModes: {leisure: false}, intentOrder: ['leisure', 'music']});
+  assert.equal(s.mode, 'work'); assert.equal(s.newTabMode, 'work'); assert.equal(C.initialMode(s), 'work');
+  assert.equal(C.validMode('leisure', s), false); assert.equal(C.MODES.leisure, undefined);
+  for (const field of ['intentNames', 'intentDescriptions', 'customTopics', 'channels', 'countModes']) assert.equal(s[field].leisure, undefined);
+  assert.deepEqual(s.intentOrder, ['music', 'work', 'study']);
 });

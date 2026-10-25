@@ -28,3 +28,20 @@ test('customized intent acceptance uses its own positive similarity threshold wi
   assert.equal(S.decide(vector, {...modeVectors, 'custom-law': [[.29, 0]]}, 'custom-law', true).accepted, false);
   assert.equal(S.decide(vector, {work: [[.5, 0]]}, 'work').accepted, true);
 });
+
+test('initial semantic profiles exclude Leisure and installed templates use their own focused descriptions', () => {
+  assert.equal(S.PROFILES.leisure, undefined); assert.deepEqual(Object.keys(S.profiles(C.defaults())), ['work', 'study', 'music']);
+  const customIntents = Object.fromEntries(Object.entries(C.INTENT_TEMPLATES).map(([id, record]) => ['custom-' + id, {name: record.name, description: record.description, icon: record.icon, templateId: id}]));
+  const settings = C.sanitize({customIntents, mode: 'custom-maker'}), profiles = S.profiles(settings);
+  assert.equal(Object.keys(profiles).length, 21);
+  for (const [id, record] of Object.entries(C.INTENT_TEMPLATES)) assert.deepEqual(profiles['custom-' + id], [record.description]);
+  assert.match(profiles['custom-maker'][0], /physical and digital/);
+});
+test('editing a role preset does not change semantic scope until its descriptions are explicitly applied', () => {
+  const s = C.sanitize({rolePresets: {accountant: {name: 'Accounting focus', workDescription: 'Bookkeeping, audit preparation and reconciliations', studyDescription: 'Accounting lessons'}}});
+  assert.deepEqual(S.profiles(s).work, S.PROFILES.work);
+  const applied = C.sanitize({...s, intentDescriptions: {work: s.rolePresets.accountant.workDescription, study: s.rolePresets.accountant.studyDescription}, lastRolePreset: 'accountant'});
+  assert.deepEqual(S.profiles(applied).work, [s.rolePresets.accountant.workDescription]);
+  assert.deepEqual(S.profiles(applied).study, [s.rolePresets.accountant.studyDescription]);
+  assert.deepEqual(S.profiles({...applied, rolePresets: {}}).work, S.profiles(applied).work);
+});

@@ -5,7 +5,6 @@
     work: ['software engineering tutorial', 'design workflow', 'productivity workflow', 'business strategy', 'python programming', 'web development', 'career skills', 'data science'],
     study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained'],
     music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music'],
-    leisure: ['travel vlog', 'cooking recipe', 'comedy sketch', 'gaming review', 'sports highlights', 'film review', 'photography tutorial', 'gardening ideas']
   };
   function key(settings) {
     const s = C.sanitize(settings);

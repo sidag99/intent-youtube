@@ -6,7 +6,7 @@ const path = require('node:path');
 const source = name => fs.readFileSync(path.join(__dirname, '../src', name), 'utf8');
 function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetcher, judge, storedSession = {}) {
   let now = start, listener;
-  const local = structuredClone(stored), session = structuredClone(storedSession), redirects = [], rules = [], sessionRules = [], broadcasts = [], badges = [], queries = [], queryResults = [], events = {};
+  const local = structuredClone(stored), session = structuredClone(storedSession), redirects = [], rules = [], sessionRules = [], broadcasts = [], badges = [], titles = [], icons = [], iconFetches = [], queries = [], queryResults = [], events = {};
   const dynamic = new Map(), perTabRules = new Map();
   let tabs = [{id: 1, windowId: 1, active: true, audible: false, url: 'https://www.youtube.com/'}];
   let focus = {id: 1, focused: true}, idle = 'active';
@@ -31,17 +31,29 @@ function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetch
     }, update: async (id, info) => redirects.push({id, ...info}), sendMessage: async (id, message) => broadcasts.push({id, message: structuredClone(message)}), onActivated: event(), onCreated: event('created'), onRemoved: event('removed'), onUpdated: event('updated')},
     windows: {getLastFocused: async () => focus, onFocusChanged: event()},
     declarativeNetRequest: {updateDynamicRules: async r => {rules.push(r); for (const id of r.removeRuleIds) dynamic.delete(id); for (const rule of r.addRules) dynamic.set(rule.id, structuredClone(rule));}, updateSessionRules: async r => {sessionRules.push(r); for (const id of r.removeRuleIds) perTabRules.delete(id); for (const rule of r.addRules) perTabRules.set(rule.id, structuredClone(rule));}},
-    action: {setBadgeText: async value => badges.push(structuredClone(value)), setBadgeBackgroundColor: async () => {}},
+    action: {setBadgeText: async value => badges.push(structuredClone(value)), setBadgeBackgroundColor: async () => {}, setTitle: async value => titles.push(structuredClone(value)), setIcon: async value => icons.push(structuredClone(value))},
     offscreen: {createDocument: async () => {}},
     runtime: {getContexts: async () => [{}], sendMessage: async message => message.type === 'AI_CLASSIFY' ? ({ok: true, decisions: judge ? await judge(message.videos, message.settings) : message.videos.map(() => ({accepted: true, uncertain: false}))}) : ({ok: true}), getURL: s => 'chrome-extension://intent/' + s, openOptionsPage: async () => {}, onMessage: {addListener(fn) {listener = fn;}}, onInstalled: event(), onStartup: event()}
   };
   class Clock extends Date { static now() { return now; } }
-  const context = vm.createContext({chrome, console, URL, AbortSignal, fetch: fetcher, Date: Clock});
+  class Canvas {
+    constructor(width, height) {this.width = width; this.height = height;}
+    getContext() {return {drawImage() {}, getImageData: () => {
+      const data = new Uint8ClampedArray(this.width * this.height * 4);
+      for (let i = 0; i < data.length; i += 4) data.set([54, 94, 75, 255], i);
+      return {data, width: this.width, height: this.height};
+    } };}
+  }
+  const context = vm.createContext({chrome, console, URL, AbortSignal, fetch: async url => {
+    if (url === 'chrome-extension://intent/icons/128.png') {iconFetches.push(url); return {ok: true, blob: async () => ({})};}
+    if (!fetcher) throw new Error('Unexpected network request: ' + url);
+    return fetcher(url);
+  }, OffscreenCanvas: Canvas, createImageBitmap: async () => ({close() {}}), Date: Clock});
   context.importScripts = (...names) => names.forEach(name => vm.runInContext(source(name), context));
   vm.runInContext(source('background.js'), context);
   const sender = {url: 'chrome-extension://intent/settings.html'};
   const send = (message, from = sender) => new Promise(resolve => listener(message, from, resolve));
-  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, badges, queries, queryResults, drain: () => vm.runInContext('queue', context), associated: id => vm.runInContext(`associatedTab(${Number(id)})`, context), updateEvent: (id, info) => events.updated(id, info), removeEvent: id => events.removed(id), advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, updateTab: async (id, info) => {tabs = tabs.map(tab => tab.id === id ? {...tab, ...info} : tab); events.updated(id, info); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
+  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, badges, titles, icons, iconFetches, queries, queryResults, drain: () => vm.runInContext('queue', context), associated: id => vm.runInContext(`associatedTab(${Number(id)})`, context), updateEvent: (id, info) => events.updated(id, info), removeEvent: id => events.removed(id), advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, updateTab: async (id, info) => {tabs = tabs.map(tab => tab.id === id ? {...tab, ...info} : tab); events.updated(id, info); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
 }
 test('foreground use counts once across tabs; an unfocused browser stops counting', async () => {
   const h = harness(); await h.send({type: 'GET_STATE'});
@@ -450,7 +462,7 @@ test('paused counted tabs remain accessible after exhaustion and preserve their 
   const paused = await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
   assert.equal(paused.blocked, false); assert.equal(paused.budgetExhausted, true); assert.equal(paused.settings.mode, 'work');
   assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1)); assert.ok(h.perTabRules.get(2).condition.tabIds.includes(2));
-  assert.ok(h.redirects.every(item => item.id === 2)); assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
+  assert.ok(h.redirects.every(item => item.id === 2)); assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'PAUSE');
   h.setTabs([{id: 1, url: 'about:blank', active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]); await h.send({type: 'GET_STATE'});
   assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1));
   h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
@@ -529,4 +541,49 @@ test('unrelated tab update and removal events create no associations, badge work
   assert.equal(h.session.tabModes[99], undefined); assert.equal(h.session.pausedTabs[99], undefined);
   await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
   await h.removeTab(1); assert.equal(h.associated(1), false, 'closed supported tabs also discard their revision bookkeeping');
+});
+
+
+test('browser action defaults to gray outside YouTube and gives supported tabs a cached colored mode icon', async () => {
+  const h = harness(); h.setTabs([{id: 7, url: 'https://example.com/', active: true, windowId: 1}]);
+  await h.send({type: 'GET_STATE'});
+  assert.equal(h.badges.at(-1).text, ''); assert.equal(Object.hasOwn(h.badges.at(-1), 'tabId'), false);
+  assert.equal(h.titles.at(-1).title, 'Intent — Off on this site. Only runs on YouTube.');
+  const off = h.icons.at(-1); assert.equal(Object.hasOwn(off, 'tabId'), false);
+  for (const size of [16, 32]) {
+    const pixels = off.imageData[size]; assert.equal(pixels.width, size); assert.equal(pixels.height, size);
+    assert.equal(pixels.data[0], pixels.data[1]); assert.equal(pixels.data[1], pixels.data[2]); assert.equal(pixels.data[3], 255);
+  }
+  h.setTabs([{id: 1, url: 'https://www.youtube.com/', active: true, windowId: 1}]);
+  await h.send({type: 'GET_STATE'});
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'W');
+  assert.match(h.titles.filter(item => item.tabId === 1).at(-1).title, /Work intent.*timer counts toward your daily limit/);
+  const active = h.icons.filter(item => item.tabId === 1).at(-1);
+  assert.notEqual(active.imageData[16].data[0], active.imageData[16].data[1]);
+  const calls = h.icons.length; await h.send({type: 'GET_STATE'});
+  assert.equal(h.icons.length, calls, 'unchanged action state does not redraw on every heartbeat');
+  assert.equal(h.iconFetches.length, 1, 'the bundled icon and both pixel sizes are cached across states');
+  await h.updateTab(1, {url: 'https://example.com/'});
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
+  assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Off on this site. Only runs on YouTube.');
+  const left = h.icons.filter(item => item.tabId === 1).at(-1).imageData[16].data;
+  assert.equal(left[0], left[1]); assert.equal(left[1], left[2]);
+  assert.ok(h.icons.every(item => item.tabId === undefined || item.tabId === 1), 'unrelated tabs inherit the default without extra tab inspection');
+});
+test('browser action distinguishes paused tabs from Off and states the Off timer policy', async () => {
+  const h = harness(); await h.send({type: 'GET_STATE'});
+  await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'PAUSE');
+  assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Paused on this tab; filters and timer are off');
+  const paused = h.icons.filter(item => item.tabId === 1).at(-1).imageData[32].data;
+  assert.equal(paused[0], paused[1]); assert.equal(paused[1], paused[2]);
+  await h.send({type: 'SET_TAB_PAUSED', paused: false, targetTabId: 1});
+  await h.send({type: 'UPDATE_SETTINGS', targetTabId: 1, patch: {mode: 'off'}});
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'OFF');
+  assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Off on this tab; topic filtering is off; timer counts toward your daily limit');
+  await h.send({type: 'UPDATE_SETTINGS', patch: {countModes: {off: false}}});
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'OFF');
+  assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Off on this tab; topic filtering is off; timer is exempt from your daily limit');
+  const off = h.icons.filter(item => item.tabId === 1).at(-1).imageData[16].data;
+  assert.equal(off[0], off[1]); assert.equal(off[1], off[2]);
 });

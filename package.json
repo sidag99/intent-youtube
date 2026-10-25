@@ -1,11 +1,11 @@
 {
   "name": "intent-youtube",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "A local-first YouTube focus extension",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check src/core.js && node --check src/feed.js && node --check src/feed-theme.js && node --check src/home.js && node --check src/toolbar.js && node --check src/background.js && node --check src/content.js && node --check src/ui.js && node --check src/blocked.js && node --check src/semantic.js && node --check src/ai-host.js && node --check src/ai-worker-source.mjs",
+    "check": "node --check src/core.js && node --check src/feed.js && node --check src/feed-theme.js && node --check src/home.js && node --check src/toolbar.js && node --check src/background.js && node --check src/content.js && node --check src/ui.js && node --check src/role-presets.js && node --check src/intent-library.js && node --check src/blocked.js && node --check src/semantic.js && node --check src/ai-host.js && node --check src/ai-worker-source.mjs",
     "test:browser": "node tests/browser.cjs && node tests/preferences.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs",
     "build": "node scripts/build.mjs",
     "test:model": "node tests/model-browser.cjs",

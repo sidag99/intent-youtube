@@ -29,6 +29,58 @@ const blockedURL = () => chrome.runtime.getURL('blocked.html');
 const hasYouTubeURL = tab => C.isYouTube(tab.url) || C.isYouTube(tab.pendingUrl);
 const isYouTubeTab = tab => hasYouTubeURL(tab) || tab.url?.startsWith(blockedURL()) || tab.pendingUrl?.startsWith(blockedURL());
 const associatedTab = id => Object.hasOwn(tabModes || {}, id) || Object.hasOwn(pausedTabs || {}, id) || reports.has(id) || tabFeedRevisions.has(id);
+const actionStates = new Map();
+const OFF_SITE_TITLE = 'Intent — Off on this site. Only runs on YouTube.';
+let actionImages;
+function actionIconImages() {
+  if (!actionImages) actionImages = (async () => {
+    // Read only our bundled icon; no page data or external asset is needed.
+    const response = await fetch(chrome.runtime.getURL('icons/128.png'));
+    if (!response.ok) throw new Error('The bundled action icon could not load.');
+    const bitmap = await createImageBitmap(await response.blob());
+    try {
+      const active = {}, inactive = {};
+      for (const size of [16, 32]) {
+        const canvas = new OffscreenCanvas(size, size), drawing = canvas.getContext('2d', {willReadFrequently: true});
+        drawing.drawImage(bitmap, 0, 0, size, size);
+        active[size] = drawing.getImageData(0, 0, size, size);
+        const gray = drawing.getImageData(0, 0, size, size);
+        for (let i = 0; i < gray.data.length; i += 4) {
+          const value = Math.round(gray.data[i] * .2126 + gray.data[i + 1] * .7152 + gray.data[i + 2] * .0722);
+          gray.data[i] = gray.data[i + 1] = gray.data[i + 2] = value;
+        }
+        inactive[size] = gray;
+      }
+      return {active, inactive};
+    } finally { bitmap.close?.(); }
+  })().catch(error => {actionImages = undefined; throw error;});
+  return actionImages;
+}
+async function paintAction(tabId, {text = '', title = OFF_SITE_TITLE, active = false, color = '#606060'} = {}) {
+  const key = Number.isInteger(tabId) ? tabId : 'default';
+  const signature = JSON.stringify([text, title, active, color]);
+  if (actionStates.get(key) === signature) return;
+  const scope = Number.isInteger(tabId) ? {tabId} : {};
+  const images = await actionIconImages();
+  await Promise.all([
+    chrome.action.setBadgeText({...scope, text}),
+    chrome.action.setBadgeBackgroundColor({...scope, color}),
+    chrome.action.setTitle({...scope, title}),
+    chrome.action.setIcon({...scope, imageData: active ? images.active : images.inactive})
+  ]);
+  actionStates.set(key, signature);
+}
+function tabAction(tab, exhausted) {
+  const mode = ensureMode(tab.id), paused = pausedTabs[tab.id] === true;
+  if (paused) return {text: 'PAUSE', title: 'Intent — Paused on this tab; filters and timer are off'};
+  const counted = countsMode(mode), blocked = exhausted && counted;
+  const timer = counted ? 'timer counts toward your daily limit' : 'timer is exempt from your daily limit';
+  if (blocked) return {text: 'END', title: `Intent — Daily limit reached on this tab; ${mode === 'off' ? 'topic filtering is off' : 'YouTube access is blocked'}`, color: '#9b4135'};
+  if (mode === 'off') return {text: 'OFF', title: `Intent — Off on this tab; topic filtering is off; ${timer}`};
+  const name = (C.modes ? C.modes(settings)[mode]?.name : C.MODES[mode]?.name) || mode;
+  return {text: badgeMode(mode), title: `Intent — ${name} intent on this tab; ${timer}`, active: true, color: '#365e4b'};
+}
+
 function serial(task) {
   const job = queue.then(task);
   queue = job.catch(error => console.error('Intent:', error));
@@ -88,13 +140,9 @@ async function applyBlock(exhausted, tabs) {
     appliedBlock = signature;
   }
   if (exhausted) await Promise.allSettled(tabs.filter(tab => hasYouTubeURL(tab) && !pausedTabs[tab.id] && countsMode(ensureMode(tab.id))).map(tab => chrome.tabs.update(tab.id, {url: blockedURL()})));
-  // The default action is off outside YouTube; only supported tabs get a badge.
-  await chrome.action.setBadgeText({text: ''});
-  await Promise.allSettled(tabs.filter(isYouTubeTab).map(async tab => {
-    const mode = ensureMode(tab.id), blocked = exhausted && !pausedTabs[tab.id] && countsMode(mode);
-    await chrome.action.setBadgeText({tabId: tab.id, text: pausedTabs[tab.id] ? '' : blocked ? 'END' : badgeMode(mode)});
-    await chrome.action.setBadgeBackgroundColor({tabId: tab.id, color: blocked ? '#9b4135' : '#365e4b'});
-  }));
+  // The default is visibly inactive on every other site; supported tabs override it.
+  await paintAction();
+  await Promise.allSettled(tabs.filter(isYouTubeTab).map(tab => paintAction(tab.id, tabAction(tab, exhausted))));
 }
 async function tick(message = {}, sender = {}) {
   await initialize();
@@ -227,6 +275,7 @@ chrome.tabs.onCreated?.addListener(tab => {
 chrome.tabs.onRemoved.addListener(id => {
   serial(async () => {
     await initialize();
+    actionStates.delete(id);
     if (!associatedTab(id)) return;
     reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.delete(id);
     await tick();
@@ -239,7 +288,8 @@ chrome.tabs.onUpdated.addListener((id, info) => {
         await initialize();
         if (!associatedTab(id)) return;
         reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1);
-        await chrome.action.setBadgeText({tabId: id, text: ''});
+        await paintAction(id);
+        actionStates.delete(id);
         await tick();
       }).catch(() => {});
       return;

@@ -2,9 +2,11 @@
 
 **YouTube, with purpose.** A Chrome / Edge extension with intent-driven home and watch-page recommendations, local topic analysis, distraction controls and a daily budget.
 
-- **Filled home and watch feeds:** Work, Study, Music, Leisure and custom intents load matching videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
-- **Controls left of search:** on YouTube, a clearly labelled Intent selector, refresh control and settings shortcut sit to the left of YouTube’s search box, keeping search and the microphone together. The original green-and-white logo opens a custom menu with keyboard navigation. There is no separate feed banner. Off remains visible and can be re-enabled from the same control. Search and unsupported pages explicitly show **Off here**, while loading and failed feeds show their current state.
-- **Your own definitions:** use the pencil on any intent to edit its name, description, topics and channels, including Work, Study, Music and Leisure, or create up to ten named custom intents. A configured description replaces the broad built-in topic scope.
+- **Filled home and watch feeds:** Work, Study, Music and the optional intents you install load matching videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
+- **Controls left of search:** on YouTube, a clearly labelled Intent selector, refresh control and settings shortcut sit to the left of YouTube’s search box, keeping search and the microphone together. The original green-and-white logo opens a custom menu with keyboard navigation. There is no separate feed banner. The toolbar reserves a fixed space so long names or status changes do not resize the search field; long names use an ellipsis. Intent off remains visible and can be re-enabled from the same control. The unused native Home chip-bar space collapses during filtering and returns when filtering stops. Feed backgrounds blend with their surroundings. Search and unsupported pages explicitly show **Off here**, while loading and failed feeds show their current state.
+- **Your own definitions:** use the pencil on any intent to edit its name, description, topics and channels, including Work, Study and Music, or add up to 24 optional/custom intents. Custom intents have a choice of 20 icons. A configured description replaces the broad built-in topic scope. Built-in editors show their exact factory semantic descriptions, topic keywords and discovery searches, with a live indication of whether the built-in scope or a custom description is in use.
+- **Optional intent library:** add Gaming, TV & Film, Making & Building, Artificial Intelligence, News, Travel, Cooking, Fitness, Art & Design, Photography, Languages, Science, History, Finance, Nature, DIY & Repair, Books or Wellbeing. Templates become editable custom intents; adding one does not switch the current intent. Arrange the installed intents in any order, shared by settings, popup and toolbar. Leisure is removed; old Leisure selections fall back to Work.
+- **Editable role presets:** General, Software engineer, Accountant, Designer, Researcher and Student provide starting descriptions for Work and Study. Apply, rename, edit, delete or create role presets. Applying changes only the two descriptions, and each intent stays editable afterward.
 - **Independent tab memory:** a tab keeps its selected intent across reloads. Choose whether new tabs follow the last-used intent or always start in a particular intent. Changing one tab leaves other tabs alone.
 - **Pause individual tabs:** choose **Pause on this tab** in the toolbar menu or popup. YouTube's native content returns, all distraction filtering stops, and that tab adds no time or budget block. Other tabs remain active. Resume restores the tab's saved intent.
 - **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations and layout return when modes are off. Switching modes preserves the current video player.
@@ -23,7 +25,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.6 adds per-tab pause, configurable fuller-metadata checks and network counts, custom mode menus, pencil editors, factory reset, explicit filtering status and complete Shorts-section hiding in search. No new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7 adds editable role presets, visible factory defaults, an optional intent library, custom icons and ordering, a smaller pause control, stable toolbar sizing and clearer active/off/paused states. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
@@ -39,7 +41,7 @@ The model runs in a dedicated worker hosted by an offscreen extension document. 
 
 ## Topic and distraction controls
 
-Use the pencil button next to an intent, then **Intent description**, to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
+Use the pencil button next to an intent, then **Intent description**, to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents, including installed templates, require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
 
 Add extra topics, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
 
@@ -51,17 +53,25 @@ Clickbait filtering remains a separate rule-based heuristic for common phrases, 
 
 Mode filtering affects home and watch-page recommendations. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music participates in the same per-tab timer policy, but its music-specific home is not replaced by this feed. Exemption depends on the selected intent, rather than detecting whether a particular video contains music.
 
+## Role presets and intent templates
+
+Role presets are starting points for Work and Study, rather than separate accounts or saved browsing profiles. Preview the two descriptions before applying a preset. Applying preserves intent names, extra topics, channel rules, Music/other intents, timer settings and tab selections. Extra topics and channel inclusions therefore remain capable of expanding the resulting scope. Editing a saved role preset does not change already-applied descriptions; apply it again when wanted. Editing an intent does not update the saved preset. Deleting a role preset leaves current intents in place. Up to 20 role presets can be saved; a blank preset description restores that intent’s standard built-in scope. Factory reset restores the six original presets.
+
+Intent templates add focused modes to your installed list. The library remains collapsed until opened and can be searched; no extra modes are installed automatically. Choose an icon in a custom intent’s pencil editor, and use **Arrange intents** to move installed modes up or down. The order persists across reloads. Delete installed templates through their intent editor; their factory template remains available to add again.
+
+Optional templates are a useful way to limit clutter, but their topics can overlap and they are only starting scopes. News selects news-related metadata; it does not verify reporting accuracy or source quality. Customize any description to narrow the scope you want.
+
 ## Tab memory
 
 The toolbar and popup change the current YouTube tab. Search results and other unsupported pages do not receive intent topic filtering: **Off here** means the intent is saved for Home/video recommendations; distraction filters and the timer can still apply. The full settings page edits the last-used intent and global preferences; it does not force all existing tabs into one mode. **New YouTube tabs** can follow the last-used intent or a fixed intent, including a custom intent or modes-off browsing.
 
 Per-tab selections are kept in session storage across reloads and background-worker restarts. A full browser restart uses the saved new-tab policy; tab-specific choices are not promised across browser restarts. Preferences, custom definitions and the last-used intent persist in local storage.
 
-**Pause on this tab** is separate from the **Off** intent. Off removes topic filtering while retaining distraction rules and the mode's timer policy. Pause restores native content, stops all filters and new analysis requests, and excludes that tab from the daily timer and limit. Its toolbar explicitly shows **Paused** with a Resume control. The pause survives reloads and worker restarts, stays local to that tab and clears when it closes or leaves YouTube. New tabs start active under your chosen new-tab intent policy. Requests already sent may finish for the shared cache; pausing prevents further model passes or fuller-check groups for that feed.
+**Pause on this tab** is separate from the **Off** intent. Off removes topic filtering while retaining distraction rules and the mode's timer policy. Pause restores native content, stops all filters and new analysis requests, and excludes that tab from the daily timer and limit. Its toolbar explicitly shows **Paused** with a Resume control; the popup uses a compact action beside its heading. The browser action shows PAUSE while paused, OFF when only topic filtering is off, a mode initial while active, and END when a counted intent is blocked. Outside YouTube its icon is gray and its title says Off on this site. The pause survives reloads and worker restarts, stays local to that tab and clears when it closes or leaves YouTube. New tabs start active under your chosen new-tab intent policy. Requests already sent may finish for the shared cache; pausing prevents further model passes or fuller-check groups for that feed.
 
 ## Reset settings
 
-**Reset settings** opens a confirmation explaining the changes. It restores factory preferences and built-in names, removes custom intents/rules, clears per-tab pauses, and sets open tab intents to Work. Daily usage history and the detected YouTube appearance are retained. Reset is a settings reset, not a way to erase today’s time.
+**Reset settings** opens a confirmation explaining the changes. It restores factory preferences and built-in names, removes custom intents/rules, restores the role-preset library and initial intent order, clears per-tab pauses, and sets open tab intents to Work. Daily usage history and the detected YouTube appearance are retained. Reset is a settings reset, not a way to erase today’s time.
 
 ## Time accounting
 
@@ -88,7 +98,7 @@ Content scripts run only on top-level YouTube/YouTube NoCookie pages. They are n
 | Permission | Purpose |
 | --- | --- |
 | YouTube / YouTube NoCookie hosts | Filter cards, retrieve public results/metadata, observe playback and redirect exhausted tabs. |
-| `storage` | Local settings/intent definitions/daily totals, plus session tab intents/pauses and an accounting checkpoint. |
+| `storage` | Local settings/intent definitions, role presets/order/icons and daily totals, plus session tab intents/pauses and an accounting checkpoint. |
 | `alarms` | Accounting fallback and overnight recovery. |
 | `idle` | Exclude inactive foreground use and locked devices. |
 | `offscreen` | Host the dedicated worker for the packaged local model. |
@@ -133,5 +143,7 @@ src/ai-host.js / ai.html   Offscreen worker host
 runtime/                  Built inference worker and required WASM
 models/                   Bundled quantized MiniLM model and tokenizer
 src/content.js            Native distraction filtering and playback reports
-src/ui.js                  Popup/settings controls
+src/role-presets.js        Editable Work/Study role-preset library
+src/intent-library.js      Optional mode templates and intent ordering
+src/ui.js                  Popup/settings controls and transparent default editors
 ```
