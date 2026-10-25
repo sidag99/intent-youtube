@@ -8,9 +8,9 @@
 @media(max-width:1100px){.settings{display:none}:host{width:210px;min-width:210px;max-width:210px;flex-basis:210px;margin-right:8px}}@media(max-width:700px){:host{width:170px;min-width:170px;max-width:170px;flex-basis:170px;margin-right:4px}.controls{height:34px;padding:0 2px}.trigger{height:34px;gap:5px;padding:0 6px 0 4px}.mode-name{font-size:12px}.trigger:has(.selected-symbol:not([hidden])){gap:3px;padding-right:4px}.icon-button{width:28px;height:28px;flex-basis:28px}}@media(max-width:480px){:host{width:154px;min-width:154px;max-width:154px;flex-basis:154px}.coverage-badge{max-width:65px;padding:2px 4px}.trigger{gap:4px}.trigger:has(.selected-symbol:not([hidden])){gap:2px;padding-right:2px}.selected-symbol{width:12px;flex-basis:12px;font-size:12px}.chevron{width:10px;flex-basis:10px}}
 
 
-.timer-button{flex:0 0 64px;display:flex;align-items:center;justify-content:center;gap:4px;width:64px;height:30px;padding:3px;border-radius:15px;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-button[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-button[data-timer-state=low]{color:var(--intent-warning)}.timer-button[data-timer-state=critical]{color:var(--intent-critical)}.timer-button[data-timer-state=exempt],.timer-button[data-timer-state=paused],.timer-button[data-timer-state=unlimited],.timer-button[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{min-width:0;overflow:hidden;text-overflow:clip}.timer-mobile{display:none}.timer-details{padding:12px 16px}.timer-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.timer-detail-heading h2{font-size:14px;font-weight:500;line-height:1.4;margin:0}.timer-close{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;padding:0;border-radius:50%;font-size:20px}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0}.timer-stats dt{font-size:12px;color:var(--intent-muted)}.timer-stats dd{margin:0;font-size:14px;font-variant-numeric:tabular-nums}.timer-context{font-size:12px;line-height:16px;color:var(--intent-muted);margin:8px 0 0}
+.timer-indicator{flex:0 0 76px;display:flex;align-items:center;justify-content:center;gap:4px;width:76px;height:30px;padding:4px 6px;border-radius:15px;cursor:default;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-indicator[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-indicator[data-timer-state=low]{color:var(--intent-warning)}.timer-indicator[data-timer-state=critical]{color:var(--intent-critical)}.timer-indicator[data-timer-state=exempt],.timer-indicator[data-timer-state=paused],.timer-indicator[data-timer-state=unlimited],.timer-indicator[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{flex:0 0 auto;white-space:nowrap;line-height:16px}.timer-indicator:focus-visible{outline:2px solid var(--intent-accent);outline-offset:2px}.timer-mobile{display:none}.timer-details{padding:12px 14px;border-radius:12px;font-size:12px;white-space:normal;pointer-events:auto}.timer-detail-heading{font-size:13px;font-weight:500;margin:0}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}.timer-stats dt{color:var(--intent-muted)}.timer-stats dd{margin:0;font-variant-numeric:tabular-nums}.timer-context,.timer-reset{font-size:12px;line-height:17px;color:var(--intent-muted);margin:8px 0 0}
 :host([data-filter-state=off-here]) .trigger,:host([data-filter-state=loading]) .trigger,:host([data-filter-state=unavailable]) .trigger{padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:12px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}
-@media(max-width:700px){.timer-button{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}.timer-clock{flex-basis:12px;width:12px;height:12px}.timer-desktop{display:none}.timer-mobile{display:inline}.trigger{padding:0 3px;gap:2px}.trigger:has(.selected-symbol:not([hidden])){padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:10px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}}
+@media(max-width:700px){.timer-indicator{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}.timer-clock{flex-basis:12px;width:12px;height:12px}.timer-desktop{display:none}.timer-mobile{display:inline}.trigger{padding:0 3px;gap:2px}.trigger:has(.selected-symbol:not([hidden])){padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:10px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}}
 @media(max-width:700px){:host([data-filter-state=off]) .trigger,:host([data-filter-state=paused]) .trigger{padding:0 2px}:host([data-filter-state=off]) .mode-name,:host([data-filter-state=paused]) .mode-name{font-size:11px}}
 /* Controls occupy only unused masthead space, never the search flex row. */
 :host{position:fixed;flex:none;width:var(--intent-toolbar-width,250px);min-width:var(--intent-toolbar-width,250px);max-width:var(--intent-toolbar-width,250px);margin:0;z-index:1}
@@ -21,8 +21,8 @@
 :host([data-layout=launcher]) .controls{height:32px;padding:0}
 :host([data-layout=compact]) .trigger,:host([data-layout=launcher]) .trigger{height:32px;padding:0;gap:2px;justify-content:center}
 :host([data-layout=compact]) .chevron,:host([data-layout=launcher]) .chevron{width:8px;flex-basis:8px}
-:host([data-layout=compact]) .mode-name,:host([data-layout=compact]) .compact-state,:host([data-layout=compact]) .selected-symbol,:host([data-layout=compact]) .coverage-badge,:host([data-layout=compact]) .icon-button,:host([data-layout=launcher]) .mode-name,:host([data-layout=launcher]) .compact-state,:host([data-layout=launcher]) .selected-symbol,:host([data-layout=launcher]) .coverage-badge,:host([data-layout=launcher]) .icon-button,:host([data-layout=launcher]) .timer-button{display:none!important}
-:host([data-layout=compact]) .timer-button{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}
+:host([data-layout=compact]) .mode-name,:host([data-layout=compact]) .compact-state,:host([data-layout=compact]) .selected-symbol,:host([data-layout=compact]) .coverage-badge,:host([data-layout=compact]) .icon-button,:host([data-layout=launcher]) .mode-name,:host([data-layout=launcher]) .compact-state,:host([data-layout=launcher]) .selected-symbol,:host([data-layout=launcher]) .coverage-badge,:host([data-layout=launcher]) .icon-button,:host([data-layout=launcher]) .timer-indicator{display:none!important}
+:host([data-layout=compact]) .timer-indicator{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}
 :host([data-layout=compact]) .timer-clock{flex-basis:12px;width:12px;height:12px}
 :host([data-layout=compact]) .timer-desktop{display:none}
 :host([data-layout=compact]) .timer-mobile{display:inline}
@@ -38,7 +38,7 @@
     constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}, onPaused = () => {}} = {}) {
       this.runtime = runtime; this.onSettings = onSettings; this.onRefresh = onRefresh; this.onPaused = onPaused;
       this.open = false; this.timerOpen = false;
-      this.outside = event => { if (!event.composedPath().includes(this.host)) {this.closeMenu(false); this.closeTimer(false);} };
+      this.outside = event => { if (!event.composedPath().includes(this.host)) {this.closeMenu(false); this.closeTimer();} };
       this.reposition = () => { if (this.open) this.positionMenu(); if (this.timerOpen) this.positionTimer(); };
       this.layoutReposition = () => {this.positionControls(); this.reposition();};
     }
@@ -57,7 +57,7 @@
       if (!this.host) this.create();
       this.updateOptions(settings); this.paintSelection();
       if (this.host.parentElement !== container) {
-        this.closeMenu(false); this.closeTimer(false);
+        this.closeMenu(false); this.closeTimer();
         if (this.masthead !== masthead) this.masthead?.removeAttribute('data-intent-toolbar');
         container.append(this.host);
       }
@@ -75,13 +75,14 @@
     positionControls() {
       if (!this.host?.isConnected || !this.masthead || !this.center || !this.start) return;
       const masthead = this.masthead.getBoundingClientRect(), start = this.start.getBoundingClientRect(), center = this.center.getBoundingClientRect();
-      const left = Math.max(8, start.right + 12), available = Math.min(center.left, innerWidth - 8) - left - 12;
+      const logoGap = innerWidth > 700 ? 28 : 12;
+      const left = Math.max(8, start.right + logoGap), available = Math.min(center.left, innerWidth - 8) - left - 12;
       const layout = masthead.height <= 0 || center.width <= 0 ? 'hidden' : available >= 250 ? 'full' : available >= 76 ? 'compact' : available >= 32 ? 'launcher' : 'hidden';
       const width = layout === 'full' ? 250 : layout === 'compact' ? 76 : 32;
       this.host.dataset.layout = layout; this.host.style.setProperty('--intent-toolbar-width', `${width}px`);
       this.host.style.left = `${Math.round(left)}px`; this.host.style.top = `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : layout === 'compact' ? 34 : 32)) / 2)}px`;
-      if (layout === 'launcher') this.closeTimer(false);
-      if (layout === 'hidden') {this.closeMenu(false); this.closeTimer(false);}
+      if (layout === 'launcher') this.closeTimer();
+      if (layout === 'hidden') {this.closeMenu(false); this.closeTimer();}
     }
     create() {
       this.host = document.createElement('div'); this.host.id = 'intent-toolbar';
@@ -203,7 +204,7 @@
       if (option) { option.focus({preventScroll: true}); option.scrollIntoView({block: 'nearest'}); }
     }
     openMenu(index = this.selectedIndex()) {
-      if (this.timerOpen) this.closeTimer(false);
+      if (this.timerOpen) this.closeTimer();
       if (this.trigger.disabled || !this.host.isConnected) return;
       if (!this.open) {
         this.open = true; this.menu.showPopover(); this.trigger.setAttribute('aria-expanded', 'true');
@@ -273,35 +274,39 @@
       }
     }
     createTimer(root, controls, before) {
-      this.timerButton = document.createElement('button'); this.timerButton.type = 'button'; this.timerButton.id = 'intent-timer'; this.timerButton.className = 'timer-button';
-      this.timerButton.setAttribute('aria-label', 'Daily YouTube timer'); this.timerButton.setAttribute('aria-haspopup', 'dialog'); this.timerButton.setAttribute('aria-controls', 'intent-timer-popover'); this.timerButton.setAttribute('aria-expanded', 'false'); this.timerButton.setAttribute('aria-describedby', 'intent-timer-summary');
+      this.timerIndicator = document.createElement('span'); this.timerIndicator.tabIndex = 0; this.timerIndicator.setAttribute('role', 'group'); this.timerIndicator.id = 'intent-timer'; this.timerIndicator.className = 'timer-indicator';
+      this.timerIndicator.setAttribute('aria-label', 'Daily YouTube timer'); this.timerIndicator.setAttribute('aria-describedby', 'intent-timer-tooltip');
       this.timerClock = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); this.timerClock.setAttribute('viewBox', '0 0 28 28'); this.timerClock.setAttribute('class', 'timer-clock'); this.timerClock.setAttribute('aria-hidden', 'true');
       this.timerClock.innerHTML = '<circle class="timer-track" cx="14" cy="14" r="11"/><circle class="timer-progress" cx="14" cy="14" r="11" stroke-dasharray="69.12" transform="rotate(-90 14 14)"/><path class="timer-hands" d="M14 8v6l4 3"/><path class="timer-slash" d="M5 23 23 5" hidden/>';
       this.timerProgress = this.timerClock.querySelector('.timer-progress'); this.timerHands = this.timerClock.querySelector('.timer-hands'); this.timerSlash = this.timerClock.querySelector('.timer-slash');
       this.timerValue = document.createElement('span'); this.timerValue.className = 'timer-value';
       this.timerDesktop = document.createElement('span'); this.timerDesktop.className = 'timer-desktop'; this.timerMobile = document.createElement('span'); this.timerMobile.className = 'timer-mobile'; this.timerValue.append(this.timerDesktop, this.timerMobile);
-      this.timerSummary = document.createElement('span'); this.timerSummary.className = 'sr-only'; this.timerSummary.id = 'intent-timer-summary';
-      this.timerButton.append(this.timerClock, this.timerValue); controls.insertBefore(this.timerButton, before);
-      this.timerButton.addEventListener('click', () => this.timerOpen ? this.closeTimer(true) : this.openTimer());
-      this.timerButton.addEventListener('keydown', event => {if (event.key === 'Escape' && this.timerOpen) {event.preventDefault(); this.closeTimer(true);}});
-      this.timerPopover = document.createElement('div'); this.timerPopover.className = 'menu timer-details'; this.timerPopover.id = 'intent-timer-popover'; this.timerPopover.setAttribute('popover', 'manual'); this.timerPopover.setAttribute('role', 'dialog'); this.timerPopover.setAttribute('aria-label', 'YouTube timer details'); this.timerPopover.setAttribute('aria-describedby', this.timerSummary.id);
-      const header = document.createElement('div'); header.className = 'timer-detail-heading';
-      const heading = document.createElement('h2'); heading.textContent = 'Daily budget';
-      this.timerClose = document.createElement('button'); this.timerClose.type = 'button'; this.timerClose.className = 'timer-close'; this.timerClose.textContent = '×'; this.timerClose.setAttribute('aria-label', 'Close timer details'); this.timerClose.addEventListener('click', () => this.closeTimer(true)); header.append(heading, this.timerClose);
+      this.timerIndicator.append(this.timerClock, this.timerValue); controls.insertBefore(this.timerIndicator, before);
+      this.timerIndicator.addEventListener('pointerenter', () => {this.timerHovered = true; this.openTimer();});
+      this.timerIndicator.addEventListener('pointerleave', () => {this.timerHovered = false; this.deferTimerClose();});
+      this.timerIndicator.addEventListener('focus', () => this.openTimer());
+      this.timerIndicator.addEventListener('blur', () => this.deferTimerClose());
+      this.timerPopover = document.createElement('div'); this.timerPopover.className = 'menu timer-details'; this.timerPopover.id = 'intent-timer-tooltip'; this.timerPopover.setAttribute('popover', 'manual'); this.timerPopover.setAttribute('role', 'tooltip');
+      const heading = document.createElement('p'); heading.className = 'timer-detail-heading'; heading.textContent = 'Daily budget';
       const stats = document.createElement('dl'); stats.className = 'timer-stats';
       const row = (label, id) => {const wrapper = document.createElement('div'); wrapper.className = 'timer-stat'; const term = document.createElement('dt'); term.textContent = label; const value = document.createElement('dd'); value.id = id; wrapper.append(term, value); stats.append(wrapper); return value;};
       this.timerRemaining = row('Remaining', 'intent-timer-remaining'); this.timerUsed = row('Used', 'intent-timer-used');
       this.timerContext = document.createElement('p'); this.timerContext.className = 'timer-context'; this.timerContext.id = 'intent-timer-context';
-      this.timerPopover.append(header, stats, this.timerContext);
-      this.timerPopover.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); event.stopPropagation(); this.closeTimer(true);}});
-      this.timerPopover.addEventListener('focusout', event => {
-        if (this.timerPopover.contains(event.relatedTarget)) return;
-        clearTimeout(this.timerFocusTimeout);
-        this.timerFocusTimeout = setTimeout(() => {if (this.timerOpen && !this.timerPopover.contains(this.root.activeElement)) this.closeTimer(false);}, 0);
-      });
-      this.timerPopover.addEventListener('toggle', event => {if (event.newState === 'closed' && this.timerOpen) this.closeTimer(false);});
-      root.append(this.timerSummary, this.timerPopover);
+      const reset = document.createElement('p'); reset.className = 'timer-reset'; reset.textContent = 'Resets at local midnight.';
+      this.timerPopover.append(heading, stats, this.timerContext, reset);
+      this.timerPopover.addEventListener('pointerenter', () => {this.timerTooltipHovered = true; clearTimeout(this.timerCloseTimeout);});
+      this.timerPopover.addEventListener('pointerleave', () => {this.timerTooltipHovered = false; this.deferTimerClose();});
+      this.timerEscape = event => {if (event.key === 'Escape' && this.timerOpen) {event.preventDefault(); event.stopPropagation(); this.closeTimer();}};
+      this.timerPopover.addEventListener('toggle', event => {if (event.newState === 'closed' && this.timerOpen) this.closeTimer();});
+      root.append(this.timerPopover);
     }
+    deferTimerClose() {
+      clearTimeout(this.timerCloseTimeout);
+      this.timerCloseTimeout = setTimeout(() => {
+        if (!this.timerHovered && !this.timerTooltipHovered && this.root.activeElement !== this.timerIndicator) this.closeTimer();
+      }, 120);
+    }
+
     updateTimer(state) {
       // Only explicit accounting snapshots can advance this indicator. Coverage and
       // intent labels are deliberately not used to guess whether time is counting.
@@ -315,13 +320,13 @@
       return `${hours}h${rest ? ` ${rest}m` : ''}`;
     }
     paintTimer() {
-      if (!this.timerButton) return;
+      if (!this.timerIndicator) return;
       const state = this.timerState, valid = Boolean(state?.settings && Number.isFinite(state.usedMs) && Number.isFinite(state.remainingMs));
       const used = valid ? Math.max(0, state.usedMs) : 0, remaining = valid ? Math.max(0, state.remainingMs) : 0;
       const paused = valid && state.tabPaused === true, exempt = valid && state.timerExempt === true, unlimited = valid && state.settings.limitEnabled === false;
       const level = !valid ? 'loading' : paused ? 'paused' : exempt ? 'exempt' : unlimited ? 'unlimited' : remaining <= 120000 ? 'critical' : remaining <= 600000 ? 'low' : 'normal';
       const running = valid && state.timerRunning === true, counting = valid && state.tabCounting === true;
-      for (const element of [this.host, this.timerButton]) {element.dataset.timerState = level; element.dataset.timerRunning = String(running); element.dataset.tabCounting = String(counting);}
+      for (const element of [this.host, this.timerIndicator]) {element.dataset.timerState = level; element.dataset.timerRunning = String(running); element.dataset.tabCounting = String(counting);}
       let desktop = '—', mobile = '—';
       if (valid && !paused && !exempt) {
         const minutes = Math.max(0, unlimited ? Math.floor(used / 60000) : Math.ceil(remaining / 60000));
@@ -343,35 +348,32 @@
         else if (running) context = 'Another YouTube tab is currently using the shared timer.';
         else context = unlimited ? 'The daily limit is off. Counted usage is still tracked.' : 'The timer is not currently counting.';
       }
-      const shortContext = paused ? 'Paused' : exempt ? 'Exempt' : running && !counting ? 'Counting elsewhere' : '';
-      this.timerContext.textContent = shortContext; this.timerContext.hidden = !shortContext;
-      const summary = valid ? `${unlimited ? 'Daily limit off' : `${this.timerDuration(remaining, true)} remaining today`}. ${this.timerDuration(used)} used today. ${context} Resets at local midnight.` : context;
-      this.timerButton.title = summary; this.timerSummary.textContent = summary;
+      this.timerContext.textContent = context;
+      this.timerIndicator.setAttribute('aria-label', valid ? `Daily YouTube timer: ${unlimited ? 'no limit' : this.timerDuration(remaining, true) + ' remaining'}` : 'Daily YouTube timer: loading');
       if (this.timerOpen) this.positionTimer();
     }
     openTimer() {
-      if (!this.host?.isConnected) return;
-      if (this.open) this.closeMenu(false);
+      if (!this.host?.isConnected || ['launcher', 'hidden'].includes(this.host.dataset.layout) || this.open) return;
+      clearTimeout(this.timerCloseTimeout);
       if (!this.timerOpen) {
-        this.timerOpen = true; this.timerPopover.showPopover(); this.timerButton.setAttribute('aria-expanded', 'true');
+        this.timerOpen = true; this.timerPopover.showPopover(); document.addEventListener('keydown', this.timerEscape);
         document.addEventListener('pointerdown', this.outside, true); window.addEventListener('resize', this.reposition); window.addEventListener('scroll', this.reposition, true);
       }
-      this.positionTimer(); this.timerClose.focus({preventScroll: true});
+      this.positionTimer();
     }
     positionTimer() {
-      if (!this.host?.isConnected) {this.closeTimer(false); return;}
-      const rect = this.timerButton.getBoundingClientRect(), edge = 8, width = Math.min(272, innerWidth - edge * 2);
+      if (!this.host?.isConnected) {this.closeTimer(); return;}
+      const rect = this.timerIndicator.getBoundingClientRect(), edge = 8, width = Math.min(272, innerWidth - edge * 2);
       this.timerPopover.style.width = `${Math.max(0, width)}px`; this.timerPopover.style.left = `${Math.max(edge, Math.min(rect.left, innerWidth - width - edge))}px`;
       const height = this.timerPopover.getBoundingClientRect().height, below = innerHeight - rect.bottom - 6;
       this.timerPopover.style.top = `${Math.max(edge, Math.min(height > below && rect.top > below ? rect.top - height - 6 : rect.bottom + 6, innerHeight - height - edge))}px`;
     }
-    closeTimer(returnFocus) {
-      clearTimeout(this.timerFocusTimeout);
+    closeTimer() {
+      clearTimeout(this.timerCloseTimeout);
       if (!this.timerPopover || !this.timerOpen) return;
-      this.timerOpen = false; this.timerButton.setAttribute('aria-expanded', 'false');
+      this.timerOpen = false; this.timerTooltipHovered = false; document.removeEventListener('keydown', this.timerEscape);
       if (this.timerPopover.matches(':popover-open')) this.timerPopover.hidePopover();
       document.removeEventListener('pointerdown', this.outside, true); window.removeEventListener('resize', this.reposition); window.removeEventListener('scroll', this.reposition, true);
-      if (returnFocus && this.host.isConnected) this.timerButton.focus({preventScroll: true});
     }
     updateTheme() {
       if (!this.host) return;
@@ -379,7 +381,7 @@
       if (this.host.dataset.theme !== theme) this.host.dataset.theme = theme;
     }
     destroy() {
-      this.closeMenu(false); this.closeTimer(false); this.layoutObserver?.disconnect();
+      this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect();
       window.removeEventListener('resize', this.layoutReposition); window.removeEventListener('scroll', this.layoutReposition, true);
       this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
     }

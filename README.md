@@ -15,7 +15,7 @@
 - **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. Choose 0–40 fuller checks per search batch (default 4). Each uncached check makes an extra public video-page request to read the fuller description, hashtags and tags. Higher limits may improve matching but use more network traffic and take longer. The feed reports extra video-page requests and cached checks.
 - **Fewer distractions:** hide Shorts and obvious title-based clickbait; turning Hide Shorts off allows matching Shorts through topic classification, using a horizontal shelf after the first video row, left/right scroll arrows, portrait thumbnails and Shorts links; customize included channels, extra topics and blocked phrases.
 - **Shorts protection without blocking navigation:** Hide Shorts also removes its sidebar entry. Direct Shorts links hide and pause the player, with a readable, opaque message inside the content area; YouTube's logo, header and remaining navigation stay usable.
-- **Visible timer:** a compact toolbar clock shows remaining minutes with a thin budget ring, amber at ten minutes and muted red at two. Click it for remaining and used time; paused/exempt status appears only when relevant. Detailed counting explanations remain in its tooltip, and the existing gear opens settings. Exempt intents use a crossed-out clock; paused and inactive counting states remain explicit. Its space is fixed, so time and mode-name changes do not resize search. Built-in intent icons match settings and the toolbar menu.
+- **Visible timer:** a compact toolbar clock shows remaining minutes with a thin budget ring, amber at ten minutes and muted red at two. Hover or keyboard-focus the non-button indicator for remaining/used time, counting or exemption status, and the midnight reset. The tooltip has no actions; the existing gear opens settings. Exempt intents use a crossed-out clock; paused and inactive counting states remain explicit. Its space is fixed, so time and mode-name changes do not resize search. Built-in intent icons match settings and the toolbar menu.
 - **Daily budget:** set 1–1,440 minutes shared by the intents you choose to count. Music is excluded by default. Exempt intents add no time and stay accessible after the limit; counted intents are blocked until local midnight.
 
 ## Install
@@ -27,7 +27,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7.4 moves Intent out of the native search layout, simplifies the timer popover, and fixes the nested empty frosted-glass overlay that could cover the first video row. It also recognizes native Shorts sidebar links that have no URL attribute. The unreliable low-time reminder option has been removed; the countdown and low-time colors remain. No new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7.5 adds a 28px desktop gap after the YouTube logo, replaces the timer button with a hover/focus tooltip, and gives Exempt enough space to remain fully visible. Native search size and the previous header-overlay and Shorts fixes are preserved. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
@@ -89,7 +89,7 @@ Per-tab selections are kept in session storage across reloads and background-wor
 
 ## Time accounting
 
-The toolbar clock reports the shared remaining budget and whether this tab is actually contributing time. A different counted tab may keep the shared timer running while the current intent is exempt. The clock uses accounting snapshots from the background worker; it does not start a second timer or change Chrome’s intent/pause badge. With blocking disabled, the detail view explains that there is no enforced limit.
+The toolbar clock reports the shared remaining budget and whether this tab is actually contributing time. A different counted tab may keep the shared timer running while the current intent is exempt. The clock uses accounting snapshots from the background worker; it does not start a second timer or change Chrome’s intent/pause badge. With blocking disabled, the tooltip explains that there is no enforced limit.
 
 The clock turns amber at ten minutes remaining and red at two minutes. The unreliable in-page reminder option has been removed; no reminder messages are advertised or sent.
 
