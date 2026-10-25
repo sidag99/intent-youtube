@@ -8,10 +8,24 @@
 @media(max-width:1100px){.settings{display:none}:host{width:210px;min-width:210px;max-width:210px;flex-basis:210px;margin-right:8px}}@media(max-width:700px){:host{width:170px;min-width:170px;max-width:170px;flex-basis:170px;margin-right:4px}.controls{height:34px;padding:0 2px}.trigger{height:34px;gap:5px;padding:0 6px 0 4px}.mode-name{font-size:12px}.trigger:has(.selected-symbol:not([hidden])){gap:3px;padding-right:4px}.icon-button{width:28px;height:28px;flex-basis:28px}}@media(max-width:480px){:host{width:154px;min-width:154px;max-width:154px;flex-basis:154px}.coverage-badge{max-width:65px;padding:2px 4px}.trigger{gap:4px}.trigger:has(.selected-symbol:not([hidden])){gap:2px;padding-right:2px}.selected-symbol{width:12px;flex-basis:12px;font-size:12px}.chevron{width:10px;flex-basis:10px}}
 
 
-.timer-button{flex:0 0 64px;display:flex;align-items:center;justify-content:center;gap:4px;width:64px;height:30px;padding:3px;border-radius:15px;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-button[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-button[data-timer-state=low]{color:var(--intent-warning)}.timer-button[data-timer-state=critical]{color:var(--intent-critical)}.timer-button[data-timer-state=exempt],.timer-button[data-timer-state=paused],.timer-button[data-timer-state=unlimited],.timer-button[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{min-width:0;overflow:hidden;text-overflow:clip}.timer-mobile{display:none}.timer-details{padding:12px 16px}.timer-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.timer-detail-heading h2{font-size:14px;font-weight:500;line-height:1.4;margin:0}.timer-close{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;padding:0;border-radius:50%;font-size:20px}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0}.timer-stats dt{font-size:12px;color:var(--intent-muted)}.timer-stats dd{margin:0;font-size:14px;font-variant-numeric:tabular-nums}.timer-context{font-size:12px;line-height:1.5;color:var(--intent-muted);margin:10px 0 0}.timer-day{font-size:11px;line-height:1.5;color:var(--intent-muted);margin:6px 0 0}.timer-settings{display:block;width:100%;min-height:32px;margin-top:10px;padding:6px 8px;text-align:left;border-radius:8px;color:var(--intent-accent);font-size:12px}.timer-reminder{position:fixed;inset:auto 16px 18px auto;margin:0;width:288px;max-width:calc(100vw - 32px);padding:10px 12px;border:1px solid var(--intent-line);border-radius:12px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 20px #0003;font:12px/1.5 Roboto,Arial,sans-serif}.timer-reminder::backdrop{background:transparent}.timer-reminder-content{display:flex;align-items:center;gap:12px}.timer-reminder-text{flex:1;min-width:0}.timer-reminder button{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;padding:0;border-radius:50%;font-size:18px}
+.timer-button{flex:0 0 64px;display:flex;align-items:center;justify-content:center;gap:4px;width:64px;height:30px;padding:3px;border-radius:15px;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-button[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-button[data-timer-state=low]{color:var(--intent-warning)}.timer-button[data-timer-state=critical]{color:var(--intent-critical)}.timer-button[data-timer-state=exempt],.timer-button[data-timer-state=paused],.timer-button[data-timer-state=unlimited],.timer-button[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{min-width:0;overflow:hidden;text-overflow:clip}.timer-mobile{display:none}.timer-details{padding:12px 16px}.timer-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.timer-detail-heading h2{font-size:14px;font-weight:500;line-height:1.4;margin:0}.timer-close{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;padding:0;border-radius:50%;font-size:20px}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0}.timer-stats dt{font-size:12px;color:var(--intent-muted)}.timer-stats dd{margin:0;font-size:14px;font-variant-numeric:tabular-nums}.timer-context{font-size:12px;line-height:16px;color:var(--intent-muted);margin:8px 0 0}
 :host([data-filter-state=off-here]) .trigger,:host([data-filter-state=loading]) .trigger,:host([data-filter-state=unavailable]) .trigger{padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:12px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}
 @media(max-width:700px){.timer-button{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}.timer-clock{flex-basis:12px;width:12px;height:12px}.timer-desktop{display:none}.timer-mobile{display:inline}.trigger{padding:0 3px;gap:2px}.trigger:has(.selected-symbol:not([hidden])){padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:10px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}}
 @media(max-width:700px){:host([data-filter-state=off]) .trigger,:host([data-filter-state=paused]) .trigger{padding:0 2px}:host([data-filter-state=off]) .mode-name,:host([data-filter-state=paused]) .mode-name{font-size:11px}}
+/* Controls occupy only unused masthead space, never the search flex row. */
+:host{position:fixed;flex:none;width:var(--intent-toolbar-width,250px);min-width:var(--intent-toolbar-width,250px);max-width:var(--intent-toolbar-width,250px);margin:0;z-index:1}
+:host([data-layout=hidden]){display:none}
+:host([data-layout=full]) .controls{height:36px}
+:host([data-layout=full]) .settings{display:grid}
+:host([data-layout=compact]) .controls{height:34px;padding:0 2px}
+:host([data-layout=launcher]) .controls{height:32px;padding:0}
+:host([data-layout=compact]) .trigger,:host([data-layout=launcher]) .trigger{height:32px;padding:0;gap:2px;justify-content:center}
+:host([data-layout=compact]) .chevron,:host([data-layout=launcher]) .chevron{width:8px;flex-basis:8px}
+:host([data-layout=compact]) .mode-name,:host([data-layout=compact]) .compact-state,:host([data-layout=compact]) .selected-symbol,:host([data-layout=compact]) .coverage-badge,:host([data-layout=compact]) .icon-button,:host([data-layout=launcher]) .mode-name,:host([data-layout=launcher]) .compact-state,:host([data-layout=launcher]) .selected-symbol,:host([data-layout=launcher]) .coverage-badge,:host([data-layout=launcher]) .icon-button,:host([data-layout=launcher]) .timer-button{display:none!important}
+:host([data-layout=compact]) .timer-button{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}
+:host([data-layout=compact]) .timer-clock{flex-basis:12px;width:12px;height:12px}
+:host([data-layout=compact]) .timer-desktop{display:none}
+:host([data-layout=compact]) .timer-mobile{display:inline}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 `;
   const svg = (path, className = '') => {
@@ -23,9 +37,10 @@
   class Toolbar {
     constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}, onPaused = () => {}} = {}) {
       this.runtime = runtime; this.onSettings = onSettings; this.onRefresh = onRefresh; this.onPaused = onPaused;
-      this.open = false; this.timerOpen = false; this.remindersSeen = new Set();
+      this.open = false; this.timerOpen = false;
       this.outside = event => { if (!event.composedPath().includes(this.host)) {this.closeMenu(false); this.closeTimer(false);} };
       this.reposition = () => { if (this.open) this.positionMenu(); if (this.timerOpen) this.positionTimer(); };
+      this.layoutReposition = () => {this.positionControls(); this.reposition();};
     }
     sync(settings, active = true, coverage = {state: 'active'}) {
       if (!active) { this.destroy(); return; }
@@ -35,19 +50,38 @@
       if (state !== 'paused') this.resumeCoverage = {...this.coverage};
       const masthead = document.querySelector('ytd-masthead:not([hidden])');
       const center = masthead?.querySelector('#center');
+      const container = masthead?.querySelector('#container') || masthead;
+      const start = masthead?.querySelector('#start');
       // Unsupported/mobile mastheads get no detached banner or replacement navigation.
-      if (!center) { this.destroy(); return; }
+      if (!center || !start) { this.destroy(); return; }
       if (!this.host) this.create();
       this.updateOptions(settings); this.paintSelection();
-      if (this.host.parentElement !== center) {
+      if (this.host.parentElement !== container) {
         this.closeMenu(false); this.closeTimer(false);
         if (this.masthead !== masthead) this.masthead?.removeAttribute('data-intent-toolbar');
-        const search = [...center.children].find(el => el.matches('yt-searchbox,ytd-searchbox,#search,form[role=search]') || el.querySelector('yt-searchbox,ytd-searchbox,#search-form,form[role=search]'));
-        if (search) search.before(this.host); else center.prepend(this.host);
+        container.append(this.host);
       }
+      if (this.masthead !== masthead || this.center !== center || this.start !== start) {
+        this.layoutObserver?.disconnect();
+        this.layoutObserver = new ResizeObserver(this.layoutReposition);
+        for (const element of [masthead, center, start]) this.layoutObserver.observe(element);
+      }
+      this.center = center; this.start = start;
       this.masthead = masthead; masthead.setAttribute('data-intent-toolbar', '');
-      this.updateTheme(); this.paintTimer(); this.showReminder(this.timerState);
+      window.addEventListener('resize', this.layoutReposition); window.addEventListener('scroll', this.layoutReposition, true);
+      this.positionControls(); this.updateTheme(); this.paintTimer();
       if (this.open) this.positionMenu();
+    }
+    positionControls() {
+      if (!this.host?.isConnected || !this.masthead || !this.center || !this.start) return;
+      const masthead = this.masthead.getBoundingClientRect(), start = this.start.getBoundingClientRect(), center = this.center.getBoundingClientRect();
+      const left = Math.max(8, start.right + 12), available = Math.min(center.left, innerWidth - 8) - left - 12;
+      const layout = masthead.height <= 0 || center.width <= 0 ? 'hidden' : available >= 250 ? 'full' : available >= 76 ? 'compact' : available >= 32 ? 'launcher' : 'hidden';
+      const width = layout === 'full' ? 250 : layout === 'compact' ? 76 : 32;
+      this.host.dataset.layout = layout; this.host.style.setProperty('--intent-toolbar-width', `${width}px`);
+      this.host.style.left = `${Math.round(left)}px`; this.host.style.top = `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : layout === 'compact' ? 34 : 32)) / 2)}px`;
+      if (layout === 'launcher') this.closeTimer(false);
+      if (layout === 'hidden') {this.closeMenu(false); this.closeTimer(false);}
     }
     create() {
       this.host = document.createElement('div'); this.host.id = 'intent-toolbar';
@@ -250,18 +284,15 @@
       this.timerButton.append(this.timerClock, this.timerValue); controls.insertBefore(this.timerButton, before);
       this.timerButton.addEventListener('click', () => this.timerOpen ? this.closeTimer(true) : this.openTimer());
       this.timerButton.addEventListener('keydown', event => {if (event.key === 'Escape' && this.timerOpen) {event.preventDefault(); this.closeTimer(true);}});
-      this.timerPopover = document.createElement('div'); this.timerPopover.className = 'menu timer-details'; this.timerPopover.id = 'intent-timer-popover'; this.timerPopover.setAttribute('popover', 'manual'); this.timerPopover.setAttribute('role', 'dialog'); this.timerPopover.setAttribute('aria-label', 'YouTube timer details');
+      this.timerPopover = document.createElement('div'); this.timerPopover.className = 'menu timer-details'; this.timerPopover.id = 'intent-timer-popover'; this.timerPopover.setAttribute('popover', 'manual'); this.timerPopover.setAttribute('role', 'dialog'); this.timerPopover.setAttribute('aria-label', 'YouTube timer details'); this.timerPopover.setAttribute('aria-describedby', this.timerSummary.id);
       const header = document.createElement('div'); header.className = 'timer-detail-heading';
-      const heading = document.createElement('h2'); heading.textContent = 'Daily YouTube timer';
+      const heading = document.createElement('h2'); heading.textContent = 'Daily budget';
       this.timerClose = document.createElement('button'); this.timerClose.type = 'button'; this.timerClose.className = 'timer-close'; this.timerClose.textContent = '×'; this.timerClose.setAttribute('aria-label', 'Close timer details'); this.timerClose.addEventListener('click', () => this.closeTimer(true)); header.append(heading, this.timerClose);
       const stats = document.createElement('dl'); stats.className = 'timer-stats';
       const row = (label, id) => {const wrapper = document.createElement('div'); wrapper.className = 'timer-stat'; const term = document.createElement('dt'); term.textContent = label; const value = document.createElement('dd'); value.id = id; wrapper.append(term, value); stats.append(wrapper); return value;};
-      this.timerUsed = row('Used today', 'intent-timer-used'); this.timerRemaining = row('Remaining today', 'intent-timer-remaining');
+      this.timerRemaining = row('Remaining', 'intent-timer-remaining'); this.timerUsed = row('Used', 'intent-timer-used');
       this.timerContext = document.createElement('p'); this.timerContext.className = 'timer-context'; this.timerContext.id = 'intent-timer-context';
-      this.timerDay = document.createElement('p'); this.timerDay.className = 'timer-day';
-      const settings = document.createElement('button'); settings.type = 'button'; settings.className = 'timer-settings'; settings.textContent = 'Timer settings';
-      settings.addEventListener('click', async () => {try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeTimer(true);} catch (error) {this.error.textContent = error.message;}});
-      this.timerPopover.append(header, stats, this.timerContext, this.timerDay, settings);
+      this.timerPopover.append(header, stats, this.timerContext);
       this.timerPopover.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); event.stopPropagation(); this.closeTimer(true);}});
       this.timerPopover.addEventListener('focusout', event => {
         if (this.timerPopover.contains(event.relatedTarget)) return;
@@ -269,16 +300,13 @@
         this.timerFocusTimeout = setTimeout(() => {if (this.timerOpen && !this.timerPopover.contains(this.root.activeElement)) this.closeTimer(false);}, 0);
       });
       this.timerPopover.addEventListener('toggle', event => {if (event.newState === 'closed' && this.timerOpen) this.closeTimer(false);});
-      this.timerReminder = document.createElement('div'); this.timerReminder.id = 'intent-timer-reminder'; this.timerReminder.className = 'timer-reminder'; this.timerReminder.setAttribute('popover', 'manual'); this.timerReminder.setAttribute('role', 'status'); this.timerReminder.setAttribute('aria-live', 'polite');
-      const reminderContent = document.createElement('div'); reminderContent.className = 'timer-reminder-content'; this.reminderText = document.createElement('span'); this.reminderText.className = 'timer-reminder-text';
-      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = '×'; dismiss.setAttribute('aria-label', 'Dismiss timer reminder'); dismiss.addEventListener('click', () => this.hideReminder()); reminderContent.append(this.reminderText, dismiss); this.timerReminder.append(reminderContent);
-      root.append(this.timerSummary, this.timerPopover, this.timerReminder);
+      root.append(this.timerSummary, this.timerPopover);
     }
     updateTimer(state) {
       // Only explicit accounting snapshots can advance this indicator. Coverage and
       // intent labels are deliberately not used to guess whether time is counting.
       if (!state?.settings || !Number.isFinite(state.usedMs) || !Number.isFinite(state.remainingMs)) return;
-      this.timerState = {...state}; this.paintTimer(); this.showReminder(state);
+      this.timerState = {...state}; this.paintTimer();
     }
     timerDuration(milliseconds, roundUp = false) {
       const minutes = Math.max(0, (roundUp ? Math.ceil : Math.floor)(milliseconds / 60000));
@@ -315,10 +343,9 @@
         else if (running) context = 'Another YouTube tab is currently using the shared timer.';
         else context = unlimited ? 'The daily limit is off. Counted usage is still tracked.' : 'The timer is not currently counting.';
       }
-      this.timerContext.textContent = context;
-      const day = state?.timerDay || state?.day || '';
-      this.timerDay.textContent = valid ? `${day ? day + ' · ' : ''}Resets at local midnight.` : '';
-      const summary = valid ? `${unlimited ? 'Daily limit off' : `${this.timerDuration(remaining, true)} remaining today`}. ${this.timerDuration(used)} used today. ${context}` : context;
+      const shortContext = paused ? 'Paused' : exempt ? 'Exempt' : running && !counting ? 'Counting elsewhere' : '';
+      this.timerContext.textContent = shortContext; this.timerContext.hidden = !shortContext;
+      const summary = valid ? `${unlimited ? 'Daily limit off' : `${this.timerDuration(remaining, true)} remaining today`}. ${this.timerDuration(used)} used today. ${context} Resets at local midnight.` : context;
       this.timerButton.title = summary; this.timerSummary.textContent = summary;
       if (this.timerOpen) this.positionTimer();
     }
@@ -346,27 +373,15 @@
       document.removeEventListener('pointerdown', this.outside, true); window.removeEventListener('resize', this.reposition); window.removeEventListener('scroll', this.reposition, true);
       if (returnFocus && this.host.isConnected) this.timerButton.focus({preventScroll: true});
     }
-    showReminder(state) {
-      const threshold = state?.timerReminder, day = state?.timerDay || state?.day;
-      if (!state?.settings?.timerReminders || state.settings.limitEnabled === false || ![10, 2].includes(threshold) || typeof day !== 'string' || !day || state.tabPaused || state.timerExempt || !this.host?.isConnected || !this.timerReminder) return;
-      const key = `${day}:${threshold}`;
-      if (this.remindersSeen.has(key)) return;
-      this.remindersSeen.add(key); while (this.remindersSeen.size > 28) this.remindersSeen.delete(this.remindersSeen.values().next().value);
-      this.reminderText.textContent = `${threshold} minutes or less remain in today’s YouTube budget.`; this.timerReminder.dataset.minutes = String(threshold);
-      if (!this.timerReminder.matches(':popover-open')) this.timerReminder.showPopover();
-      clearTimeout(this.reminderTimeout); this.reminderTimeout = setTimeout(() => this.hideReminder(), 8000);
-    }
-    hideReminder() {
-      clearTimeout(this.reminderTimeout);
-      if (this.timerReminder?.matches(':popover-open')) this.timerReminder.hidePopover();
-    }
     updateTheme() {
       if (!this.host) return;
       const theme = IntentHome.theme();
       if (this.host.dataset.theme !== theme) this.host.dataset.theme = theme;
     }
     destroy() {
-      this.closeMenu(false); this.closeTimer(false); this.hideReminder(); this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
+      this.closeMenu(false); this.closeTimer(false); this.layoutObserver?.disconnect();
+      window.removeEventListener('resize', this.layoutReposition); window.removeEventListener('scroll', this.layoutReposition, true);
+      this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
     }
   }
   globalThis.IntentToolbar = Toolbar;

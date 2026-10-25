@@ -3,7 +3,47 @@ const path=require('path'),fs=require('fs'),assert=require('assert/strict');
 const root=path.resolve(__dirname,'..');
 const shots=path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results');fs.mkdirSync(shots,{recursive:true});
 
-const directShortsFixture=`<!doctype html><meta charset="utf-8"><style>html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}ytd-masthead{position:fixed;top:0;left:0;right:0;z-index:2020;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--yt-spec-base-background)}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0}#search{display:flex;flex:1}#search input{width:100%;min-width:0}#logo{display:block;color:inherit;padding:10px;text-decoration:none}ytd-guide-renderer{display:block;position:fixed;left:0;top:56px;bottom:0;width:200px;background:var(--yt-spec-base-background);z-index:2010}ytd-guide-entry-renderer{display:block;padding:14px}ytd-guide-renderer a{color:inherit}ytd-page-manager{display:block;margin:56px 0 0 216px;padding:16px;min-height:calc(100vh - 56px)}ytd-shorts{display:block;height:700px;background:#97004f;color:white}video{width:300px;height:550px}</style><ytd-app><ytd-masthead><div id="start"><a id="logo" href="/">YouTube</a></div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-guide-renderer><ytd-guide-entry-renderer><a id="guide-home" href="/">Home</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts"><a href="/shorts/Q0000000000">Shorts</a></ytd-guide-entry-renderer></ytd-guide-renderer><ytd-page-manager><ytd-shorts id="shorts-player"><video id="short-video"></video><h2>Native Shorts player</h2></ytd-shorts></ytd-page-manager></ytd-app><script>window.shortPauses=0;window.shortPlaying=true;window.shortsPlayer=document.querySelector('#short-video');Object.defineProperty(shortsPlayer,'paused',{get:()=>!shortPlaying});const nativePause=shortsPlayer.pause.bind(shortsPlayer);shortsPlayer.pause=()=>{shortPauses++;shortPlaying=false;nativePause();};</script>`;
+const directShortsFixture=`<!doctype html><meta charset="utf-8"><style>html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}ytd-masthead{position:fixed;top:0;left:0;right:0;z-index:2020;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--yt-spec-base-background)}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0}#search{display:flex;flex:1}#search input{width:100%;min-width:0}#logo{display:block;color:inherit;padding:10px;text-decoration:none}ytd-guide-renderer{display:block;position:fixed;left:0;top:56px;bottom:0;width:200px;background:var(--yt-spec-base-background);z-index:2010}ytd-guide-entry-renderer{display:block;padding:14px}ytd-guide-renderer a{color:inherit}ytd-page-manager{display:block;margin:56px 0 0 216px;padding:16px;min-height:calc(100vh - 56px)}ytd-shorts{display:block;height:700px;background:#97004f;color:white}video{width:300px;height:550px}</style><ytd-app><ytd-masthead><div id="start"><a id="logo" href="/">YouTube</a></div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-guide-renderer><ytd-guide-entry-renderer><a id="guide-home" href="/">Home</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts"><a href="/shorts/Q0000000000">Shorts</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts-nohref" is-primary><a id="endpoint" role="link" title="Shorts" tabindex="-1"><tp-yt-paper-item role="link"><yt-formatted-string class="title">Shorts</yt-formatted-string></tp-yt-paper-item></a></ytd-guide-entry-renderer></ytd-guide-renderer><ytd-page-manager><ytd-shorts id="shorts-player"><video id="short-video"></video><h2>Native Shorts player</h2></ytd-shorts></ytd-page-manager></ytd-app><script>window.shortPauses=0;window.shortPlaying=true;window.shortsPlayer=document.querySelector('#short-video');Object.defineProperty(shortsPlayer,'paused',{get:()=>!shortPlaying});const nativePause=shortsPlayer.pause.bind(shortsPlayer);shortsPlayer.pause=()=>{shortPauses++;shortPlaying=false;nativePause();};</script>`;
+
+// Exercise actual thumbnail visibility, including paint that overflows a glass pseudo-element.
+async function installGlassFixture(page) {
+ return page.evaluate(()=>{
+  const style=document.createElement('style');style.id='glass-regression-style';
+  style.textContent=`ytd-masthead{height:64px!important;position:relative!important;z-index:2000!important;background:#fff!important}.fixture-header,.top{display:none!important}#glass-regression-app #frosted-glass{position:fixed;top:8px;left:0;width:100%;height:160px;min-height:192px;z-index:1500;background:#000}#glass-regression-app #frosted-glass::after{content:'';position:absolute;left:0;right:0;bottom:-40px;height:40px;background:#000;pointer-events:auto}`;
+  document.head.append(style);
+  const app=document.createElement('ytd-app');app.id='glass-regression-app';
+  app.innerHTML='<div id="content"><div class="deep-empty-shell"><div id="frosted-glass" class="modern-glass-without-chipbar"><div class="empty-inner-wrapper"></div></div></div></div>';
+  document.body.append(app);window.scrollTo(0,0);
+  const host=document.querySelector('#intent-home-feed'),cover=host.shadowRoot.querySelector('.cover'),rect=cover.getBoundingClientRect();
+  const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+2);
+  return {initiallyCovered:hit===app.querySelector('#frosted-glass'),mastheadBottom:document.querySelector('ytd-masthead').getBoundingClientRect().bottom};
+ });
+}
+async function assertFirstRowUncovered(page) {
+ await page.waitForFunction(()=>{
+  const glass=document.querySelector('#glass-regression-app #frosted-glass'),masthead=document.querySelector('ytd-masthead');
+  return glass&&glass.getBoundingClientRect().bottom<=masthead.getBoundingClientRect().bottom+.5;
+ });
+ const visibility=await page.evaluate(()=>{
+  const host=document.querySelector('#intent-home-feed'),covers=[...host.shadowRoot.querySelectorAll('.first-grid .cover')],top=covers[0].getBoundingClientRect().top;
+  const mastheadBottom=document.querySelector('ytd-masthead').getBoundingClientRect().bottom;
+  return covers.filter(cover=>Math.abs(cover.getBoundingClientRect().top-top)<1).map(cover=>{
+   const rect=cover.getBoundingClientRect(),x=rect.x+rect.width/2,y=rect.y+2;
+   const outer=document.elementFromPoint(x,y),inner=host.shadowRoot.elementFromPoint(x,y);
+   return {belowMasthead:rect.top>=mastheadBottom,uncovered:outer===host&&cover.contains(inner),hit:outer?.id||outer?.tagName};
+  });
+ });
+ assert.ok(visibility.length>=3,'the regression checks the complete first thumbnail row');
+ assert.ok(visibility.every(item=>item.belowMasthead&&item.uncovered),'every thumbnail top must receive the hit rather than opaque native glass: '+JSON.stringify(visibility));
+}
+async function assertGlassRestored(page) {
+ const native=await page.locator('#glass-regression-app #frosted-glass').evaluate(el=>({height:el.getBoundingClientRect().height,minHeight:getComputedStyle(el).minHeight,pseudoHeight:getComputedStyle(el,'::after').height,overflow:getComputedStyle(el).overflow,owned:el.hasAttribute('data-intent-home-glass'),variable:el.style.getPropertyValue('--intent-masthead-glass-height')}));
+ assert.deepEqual(native,{height:192,minHeight:'192px',pseudoHeight:'40px',overflow:'visible',owned:false,variable:''},'Off/Pause restore native glass and generated paint');
+ assert.equal(await page.locator('ytd-masthead').evaluate(el=>el.getBoundingClientRect().bottom),64,'the native masthead is never moved');
+}
+async function removeGlassFixture(page) {
+ await page.evaluate(()=>{document.querySelector('#glass-regression-app').remove();document.querySelector('#glass-regression-style').remove();});
+}
 
 async function expandAdvanced(page) {
  const advanced=page.locator('#intent-editor details.intent-advanced');
@@ -20,7 +60,7 @@ async function chooseMode(toolbar, mode, customName) {
 (async()=>{
  const b=await chromium.launch({channel:'chromium',headless:true});const errors=[];
  try{
-  const context=await b.newContext({viewport:{width:1440,height:1100}});context.setDefaultTimeout(10000);
+  const context=await b.newContext({viewport:{width:1660,height:1100}});context.setDefaultTimeout(10000);
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto('file://'+root+'/settings.html');
   await page.getByRole('heading',{name:'What are you here for?'}).waitFor();
@@ -95,25 +135,27 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await popup.locator('a.all-settings').count(),1,'the popup has one clear Settings link');
   await popup.screenshot({path:path.join(shots,'intent-popup.png'),fullPage:true});
   const yt=await context.newPage();yt.on('pageerror',e=>errors.push(e.message));
-  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><script>var ytcfg={set:function(value){this.data_=value}};ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"DE"}}});</script><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-masthead{display:flex;height:56px;padding:0 16px;align-items:center;gap:24px}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}ytd-browse{display:block}#primary{width:100%;margin:0}ytd-rich-item-renderer{display:block}</style></head><body><ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form><button id="voice-search-button" aria-label="Search with your voice">Mic</button></div><div id="end">Account</div></ytd-masthead><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf"><h2>Shorts</h2><ytm-shorts-lockup-view-model id="native-short"><a href="/shorts/m0000000096"><h3>Quiet jazz music short</h3></a></ytm-shorts-lockup-view-model></ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
+  await yt.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><script>var ytcfg={set:function(value){this.data_=value}};ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"DE"}}});</script><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}.fixture-header{padding:18px 30px;border-bottom:1px solid #dfe2d7;font-weight:600;display:flex;justify-content:space-between}.fixture-header small{font-weight:400;color:#778073}ytd-masthead{display:flex;height:56px;padding:0 16px;align-items:center;gap:24px}ytd-masthead #start{flex:0 0 169px}ytd-masthead #end{flex:0 0 80px}ytd-masthead #center{display:flex;align-items:center;flex:1;max-width:728px;margin-inline:auto;min-width:0;gap:8px}@media(max-width:700px){ytd-masthead #start{flex-basis:auto}ytd-masthead #end{flex-basis:auto}}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}ytd-browse{display:block}#primary{width:100%;margin:0}ytd-rich-item-renderer{display:block}</style></head><body><ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form><button id="voice-search-button" aria-label="Search with your voice">Mic</button></div><div id="end">Account</div></ytd-masthead><div class="fixture-header">YouTube · Intent feed preview <small>Synthetic videos for automated checks</small></div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-item-renderer id="work"><h3 id="video-title">Python programming for useful tools</h3><div id="channel-name"><a>Code Notebook</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="music"><h3 id="video-title">Quiet jazz for a slow afternoon</h3><div id="channel-name"><a>Sunday Sounds</a></div></ytd-rich-item-renderer><ytd-rich-item-renderer id="bait"><h3 id="video-title">You won't believe this music!!!</h3></ytd-rich-item-renderer><ytd-rich-item-renderer id="short"><h3 id="video-title">Music in 20 seconds</h3><a href="/shorts/abc">Short</a></ytd-rich-item-renderer><ytd-reel-shelf-renderer id="shelf"><h2>Shorts</h2><ytm-shorts-lockup-view-model id="native-short"><a href="/shorts/m0000000096"><h3>Quiet jazz music short</h3></a></ytm-shorts-lockup-view-model></ytd-reel-shelf-renderer></div></ytd-browse></body></html>`}));
   await yt.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#d8dfc8"/><circle cx="490" cy="230" r="160" fill="#c0cdae"/><path d="M60 240h220M60 190h150" stroke="#718465" stroke-width="12" stroke-linecap="round"/></svg>'}));
   await yt.route('https://extension.test/icons/**',route=>route.fulfill({path:root+'/icons/128.png'}));
   await yt.goto('https://www.youtube.com/');
+  const nativeSearchGeometry=await yt.evaluate(()=>Object.fromEntries(['ytd-masthead #center','#search','#search input','#voice-search-button'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return[selector,{x:r.x,width:r.width}];})));
   const nativePrimary=await yt.locator('#primary').evaluate(el=>({width:el.getBoundingClientRect().width,margin:getComputedStyle(el).margin,padding:getComputedStyle(el).padding}));
   for (const file of ['core.js','feed.js','feed-theme.js','home.js','toolbar.js']) await yt.addScriptTag({path:root+'/src/'+file});
   await yt.evaluate(()=>{
-    window.testSettings={...IntentCore.defaults(),mode:'music'};window.testHandlers=[];window.testRequests=[];window.testFail=false;window.testDelayWork=false;
+    window.testSettings={...IntentCore.defaults(),mode:'music'};window.testPaused=false;window.testHandlers=[];window.testRequests=[];window.testFail=false;window.testDelayWork=false;
     const make=(mode,n)=>({id:mode[0]+String(n).padStart(10,'0'),title:mode==='work'?`Python programming lesson ${n+1}`:mode==='study'?`Physics lecture ${n+1}`:`Quiet jazz music ${n+1}`,channel:'Studio North',description:'',duration:'12:40',metadata:'3.9M views · 2 years ago',thumbnail:'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',shorts:false});
     window.chrome={runtime:{id:'test',getURL:s=>'https://extension.test/'+s,onMessage:{addListener:fn=>testHandlers.push(fn)},sendMessage:async message=>{
       if(message.type==='SET_MODE'){testSettings.mode=message.mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));}
-      if(message.type!=='GET_FEED')return {ok:true,settings:testSettings,blocked:false};
+      if(message.type!=='GET_FEED')return {ok:true,settings:testSettings,tabPaused:testPaused,blocked:false};
       testRequests.push(message);const settings=structuredClone(testSettings);
       if(testFail)return {ok:false,error:'YouTube search unavailable'};
       if(settings.mode==='work'&&testDelayWork)await new Promise(resolve=>setTimeout(resolve,300));
       const videos=Array.from({length:12},(_,n)=>make(settings.mode,n+message.cursor*12));
       return {ok:true,key:message.key,items:[...videos,videos[0],{...make('work',99),title:'You won’t believe this Python music!!!'},{...make('work',98),title:'Cooking recipe'},...Array.from({length:8},(_,n)=>({...make('music',90+n),shorts:true}))],nextCursor:message.cursor+2,hasMore:message.cursor<2,warning:'',metadataStats:{limit:settings.metadataLimit,checked:4,requests:2,cacheHits:2,sharedRequests:0,failed:0,remaining:1}};
     }}};
-    window.setTestMode=mode=>{testSettings.mode=mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings}));};
+    window.setTestMode=mode=>{testSettings.mode=mode;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings,tabPaused:testPaused}));};
+    window.setTestPaused=paused=>{testPaused=paused;testHandlers.forEach(f=>f({type:'SETTINGS',settings:testSettings,tabPaused:testPaused}));};
   });
   await yt.addStyleTag({path:root+'/src/content.css'});await yt.addScriptTag({path:root+'/src/content.js'});
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length===12);
@@ -122,8 +164,9 @@ async function chooseMode(toolbar, mode, customName) {
   const feed=yt.locator('#intent-home-feed'),toolbar=yt.locator('#intent-toolbar');
   await toolbar.waitFor();
   assert.equal(await toolbar.locator('svg.logo').count(),1);assert.equal(await toolbar.locator('.logo').evaluate(el=>el.getAttribute('viewBox')==='0 0 128 128'&&!el.hasAttribute('src')&&!el.querySelector('[href],[src]')),true,'the original brand uses inline geometry without cross-origin image loads');
-  assert.equal(await yt.locator('ytd-masthead #center #intent-toolbar').count(),1,'intent controls live beside the search form');
-  assert.equal(await yt.evaluate(()=>{const toolbar=document.querySelector('#intent-toolbar'),search=document.querySelector('#search'),mic=document.querySelector('#voice-search-button');return toolbar.nextElementSibling===search&&search.nextElementSibling===mic&&toolbar.getBoundingClientRect().right<=search.getBoundingClientRect().left;}),true,'Intent sits to the left of search while native search and microphone remain grouped');
+  assert.equal(await yt.locator('ytd-masthead #center #intent-toolbar').count(),0,'Intent does not consume native search layout space');
+  assert.deepEqual(await yt.evaluate(()=>Object.fromEntries(['ytd-masthead #center','#search','#search input','#voice-search-button'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return[selector,{x:r.x,width:r.width}];}))),nativeSearchGeometry,'the native search, input and microphone retain their original position and width');
+  assert.equal(await yt.evaluate(()=>{const toolbar=document.querySelector('#intent-toolbar'),search=document.querySelector('#search'),start=document.querySelector('ytd-masthead #start'),mic=document.querySelector('#voice-search-button'),r=toolbar.getBoundingClientRect();return search.nextElementSibling===mic&&r.width>0&&r.left>=start.getBoundingClientRect().right&&r.right<=search.getBoundingClientRect().left;}),true,'Intent uses the available gap after the logo while native search and microphone remain grouped');
   assert.equal(await feed.locator('header').isVisible(),false,'there is no separate intent banner above the feed');
   const homeGeometry=await feed.evaluate(el=>{const r=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect();return{left:r.left-p.left,right:p.right-r.right,maxWidth:getComputedStyle(el).maxWidth};});
   assert.ok(Math.abs(homeGeometry.left)<2&&Math.abs(homeGeometry.right)<2,'home feed uses the full native content width without centered side bars');
@@ -137,6 +180,14 @@ async function chooseMode(toolbar, mode, customName) {
   const firstRow=boxes.filter(r=>r.y===boxes[0].y);assert.ok(firstRow.length>=3);
   const gap=await feed.locator('.first-grid').evaluate(el=>parseFloat(getComputedStyle(el).columnGap));
   for(let i=1;i<firstRow.length;i++)assert.ok(Math.abs(firstRow[i].x-firstRow[i-1].x-firstRow[i-1].w-gap)<2,'cards compact without empty slots');
+  const glassFixture=await installGlassFixture(yt);assert.deepEqual(glassFixture,{initiallyCovered:true,mastheadBottom:64},'the native deep glass fixture initially cuts across real thumbnail tops');
+  await assertFirstRowUncovered(yt);
+  await yt.screenshot({path:path.join(shots,'intent-home-glass-clear.png')});
+  await yt.evaluate(()=>setTestMode('off'));await feed.waitFor({state:'detached'});await assertGlassRestored(yt);
+  await yt.evaluate(()=>setTestMode('music'));await feed.locator('.cover').first().waitFor();await assertFirstRowUncovered(yt);
+  await yt.evaluate(()=>setTestPaused(true));await feed.waitFor({state:'detached'});await assertGlassRestored(yt);
+  await yt.evaluate(()=>setTestPaused(false));await feed.locator('.cover').first().waitFor();await assertFirstRowUncovered(yt);
+  await removeGlassFixture(yt);
   await feed.getByRole('button',{name:'Find more videos'}).click();
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelectorAll('.card').length===24);
   assert.equal(await feed.locator('.card').count(),24);
@@ -169,7 +220,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.shorts-grid').scrollLeft>50);
   await feed.locator('.shorts-grid').evaluate(el=>el.blur());
   await yt.screenshot({path:path.join(shots,'intent-home-shorts-mobile.png'),fullPage:true});
-  await yt.setViewportSize({width:1440,height:1100});
+  await yt.setViewportSize({width:1660,height:1100});
   await yt.waitForFunction(count=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.first-grid').children.length===count,firstRow.length);
   assert.equal(await feed.locator('.card').count(),20,'responsive splitting never duplicates cards');
   await feed.locator('.shorts-grid').evaluate(el=>{el.blur();el.scrollLeft=0;});
@@ -185,7 +236,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.title')?.textContent.includes('Python'));
   assert.equal(await yt.evaluate(()=>testSettings.mode),'work','masthead selector changes the active intent');
   await yt.evaluate(()=>{const old=document.querySelector('ytd-masthead');const fresh=old.cloneNode(true);fresh.querySelector('#intent-toolbar')?.remove();old.replaceWith(fresh);});
-  await yt.locator('ytd-masthead #center #intent-toolbar').waitFor();
+  await yt.locator('ytd-masthead #intent-toolbar').waitFor();
   assert.equal(await yt.locator('#intent-toolbar').count(),1,'rerendering the masthead reattaches one toolbar');
   // Out-of-order old mode results must never overwrite the newly selected mode.
   await yt.evaluate(()=>setTestMode('music'));
@@ -202,7 +253,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForTimeout(200);assert.equal(await yt.evaluate(()=>testRequests.length),calls,'budget changes do not rebuild the feed');
   await yt.setViewportSize({width:390,height:844});
   assert.equal(await yt.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'home grid fits a narrow viewport');
-  await yt.setViewportSize({width:1440,height:1100});
+  await yt.setViewportSize({width:1660,height:1100});
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
   await yt.evaluate(()=>{testFail=true;});await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
   await feed.getByRole('heading',{name:'Your feed couldn’t load.'}).waitFor();
@@ -285,7 +336,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.locator('#late-native[data-intent-native-watch]').waitFor({state:'attached'});
   assert.equal(await yt.locator('#late-native').isVisible(),false,'new native recommendations cannot leak through the intent feed');
   assert.equal(await yt.evaluate(()=>document.querySelector('#below #intent-watch-feed')!==null),true);
-  await yt.setViewportSize({width:1440,height:1100});
+  await yt.setViewportSize({width:1660,height:1100});
   await yt.evaluate(()=>{testDelayWork=true;setTestMode('work');});
   await yt.waitForFunction(()=>testRequests.at(-1).key.includes('work'));
   await yt.evaluate(()=>setTestMode('study'));
@@ -339,7 +390,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.addScriptTag({path:root+'/src/content.js'});await yt.locator('#intent-shorts-gate').waitFor();
   await yt.locator('#intent-shorts-gate').getByRole('heading',{name:'Shorts are hidden',exact:true}).waitFor();
   assert.equal(await yt.locator('#intent-shorts-gate').getByRole('link',{name:'Back to Home',exact:true}).isVisible(),true);
-  assert.equal(await yt.locator('#shorts-player').isVisible(),false);assert.equal(await yt.locator('#guide-shorts').isVisible(),false);
+  assert.equal(await yt.locator('#shorts-player').isVisible(),false);assert.equal(await yt.locator('#guide-shorts').isVisible(),false);assert.equal(await yt.locator('#guide-shorts-nohref').isVisible(),false,'native primary Shorts entries without href follow hide/pause settings');
   assert.equal(await yt.locator('#logo').isVisible(),true);assert.equal(await yt.locator('#guide-home').isVisible(),true);
   assert.equal(await yt.evaluate(()=>shortPauses>0&&shortsPlayer.paused),true);
   const gateLayout=await yt.locator('#intent-shorts-gate').evaluate(el=>{const r=el.getBoundingClientRect(),css=getComputedStyle(el);return{x:r.x,y:r.y,bg:css.backgroundColor,color:css.color,position:css.position};});
@@ -347,9 +398,9 @@ async function chooseMode(toolbar, mode, customName) {
   assert.ok(!gateLayout.bg.startsWith('rgba(')||gateLayout.bg.endsWith(', 1)'),'the gate has an opaque background');assert.notEqual(gateLayout.color,gateLayout.bg);
   await yt.screenshot({path:path.join(shots,'intent-shorts-blocked.png'),fullPage:true});
   const pauses=await yt.evaluate(()=>shortPauses);await yt.evaluate(()=>{shortPlaying=true;shortsPlayer.dispatchEvent(new Event('play',{bubbles:true}));});assert.ok(await yt.evaluate(()=>shortPauses)>pauses,'Shorts autoplay is paused again');
-  await yt.evaluate(()=>setShortsState(false));await yt.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await yt.locator('#shorts-player').isVisible(),true);assert.equal(await yt.locator('#guide-shorts').isVisible(),true);
+  await yt.evaluate(()=>setShortsState(false));await yt.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await yt.locator('#shorts-player').isVisible(),true);assert.equal(await yt.locator('#guide-shorts').isVisible(),true);assert.equal(await yt.locator('#guide-shorts-nohref').isVisible(),true,'native primary Shorts entries without href follow hide/pause settings');
   await yt.evaluate(()=>setShortsState(true));await yt.locator('#intent-shorts-gate').waitFor();
-  await yt.evaluate(()=>setShortsState(true,true));await yt.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await yt.locator('#shorts-player').isVisible(),true);assert.equal(await yt.locator('#guide-shorts').isVisible(),true);
+  await yt.evaluate(()=>setShortsState(true,true));await yt.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await yt.locator('#shorts-player').isVisible(),true);assert.equal(await yt.locator('#guide-shorts').isVisible(),true);assert.equal(await yt.locator('#guide-shorts-nohref').isVisible(),true,'native primary Shorts entries without href follow hide/pause settings');
   await yt.evaluate(()=>setShortsState(true,false));await yt.locator('#intent-shorts-gate').waitFor();
   await yt.locator('#logo').click();await yt.waitForURL('https://www.youtube.com/');
   const blocked=await context.newPage();

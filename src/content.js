@@ -66,10 +66,25 @@
   }
   function filterShortsNavigation() {
     const found = new Set();
-    if (settings.hideShorts && !tabPaused) for (const link of document.querySelectorAll('a[href],[role="link"][href],[role="link"][data-href]')) {
-      const entry = link.closest(GUIDE_ENTRIES);
-      if (!(entry || link.closest(GUIDE_AREAS)) || !shortsDestination(link.getAttribute('href') || link.getAttribute('data-href'))) continue;
-      found.add(entry || link);
+    if (settings.hideShorts && !tabPaused) {
+      for (const link of document.querySelectorAll('a[href],[role="link"][href],[role="link"][data-href]')) {
+        const entry = link.closest(GUIDE_ENTRIES);
+        if (!(entry || link.closest(GUIDE_AREAS)) || !shortsDestination(link.getAttribute('href') || link.getAttribute('data-href'))) continue;
+        found.add(entry || link);
+      }
+      // Native guide endpoints sometimes carry only Polymer navigation data,
+      // without an href. Only official primary/mini entries may use the label
+      // fallback, so a subscription channel named Shorts remains untouched.
+      for (const entry of document.querySelectorAll(GUIDE_ENTRIES)) {
+        const mini = entry.matches('ytd-mini-guide-entry-renderer,ytd-mini-guide-entry,yt-mini-guide-entry-view-model,yt-mini-guide-entry-renderer,yt-mini-guide-entry') || entry.closest('ytd-mini-guide-renderer,yt-mini-guide-renderer');
+        if (!entry.hasAttribute('is-primary') && !mini) continue;
+        const endpoint = entry.querySelector('#endpoint,a,[role="link"]');
+        // An explicit destination is authoritative, including a non-Shorts href
+        // on a reused entry whose old title has not been updated yet.
+        if (!endpoint || endpoint.hasAttribute('href') || endpoint.hasAttribute('data-href')) continue;
+        const label = endpoint.getAttribute('aria-label') || endpoint.getAttribute('title') || entry.getAttribute('aria-label') || entry.getAttribute('title') || '';
+        if (/^shorts$/i.test(label.trim())) found.add(entry);
+      }
     }
     for (const element of markedShortNav) if (!found.has(element)) {element.removeAttribute('data-intent-short-nav'); markedShortNav.delete(element);}
     for (const element of found) if (!element.hasAttribute('data-intent-short-nav')) {element.setAttribute('data-intent-short-nav', ''); markedShortNav.add(element);}
@@ -269,7 +284,7 @@
     if (!settings && isHome() && !document.documentElement?.hasAttribute('data-intent-home-pending')) armHomePending(true);
     if (settings && !tabPaused) {filterShortsNavigation(); if (isShortsPage()) shortsGate();}
     schedule();
-  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href', 'hidden', 'page-subtype']});
+  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href', 'hidden', 'page-subtype', 'title', 'aria-label', 'is-primary']});
   function navigationDestination(event) {
     const detail = event.detail || {};
     const value = detail.url || detail.endpoint?.commandMetadata?.webCommandMetadata?.url || detail.navigationData?.endpoint?.commandMetadata?.webCommandMetadata?.url;

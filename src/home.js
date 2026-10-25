@@ -121,13 +121,19 @@
         if (primary.contains(node) || node.contains(primary)) continue;
         if (![...node.childNodes].some(meaningful)) next.set(node, 'data-intent-empty-home-spacing');
       }
-      // The empty app-level glass is decorative. Retain the masthead portion,
-      // removing only the extra chip-bar layer rather than changing navigation.
-      for (const node of document.querySelectorAll('ytd-app > #frosted-glass.with-chipbar')) {
-        if (![...node.childNodes].some(meaningful)) next.set(node, 'data-intent-home-glass');
+      // Current YouTube nests this decoration under #content. Retain only the
+      // part behind the actual masthead; the empty chip-bar portion covers cards.
+      const masthead = document.querySelector('ytd-masthead:not([hidden])');
+      const mastheadBottom = masthead?.getBoundingClientRect().bottom;
+      for (const node of document.querySelectorAll('ytd-app #frosted-glass')) {
+        if (![...node.childNodes].some(meaningful)) {
+          next.set(node, 'data-intent-home-glass');
+          if (Number.isFinite(mastheadBottom)) node.style.setProperty('--intent-masthead-glass-height', `${Math.max(0, mastheadBottom - node.getBoundingClientRect().top)}px`);
+        }
       }
       for (const node of this.spacingElements) if (!next.has(node)) {
         node.removeAttribute('data-intent-empty-home-spacing'); node.removeAttribute('data-intent-home-glass');
+        node.style.removeProperty('--intent-masthead-glass-height');
       }
       this.spacingElements = new Set(next.keys());
       for (const [node, marker] of next) if (!node.hasAttribute(marker)) node.setAttribute(marker, '');
@@ -269,7 +275,7 @@
       // Keep references so even detached nodes are restored before YouTube reuses them.
       for (const el of this.nativeElements) el.removeAttribute(this.nativeMarker);
       this.nativeElements.clear();
-      for (const el of this.spacingElements) {el.removeAttribute('data-intent-empty-home-spacing'); el.removeAttribute('data-intent-home-glass');}
+      for (const el of this.spacingElements) {el.removeAttribute('data-intent-empty-home-spacing'); el.removeAttribute('data-intent-home-glass'); el.style.removeProperty('--intent-masthead-glass-height');}
       this.spacingElements.clear();
     }
     destroy() {

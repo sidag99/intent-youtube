@@ -739,9 +739,6 @@ test('a preview cannot bypass a counted budget that is reached while its searche
 });
 
 
-const reminderWrites = h => h.storageWrites.filter(write => write.area === 'local' && Object.hasOwn(write.values, 'timerReminderHistory'));
-const lowBudget = (remainingMinutes, patch = {}) => ({settings: {dailyMinutes: 30, timerReminders: true, ...patch}, days: {'2026-10-24': (30 - remainingMinutes) * 60000}});
-
 test('timer snapshots report actual global and targeted counting with local dates and fresh timestamps', async () => {
   const start = new Date(2026, 9, 24, 12).getTime(), h = harness({}, start);
   let state = await tabState(h, 1);
@@ -774,103 +771,4 @@ test('a counted background tab can run the global timer while the visible exempt
   state = await tabState(h, 1); assert.equal(state.timerRunning, true); assert.equal(state.tabCounting, false); assert.equal(state.tabPaused, true);
   await h.send({type: 'UPDATE_SETTINGS', patch: {countPlayback: false}});
   state = await tabState(h, 2); assert.equal(state.timerRunning, false); assert.equal(state.tabCounting, false, 'a background tab without counted playback does not contribute');
-});
-
-test('optional reminders emit once at ten and two minutes only on an eligible focused top-level heartbeat', async () => {
-  const h = harness(lowBudget(9));
-  assert.equal((await tabState(h, 1)).timerReminder, undefined, 'polling state cannot consume a reminder');
-  assert.equal(reminderWrites(h).length, 0);
-  const ten = await h.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(ten.timerReminder, 10); assert.equal(ten.timerRunning, true); assert.equal(ten.tabCounting, true);
-  assert.equal(reminderWrites(h).length, 1);
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined);
-  // Stay below the accounting sleep-gap cap; GET_STATE ticks never deliver reminders.
-  for (let i = 0; i < 14; i++) {h.advance(30000); assert.equal((await tabState(h, 1)).timerReminder, undefined);}
-  assert.equal(reminderWrites(h).length, 1);
-  const two = await h.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(two.remainingMs, 120000); assert.equal(two.timerReminder, 2); assert.equal(reminderWrites(h).length, 2);
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined);
-  assert.equal(reminderWrites(h).length, 2, 'no history rewrites occur without a newly emitted threshold');
-});
-
-test('reminder eligibility uses actual tab focus and accounting rather than a sender claiming to be active', async () => {
-  const h = harness(lowBudget(9));
-  h.setTabs([{id: 1, windowId: 1, active: true}, {id: 2, windowId: 2, active: true}, {id: 3, windowId: 1, active: false}]);
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: true}, {...fromTab(1), frameId: 2})).timerReminder, undefined, 'an iframe cannot consume a reminder');
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: true}, fromTab(2))).timerReminder, undefined, 'an active tab in an unfocused window cannot consume a reminder');
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: true}, fromTab(3))).timerReminder, undefined, 'an inactive tab cannot spoof activity with its sender fields');
-  h.setFocus({id: 1, focused: false});
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: true}, fromTab(1))).timerReminder, undefined, 'background playback alone does not show a notification');
-  h.setFocus({id: 1, focused: true}); h.setIdle('locked');
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: true}, fromTab(1))).timerReminder, undefined);
-  assert.equal(reminderWrites(h).length, 0, 'ineligible requests neither consume nor persist reminders');
-  h.setIdle('active');
-  assert.equal((await h.send({type: 'HEARTBEAT', playing: false}, fromTab(1))).timerReminder, 10);
-});
-
-test('exempt and paused foreground tabs do not consume reminders while another tab runs the global timer', async () => {
-  const h = harness(lowBudget(9)); h.setTabs(tabsPair());
-  await h.send({type: 'SET_MODE', mode: 'music'}, fromTab(1));
-  await h.send({type: 'HEARTBEAT', playing: true}, {...fromTab(2), tab: {...fromTab(2).tab, active: false}});
-  let state = await h.send({type: 'HEARTBEAT', playing: true}, fromTab(1));
-  assert.equal(state.timerRunning, true); assert.equal(state.tabCounting, false); assert.equal(state.timerReminder, undefined);
-  await h.send({type: 'SET_MODE', mode: 'work'}, fromTab(1));
-  await h.send({type: 'SET_TAB_PAUSED', paused: true}, fromTab(1));
-  state = await h.send({type: 'HEARTBEAT', playing: true}, fromTab(1));
-  assert.equal(state.timerRunning, true); assert.equal(state.tabCounting, false); assert.equal(state.timerReminder, undefined);
-  assert.equal(reminderWrites(h).length, 0);
-  await h.send({type: 'SET_TAB_PAUSED', paused: false}, fromTab(1));
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, 10);
-});
-
-test('reminder delivery is serialized across requests and survives page reloads and service-worker reinitialization', async () => {
-  const start = new Date(2026, 9, 24, 12).getTime(), h = harness(lowBudget(9), start);
-  const responses = await Promise.all(Array.from({length: 8}, () => h.send({type: 'HEARTBEAT'}, fromTab(1))));
-  assert.deepEqual(responses.filter(state => state.timerReminder !== undefined).map(state => state.timerReminder), [10]);
-  assert.equal(reminderWrites(h).length, 1); assert.ok(h.local.timerReminderHistory);
-  h.setTabs([{id: 1, windowId: 1, active: false}, {id: 2, windowId: 1, active: true}]);
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(2))).timerReminder, undefined, 'switching to another eligible tab cannot repeat the same daily threshold');
-  assert.equal(reminderWrites(h).length, 1);
-  const history = structuredClone(h.local.timerReminderHistory);
-  const restarted = harness(h.local, start, undefined, undefined, h.session);
-  assert.equal((await restarted.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined, 'a new worker/page does not repeat the same daily threshold');
-  assert.equal(reminderWrites(restarted).length, 0); assert.deepEqual(restarted.local.timerReminderHistory, history);
-  const newDay = harness(h.local, new Date(2026, 9, 25, 12).getTime(), undefined, undefined, h.session);
-  await newDay.send({type: 'UPDATE_SETTINGS', patch: {dailyMinutes: 9}});
-  const state = await newDay.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(state.timerDay, '2026-10-25'); assert.equal(state.timerReminder, 10, 'a fresh local day has a fresh reminder allowance');
-  assert.equal(reminderWrites(newDay).length, 1);
-});
-
-test('two-minute urgency takes precedence and cannot later emit the less urgent ten-minute reminder', async () => {
-  const h = harness(lowBudget(1.5));
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, 2);
-  assert.equal(reminderWrites(h).length, 1);
-  await h.send({type: 'UPDATE_SETTINGS', patch: {dailyMinutes: 35}});
-  const state = await h.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(state.remainingMs, 6.5 * 60000); assert.equal(state.timerReminder, undefined, 'increasing the budget does not deliver an out-of-order lower-urgency warning');
-  assert.equal(reminderWrites(h).length, 1);
-});
-
-test('reminders remain disabled by default and enabling them or the budget at a low balance waits for a qualifying heartbeat', async () => {
-  const h = harness(lowBudget(1.5, {timerReminders: false}));
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined);
-  assert.equal(reminderWrites(h).length, 0);
-  assert.equal((await h.send({type: 'UPDATE_SETTINGS', patch: {timerReminders: true, limitEnabled: false}})).timerReminder, undefined);
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined, 'a disabled budget does not show countdown reminders');
-  assert.equal((await h.send({type: 'UPDATE_SETTINGS', patch: {limitEnabled: true}})).timerReminder, undefined, 'settings-page activity does not consume the reminder');
-  assert.equal(reminderWrites(h).length, 0);
-  assert.equal((await h.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, 2);
-  assert.equal(reminderWrites(h).length, 1);
-  const exhausted = harness(lowBudget(0));
-  assert.equal((await exhausted.send({type: 'HEARTBEAT'}, fromTab(1))).timerReminder, undefined, 'an exhausted budget redirects instead of announcing a remaining-time warning');
-  assert.equal(reminderWrites(exhausted).length, 0);
-});
-
-test('the ten-minute reminder starts exactly at the threshold and not one millisecond before it', async () => {
-  const h = harness({settings: {dailyMinutes: 30, timerReminders: true}, days: {'2026-10-24': 20 * 60000 - 1}});
-  let state = await h.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(state.remainingMs, 600001); assert.equal(state.timerReminder, undefined); assert.equal(reminderWrites(h).length, 0);
-  h.advance(1); state = await h.send({type: 'HEARTBEAT'}, fromTab(1));
-  assert.equal(state.remainingMs, 600000); assert.equal(state.timerReminder, 10); assert.equal(reminderWrites(h).length, 1);
 });

@@ -1,6 +1,6 @@
 {
   "name": "intent-youtube",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "private": true,
   "description": "A local-first YouTube focus extension",
   "scripts": {

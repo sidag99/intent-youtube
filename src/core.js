@@ -86,7 +86,7 @@
     const definitions = {...builtins, ...custom};
     return Object.fromEntries(orderIds(Object.keys(definitions), settings.intentOrder).map(id => [id, definitions[id]]));
   }
-  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, timerReminders: false, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
+  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true}, hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
   function sanitize(input = {}) {
     const out = defaults();
     out.rolePresets = roleRecords(input.rolePresets);
@@ -100,7 +100,7 @@
     if (input.newTabMode === 'last' || validMode(input.newTabMode, out)) out.newTabMode = input.newTabMode;
     else if (input.newTabMode === 'leisure') out.newTabMode = 'work';
     for (const mode of [...ids, 'off']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
-    for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback', 'timerReminders']) if (typeof input[key] === 'boolean') out[key] = input[key];
+    for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback']) if (typeof input[key] === 'boolean') out[key] = input[key];
     if (Number.isFinite(Number(input.dailyMinutes))) out.dailyMinutes = Math.max(1, Math.min(1440, Math.round(Number(input.dailyMinutes))));
     if ((typeof input.metadataLimit === 'number' || typeof input.metadataLimit === 'string' && input.metadataLimit.trim()) && Number.isFinite(Number(input.metadataLimit))) out.metadataLimit = Math.max(0, Math.min(40, Math.round(Number(input.metadataLimit))));
     for (const field of ['customTopics', 'channels']) for (const mode of ids) out[field][mode] = String(input[field]?.[mode] || '').slice(0, 4000);

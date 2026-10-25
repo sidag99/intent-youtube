@@ -2,7 +2,47 @@ const {chromium}=require('playwright'),path=require('path'),assert=require('asse
 
 // A tiny bundled-in-test silent WAV exercises real native media state across isolated worlds.
 const shortAudio=Buffer.alloc(16044);shortAudio.write('RIFF',0);shortAudio.writeUInt32LE(16036,4);shortAudio.write('WAVE',8);shortAudio.write('fmt ',12);shortAudio.writeUInt32LE(16,16);shortAudio.writeUInt16LE(1,20);shortAudio.writeUInt16LE(1,22);shortAudio.writeUInt32LE(8000,24);shortAudio.writeUInt32LE(16000,28);shortAudio.writeUInt16LE(2,32);shortAudio.writeUInt16LE(16,34);shortAudio.write('data',36);shortAudio.writeUInt32LE(16000,40);
-const directShortsFixture=`<!doctype html><meta charset="utf-8"><style>html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}ytd-masthead{position:fixed;top:0;left:0;right:0;z-index:2020;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--yt-spec-base-background)}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0}#search{display:flex;flex:1}#search input{width:100%;min-width:0}#logo{display:block;color:inherit;padding:10px;text-decoration:none}ytd-guide-renderer{display:block;position:fixed;left:0;top:56px;bottom:0;width:200px;background:var(--yt-spec-base-background);z-index:2010}ytd-guide-entry-renderer{display:block;padding:14px}ytd-guide-renderer a{color:inherit}ytd-page-manager{display:block;margin:56px 0 0 216px;padding:16px;min-height:calc(100vh - 56px)}ytd-shorts{display:block;height:700px;background:#97004f;color:white}video{width:300px;height:550px}</style><ytd-app><ytd-masthead><div id="start"><a id="logo" href="/">YouTube</a></div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-guide-renderer><ytd-guide-entry-renderer><a id="guide-home" href="/">Home</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts"><a href="/shorts/Q0000000000">Shorts</a></ytd-guide-entry-renderer></ytd-guide-renderer><ytd-page-manager><ytd-shorts id="shorts-player"><video id="short-video" autoplay muted loop src="data:audio/wav;base64,${shortAudio.toString('base64')}"></video><h2>Native Shorts player</h2></ytd-shorts></ytd-page-manager></ytd-app><script>window.shortPlayEvents=0;window.shortsPlayer=document.querySelector('#short-video');shortsPlayer.addEventListener('play',()=>shortPlayEvents++);shortsPlayer.play().catch(()=>{});</script>`;
+const directShortsFixture=`<!doctype html><meta charset="utf-8"><style>html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}ytd-masthead{position:fixed;top:0;left:0;right:0;z-index:2020;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--yt-spec-base-background)}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0}#search{display:flex;flex:1}#search input{width:100%;min-width:0}#logo{display:block;color:inherit;padding:10px;text-decoration:none}ytd-guide-renderer{display:block;position:fixed;left:0;top:56px;bottom:0;width:200px;background:var(--yt-spec-base-background);z-index:2010}ytd-guide-entry-renderer{display:block;padding:14px}ytd-guide-renderer a{color:inherit}ytd-page-manager{display:block;margin:56px 0 0 216px;padding:16px;min-height:calc(100vh - 56px)}ytd-shorts{display:block;height:700px;background:#97004f;color:white}video{width:300px;height:550px}</style><ytd-app><ytd-masthead><div id="start"><a id="logo" href="/">YouTube</a></div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-guide-renderer><ytd-guide-entry-renderer><a id="guide-home" href="/">Home</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts"><a href="/shorts/Q0000000000">Shorts</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts-nohref" is-primary><a id="endpoint" role="link" title="Shorts" tabindex="-1"><tp-yt-paper-item role="link"><yt-formatted-string class="title">Shorts</yt-formatted-string></tp-yt-paper-item></a></ytd-guide-entry-renderer></ytd-guide-renderer><ytd-page-manager><ytd-shorts id="shorts-player"><video id="short-video" autoplay muted loop src="data:audio/wav;base64,${shortAudio.toString('base64')}"></video><h2>Native Shorts player</h2></ytd-shorts></ytd-page-manager></ytd-app><script>window.shortPlayEvents=0;window.shortsPlayer=document.querySelector('#short-video');shortsPlayer.addEventListener('play',()=>shortPlayEvents++);shortsPlayer.play().catch(()=>{});</script>`;
+
+// Exercise actual thumbnail visibility, including paint that overflows a glass pseudo-element.
+async function installGlassFixture(page) {
+ return page.evaluate(()=>{
+  const style=document.createElement('style');style.id='glass-regression-style';
+  style.textContent=`ytd-masthead{height:64px!important;position:relative!important;z-index:2000!important;background:#fff!important}.fixture-header,.top{display:none!important}#glass-regression-app #frosted-glass{position:fixed;top:8px;left:0;width:100%;height:160px;min-height:192px;z-index:1500;background:#000}#glass-regression-app #frosted-glass::after{content:'';position:absolute;left:0;right:0;bottom:-40px;height:40px;background:#000;pointer-events:auto}`;
+  document.head.append(style);
+  const app=document.createElement('ytd-app');app.id='glass-regression-app';
+  app.innerHTML='<div id="content"><div class="deep-empty-shell"><div id="frosted-glass" class="modern-glass-without-chipbar"><div class="empty-inner-wrapper"></div></div></div></div>';
+  document.body.append(app);window.scrollTo(0,0);
+  const host=document.querySelector('#intent-home-feed'),cover=host.shadowRoot.querySelector('.cover'),rect=cover.getBoundingClientRect();
+  const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+2);
+  return {initiallyCovered:hit===app.querySelector('#frosted-glass'),mastheadBottom:document.querySelector('ytd-masthead').getBoundingClientRect().bottom};
+ });
+}
+async function assertFirstRowUncovered(page) {
+ await page.waitForFunction(()=>{
+  const glass=document.querySelector('#glass-regression-app #frosted-glass'),masthead=document.querySelector('ytd-masthead');
+  return glass&&glass.getBoundingClientRect().bottom<=masthead.getBoundingClientRect().bottom+.5;
+ });
+ const visibility=await page.evaluate(()=>{
+  const host=document.querySelector('#intent-home-feed'),covers=[...host.shadowRoot.querySelectorAll('.first-grid .cover')],top=covers[0].getBoundingClientRect().top;
+  const mastheadBottom=document.querySelector('ytd-masthead').getBoundingClientRect().bottom;
+  return covers.filter(cover=>Math.abs(cover.getBoundingClientRect().top-top)<1).map(cover=>{
+   const rect=cover.getBoundingClientRect(),x=rect.x+rect.width/2,y=rect.y+2;
+   const outer=document.elementFromPoint(x,y),inner=host.shadowRoot.elementFromPoint(x,y);
+   return {belowMasthead:rect.top>=mastheadBottom,uncovered:outer===host&&cover.contains(inner),hit:outer?.id||outer?.tagName};
+  });
+ });
+ assert.ok(visibility.length>=3,'the regression checks the complete first thumbnail row');
+ assert.ok(visibility.every(item=>item.belowMasthead&&item.uncovered),'every thumbnail top must receive the hit rather than opaque native glass: '+JSON.stringify(visibility));
+}
+async function assertGlassRestored(page) {
+ const native=await page.locator('#glass-regression-app #frosted-glass').evaluate(el=>({height:el.getBoundingClientRect().height,minHeight:getComputedStyle(el).minHeight,pseudoHeight:getComputedStyle(el,'::after').height,overflow:getComputedStyle(el).overflow,owned:el.hasAttribute('data-intent-home-glass'),variable:el.style.getPropertyValue('--intent-masthead-glass-height')}));
+ assert.deepEqual(native,{height:192,minHeight:'192px',pseudoHeight:'40px',overflow:'visible',owned:false,variable:''},'Off/Pause restore native glass and generated paint');
+ assert.equal(await page.locator('ytd-masthead').evaluate(el=>el.getBoundingClientRect().bottom),64,'the native masthead is never moved');
+}
+async function removeGlassFixture(page) {
+ await page.evaluate(()=>{document.querySelector('#glass-regression-app').remove();document.querySelector('#glass-regression-style').remove();});
+}
 
 async function expandAdvanced(page) {
  const advanced=page.locator('#intent-editor details.intent-advanced');
@@ -19,7 +59,7 @@ async function chooseMode(toolbar, mode, customName) {
 (async()=>{
  const root=path.resolve(__dirname,'..');
  const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
- const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1440,height:1100}});context.setDefaultTimeout(20000);
+ const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1660,height:1100}});context.setDefaultTimeout(20000);
  const texts={W:['Ship a tiny app this weekend','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],M:['Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.'],S:['Why the sky changes colour','An accessible explanation of scattering and wavelengths from sunlight.']};
  const ids={};const renderers=[];const networkCounts={searches:0,metadata:0};const searchLocales=[];
  for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:prefix==='S'?'Curious Minds':'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'},viewCountText:{simpleText:'39 lakh views'},publishedTimeText:{simpleText:'2 years ago'}}});}
@@ -27,7 +67,7 @@ async function chooseMode(toolbar, mode, customName) {
  ids.R0000000000={title:'Jazz piano improvisation in sixty seconds',description:'A quick piano jazz music performance.'};
  renderers.push({reelShelfRenderer:{items:[{reelItemRenderer:{videoId:'Q0000000000',headline:{simpleText:ids.Q0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/Q0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'Q0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/Q0000000000'}}}}},{reelItemRenderer:{videoId:'R0000000000',headline:{simpleText:ids.R0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/R0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'R0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/R0000000000'}}}}}]}});
  const masthead='<ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search" placeholder="Search"></form></div><div id="end">Account</div></ytd-masthead>';
- const mastheadCSS='ytd-masthead{display:flex;height:56px;align-items:center;padding:0 16px;gap:24px}ytd-masthead #center{display:flex;flex:1;min-width:0;align-items:center;gap:8px}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}';
+ const mastheadCSS='ytd-masthead{display:flex;height:56px;align-items:center;padding:0 16px;gap:24px}ytd-masthead #start{flex:0 0 169px}ytd-masthead #end{flex:0 0 80px}ytd-masthead #center{display:flex;flex:1;max-width:728px;margin-inline:auto;min-width:0;align-items:center;gap:8px}@media(max-width:700px){ytd-masthead #start{flex-basis:auto}ytd-masthead #end{flex-basis:auto}}#search{display:flex;flex:1;max-width:640px;min-width:0}#search input{min-width:0;width:100%;padding:8px;border-radius:20px}';
  const localeBootstrap=(hl='en-GB',gl='DE')=>'<script>var ytcfg={set:function(value){this.data_=value}};ytcfg.set('+JSON.stringify({INNERTUBE_CONTEXT:{client:{hl,gl}}})+');</script>';
  const search=gl=>'<script>var ytInitialData = '+JSON.stringify({contents:{twoColumnSearchResultsRenderer:{primaryContents:{sectionListRenderer:{contents:[{itemSectionRenderer:{contents:renderers.map(item=>item.videoRenderer?{videoRenderer:{...item.videoRenderer,viewCountText:{simpleText:gl==='IN'?'39 lakh views':'3.9M views'}}}:item)}}]}}}}})+';</script>';
  const pageErrors=[],consoleErrors=[];
@@ -53,6 +93,10 @@ async function chooseMode(toolbar, mode, customName) {
   const settings=await context.newPage();await settings.goto(`chrome-extension://${id}/settings.html`);await settings.getByRole('heading',{name:'Your daily budget'}).waitFor();
   console.log('PASS fresh-install settings load without warming the model manually');
   const worker=context.serviceWorkers()[0];assert.ok(worker);
+  // Headless Chromium inherits the host's idle state, which can flip while the
+  // operator reads test output. Keep this external input active; unit tests
+  // separately cover idle/locked accounting. All timer logic stays real.
+  await worker.evaluate(()=>{chrome.idle.queryState=async()=> 'active';});
   // Record actual Chrome icon writes while preserving the native API implementation.
   await worker.evaluate(()=>{const original=chrome.action.setIcon;globalThis.__intentActionIconCalls=[];chrome.action.setIcon=function(details,...args){globalThis.__intentActionIconCalls.push({tabId:details.tabId,imageData:details.imageData});return original.call(chrome.action,details,...args);};});
   const iconWrites=tabId=>worker.evaluate(tabId=>globalThis.__intentActionIconCalls.filter(call=>call.tabId===tabId).length,tabId);
@@ -90,6 +134,15 @@ async function chooseMode(toolbar, mode, customName) {
     throw new Error(error.message+'; foreground timer diagnostic: '+JSON.stringify(environment));
   });
   assert.equal(await yt.locator('#intent-toolbar #intent-timer').getAttribute('data-timer-state'),'normal');
+  const installedClock=yt.locator('#intent-toolbar #intent-timer'),timerDetails=yt.locator('#intent-toolbar #intent-timer-popover');
+  await installedClock.press('Enter');await timerDetails.getByRole('heading',{name:'Daily budget',exact:true}).waitFor();
+  assert.deepEqual(await timerDetails.locator('dt').allTextContents(),['Remaining','Used'],'the budget popover shows two concise values');
+  assert.equal(await timerDetails.locator('#intent-timer-context').isVisible(),false,'ordinary counting does not add a paragraph');
+  assert.equal(await timerDetails.getByRole('button',{name:'Timer settings',exact:true}).count(),0,'the clock does not duplicate the existing Intent settings shortcut');
+  assert.ok((await timerDetails.innerText()).length<100,'the visible budget summary stays compact');
+  assert.match(await installedClock.getAttribute('title'),/midnight/i,'reset information remains available in the clock tooltip');
+  await timerDetails.getByRole('button',{name:'Close timer details',exact:true}).click();
+  assert.equal(await installedClock.evaluate(el=>el.getRootNode().activeElement===el),true,'closing details restores keyboard focus to the clock');
   const searchTimer=await context.newPage();await searchTimer.goto('https://www.youtube.com/results?search_query=python');await searchTimer.bringToFront();
   await searchTimer.waitForFunction(()=>{const host=document.querySelector('#intent-toolbar'),clock=host?.shadowRoot.querySelector('#intent-timer');return host?.dataset.filterState==='off-here'&&clock?.dataset.tabCounting==='true';});
   assert.equal(await searchTimer.locator('#intent-toolbar #intent-timer').getAttribute('data-timer-running'),'true','search time still counts when intent filtering is off here');
@@ -97,10 +150,25 @@ async function chooseMode(toolbar, mode, customName) {
   await searchTimer.close();await yt.bringToFront();
   console.log('PASS real offscreen Work feed, automatic icon restoration and explicit counting clock including unfiltered search pages');
   const toolbar=yt.locator('#intent-toolbar');await toolbar.waitFor();
+  assert.equal(await yt.locator('ytd-masthead #center #intent-toolbar').count(),0,'the installed toolbar stays outside the native search flex row');
+  const searchUnchanged=await yt.evaluate(()=>{const host=document.querySelector('#intent-toolbar'),search=document.querySelector('#search'),input=search.querySelector('input'),measure=el=>{const r=el.getBoundingClientRect();return{x:r.x,width:r.width};},before=[measure(search),measure(input)],parent=host.parentNode,next=host.nextSibling;host.remove();const native=[measure(search),measure(input)];parent.insertBefore(host,next);return{before,native};});
+  assert.deepEqual(searchUnchanged.before,searchUnchanged.native,'installed controls preserve the native search width and position');
   const logo=toolbar.locator('.logo');await logo.waitFor();
   const brand=await logo.evaluate(el=>({tag:el.tagName.toLowerCase(),src:el.getAttribute('src'),viewBox:el.getAttribute('viewBox'),loaded:el instanceof HTMLImageElement?el.complete&&el.naturalWidth>0:el.querySelectorAll('circle,path').length>=2}));
   assert.equal(brand.loaded,true,'the toolbar brand renders without a failed extension image');
   assert.equal(brand.tag,'svg');assert.equal(brand.src,null);assert.equal(brand.viewBox,'0 0 128 128');assert.equal(await logo.locator('circle').getAttribute('fill'),'#3b5b3f');assert.equal(await logo.locator('path').getAttribute('fill'),'#f3f5e6');assert.equal(await logo.locator('[href],[src]').count(),0);
+
+  const glassFixture=await installGlassFixture(yt);assert.deepEqual(glassFixture,{initiallyCovered:true,mastheadBottom:64});
+  await assertFirstRowUncovered(yt);
+  await yt.screenshot({path:path.join(shots,'intent-home-glass-clear-installed.png')});
+  await chooseMode(toolbar,'off');await feed.waitFor({state:'detached'});await assertGlassRestored(yt);
+  await chooseMode(toolbar,'work');await feed.locator('.cover').first().waitFor();await assertFirstRowUncovered(yt);
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),workTabId);
+  await feed.waitFor({state:'detached'});await assertGlassRestored(yt);
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:false}),workTabId);
+  await feed.locator('.cover').first().waitFor();await assertFirstRowUncovered(yt);
+  await removeGlassFixture(yt);
+  console.log('PASS nested opaque Home glass cannot cover first-row thumbnails; Off/Pause restore native decoration');
 
   const settingsIcons=await settings.evaluate(()=>Object.fromEntries(['work','study','music'].map(id=>[id,document.querySelector(`[data-mode="${id}"] .mode-icon svg`).innerHTML])));
   const toolbarIcons=await yt.evaluate(()=>Object.fromEntries(['work','study','music'].map(id=>[id,document.querySelector('#intent-toolbar').shadowRoot.querySelector(`[role=option][data-mode="${id}"] .option-symbol svg`).innerHTML])));
@@ -116,7 +184,7 @@ async function chooseMode(toolbar, mode, customName) {
   await settings.locator('[data-drag-intent="work"]').press('Home');await expectOrder(['work','study','music']);
   assert.equal(await settings.locator('#intent-order').count(),0);
   console.log('PASS actual settings-card drag and keyboard ordering persist without switching intent and synchronize with the installed toolbar');
-  await yt.locator('ytd-masthead #center #intent-toolbar').waitFor();
+  await yt.locator('ytd-masthead #intent-toolbar').waitFor();
   assert.equal(await feed.locator('header').isVisible(),false,'intent controls are in the masthead rather than a separate banner');
   const width=await feed.evaluate(el=>({actual:el.getBoundingClientRect().width,available:el.parentElement.getBoundingClientRect().width}));
   assert.ok(Math.abs(width.actual-width.available)<2,'feed fills native content width without side bars');
@@ -210,14 +278,14 @@ async function chooseMode(toolbar, mode, customName) {
   console.log('PASS watch-to-Home navigation protects outgoing watch recommendations, late Home renderers and post-mount native insertions without pausing the player');
   const directShorts=await context.newPage();await directShorts.goto('https://www.youtube.com/shorts/Q0000000000');
   await directShorts.locator('#intent-shorts-gate').waitFor();
-  assert.equal(await directShorts.locator('#shorts-player').isVisible(),false);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),false);assert.equal(await directShorts.locator('#logo').isVisible(),true);assert.equal(await directShorts.locator('#guide-home').isVisible(),true);
+  assert.equal(await directShorts.locator('#shorts-player').isVisible(),false);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),false);assert.equal(await directShorts.locator('#guide-shorts-nohref').isVisible(),false,'native primary Shorts entries without href follow hide/pause settings');assert.equal(await directShorts.locator('#logo').isVisible(),true);assert.equal(await directShorts.locator('#guide-home').isVisible(),true);
   await directShorts.waitForFunction(()=>shortPlayEvents>0&&shortsPlayer.paused);
   const playEvents=await directShorts.evaluate(()=>shortPlayEvents);await directShorts.evaluate(()=>shortsPlayer.play().catch(()=>{}));await directShorts.waitForFunction(before=>shortPlayEvents>before&&shortsPlayer.paused,playEvents);
   const gateLayout=await directShorts.locator('#intent-shorts-gate').evaluate(el=>{const r=el.getBoundingClientRect(),css=getComputedStyle(el);return{x:r.x,y:r.y,bg:css.backgroundColor,color:css.color};});
   assert.ok(gateLayout.x>=200&&gateLayout.y>=56);assert.ok(!gateLayout.bg.startsWith('rgba(')||gateLayout.bg.endsWith(', 1)'));assert.notEqual(gateLayout.color,gateLayout.bg);
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:false}}));await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:false}}));await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts-nohref').isVisible(),true,'native primary Shorts entries without href follow hide/pause settings');
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:true}}));await directShorts.locator('#intent-shorts-gate').waitFor();
-  const directId=await tabIdFor(directShorts);await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),directId);await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);
+  const directId=await tabIdFor(directShorts);await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),directId);await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts-nohref').isVisible(),true,'native primary Shorts entries without href follow hide/pause settings');
   await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:false}),directId);await directShorts.locator('#intent-shorts-gate').waitFor();
   await directShorts.locator('#intent-shorts-gate').getByRole('heading',{name:'Shorts are hidden',exact:true}).waitFor();
   await directShorts.locator('#intent-shorts-gate').getByRole('link',{name:'Back to Home',exact:true}).click();await directShorts.waitForURL('https://www.youtube.com/');await directShorts.locator('#intent-home-feed').waitFor();
@@ -347,20 +415,17 @@ async function chooseMode(toolbar, mode, customName) {
   const afterPreview=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});const session=await chrome.storage.session.get(['tabModes','pausedTabs']);return{settings:state.settings,session};});
   assert.deepEqual(afterPreview,beforePreview,'preview does not change saved intents, ordering, per-tab modes or pause state');
   console.log('PASS real-model custom preview includes a semantic paraphrase and optional rejected music examples, with bounded searches and unchanged settings/tab choices');
-  // Optional reminders are quiet foreground heartbeat events; the action badge remains the mode initial.
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{timerReminders:true}}));
+  // Remaining-time warnings are visible in the clock without altering Chrome action badges.
   await third.bringToFront();
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=3000000;});
   await third.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   await third.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.timerState==='low');
-  const timerReminder=third.locator('#intent-toolbar #intent-timer-reminder');await timerReminder.waitFor();assert.equal(await timerReminder.getAttribute('role'),'status');assert.match(await timerReminder.innerText(),/10/);
   assert.equal(await third.locator('#intent-toolbar #intent-timer-popover').isVisible(),false);assert.equal((await actionFor(third)).badge,'B');
-  await timerReminder.getByRole('button',{name:'Dismiss timer reminder',exact:true}).click();await timerReminder.waitFor({state:'hidden'});
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=3480000;});await third.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
-  await third.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.timerState==='critical');await timerReminder.waitFor();assert.match(await timerReminder.innerText(),/2/);assert.equal((await actionFor(third)).badge,'B');
-  await timerReminder.getByRole('button',{name:'Dismiss timer reminder',exact:true}).click();
-  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{timerReminders:false}}));await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});
-  console.log('PASS actual timer distinguishes counting, exempt and paused tabs and delivers opt-in low-time reminders without changing Chrome badges');
+  await third.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.timerState==='critical');assert.equal((await actionFor(third)).badge,'B');
+  assert.equal(await third.locator('#intent-toolbar #intent-timer-reminder').count(),0,'the unreliable reminder toast has been removed');
+  await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});await third.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  console.log('PASS actual timer distinguishes counting, exempt and paused tabs and shows low/critical states without changing Chrome badges');
 
   await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
   await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();

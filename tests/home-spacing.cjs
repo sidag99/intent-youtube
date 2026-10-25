@@ -8,11 +8,11 @@ const root = path.resolve(__dirname, '..');
     page.on('pageerror', error => errors.push(error.message));
     await page.setContent(`<!doctype html><html lang="en"><style>
       *{box-sizing:border-box}body{margin:0}ytd-app,ytd-browse,ytd-watch-flexy,ytd-rich-grid-renderer{display:block}
-      ytd-masthead{display:block;height:56px}ytd-app>#frosted-glass{position:fixed;top:0;height:112px;width:100%;pointer-events:none}
+      ytd-masthead{display:block;height:56px}ytd-app #frosted-glass{position:fixed;top:0;height:112px;min-height:112px;width:100%;pointer-events:none}
       ytd-browse>#header,ytd-browse #chips-wrapper{height:56px;padding:8px;margin:0}
       ytd-watch-flexy>#header{height:72px}ytd-rich-grid-renderer{height:200px}#related{width:400px}
       ytd-compact-video-renderer,ytd-thumbnail{display:block}ytd-thumbnail{width:196px;height:110px}
-    </style><ytd-app><div id="frosted-glass" class="with-chipbar"></div><ytd-masthead>YouTube navigation</ytd-masthead>
+    </style><ytd-app><div id="content"><div id="frosted-glass" class="modern-glass"></div></div><ytd-masthead>YouTube navigation</ytd-masthead>
       <ytd-browse page-subtype="home"><div id="header"> \n <div id="chips-wrapper"><div></div></div></div><div id="primary"><ytd-rich-grid-renderer>Native Home</ytd-rich-grid-renderer></div></ytd-browse>
       <ytd-watch-flexy><div id="header">Watch header and playlist controls</div><div id="related"><ytd-compact-video-renderer><ytd-thumbnail></ytd-thumbnail></ytd-compact-video-renderer></div></ytd-watch-flexy>
     </ytd-app></html>`);
@@ -21,7 +21,7 @@ const root = path.resolve(__dirname, '..');
     await page.evaluate(() => {
       window.settings = IntentCore.defaults(); window.runtime = {sendMessage: async () => ({ok: true, key: IntentFeed.key(settings), items: [], nextCursor: 1, hasMore: false})};
       window.home = new IntentHome(runtime);
-      window.measure = () => ({header: document.querySelector('ytd-browse>#header').getBoundingClientRect().height, chips: document.querySelector('#chips-wrapper').getBoundingClientRect().height, glass: document.querySelector('ytd-app>#frosted-glass').getBoundingClientRect().height, masthead: document.querySelector('ytd-masthead').getBoundingClientRect().height, watch: document.querySelector('ytd-watch-flexy>#header').getBoundingClientRect().height});
+      window.measure = () => ({header: document.querySelector('ytd-browse>#header').getBoundingClientRect().height, chips: document.querySelector('#chips-wrapper').getBoundingClientRect().height, glass: document.querySelector('ytd-app #frosted-glass').getBoundingClientRect().height, masthead: document.querySelector('ytd-masthead').getBoundingClientRect().height, watch: document.querySelector('ytd-watch-flexy>#header').getBoundingClientRect().height});
       window.baseline = measure(); home.sync(settings, true);
     });
     await page.waitForFunction(() => home.feedState === 'active');
@@ -45,10 +45,10 @@ const root = path.resolve(__dirname, '..');
     });
     assert.equal(await page.getByText('Useful Home announcement').isVisible(), true, 'a chip-containing header with meaningful sibling content is preserved');
     await page.evaluate(() => {
-      const content = document.createElement('span'); content.textContent = 'Meaningful glass overlay'; document.querySelector('ytd-app>#frosted-glass').append(content); home.sync(settings, true);
+      const content = document.createElement('span'); content.textContent = 'Meaningful glass overlay'; document.querySelector('ytd-app #frosted-glass').append(content); home.sync(settings, true);
     });
     assert.equal(await page.evaluate(() => measure().glass), 112, 'app glass with meaningful content is not shortened');
-    await page.evaluate(() => {document.querySelector('ytd-app>#frosted-glass').replaceChildren(); home.sync(settings, true);});
+    await page.evaluate(() => {document.querySelector('ytd-app #frosted-glass').replaceChildren(); home.sync(settings, true);});
     assert.equal(await page.evaluate(() => measure().glass), 56);
     await page.evaluate(() => home.sync(settings, false));
     assert.equal(await page.locator('[data-intent-empty-home-spacing],[data-intent-home-glass]').count(), 0, 'Pause removes all owned spacing markers');

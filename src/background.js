@@ -14,7 +14,7 @@ async function classifyLocally(videos, settings) {
   if (!result?.ok || !Array.isArray(result.decisions) || result.decisions.length !== videos.length) throw new Error(result?.error || 'The bundled topic model did not return a valid decision.');
   return result.decisions;
 }
-let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock, timerReminderHistory;
+let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock;
 let feedRevision = 0;
 const tabFeedRevisions = new Map();
 let queue = Promise.resolve();
@@ -113,9 +113,8 @@ function stateFor(tabId, now = Date.now()) {
 async function initialize() {
   if (!initialized) initialized = (async () => {
     await chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'});
-    const data = await chrome.storage.local.get(['settings', 'days', 'appearance', 'timerReminderHistory']);
+    const data = await chrome.storage.local.get(['settings', 'days', 'appearance']);
     settings = C.sanitize(data.settings); days = data.days || {};
-    timerReminderHistory = data.timerReminderHistory && typeof data.timerReminderHistory === 'object' && !Array.isArray(data.timerReminderHistory) ? data.timerReminderHistory : {};
     appearance = ['light', 'dark'].includes(data.appearance) ? data.appearance : undefined;
     const session = await chrome.storage.session.get(['tracker', 'tabModes', 'pausedTabs']);
     tracker = session.tracker || {lastAt: Date.now(), counting: false};
@@ -243,20 +242,6 @@ async function tick(message = {}, sender = {}) {
   await chrome.storage.session.set({tracker, tabModes, pausedTabs});
   await applyBlock(state.budgetExhausted, tabs);
   const result = stateFor(targetTabId, now);
-  // Deliver optional reminders only to a foreground tab that is actually counted.
-  // The serialized queue and persisted daily history deduplicate tabs/reloads.
-  const target = tabs.find(tab => tab.id === targetTabId);
-  if (message.type === 'HEARTBEAT' && senderScoped && C.isYouTube(sender.url || sender.tab.url) && settings.timerReminders && settings.limitEnabled &&
-      result.tabCounting && result.remainingMs > 0 && target?.active && focused.focused && target.windowId === focused.id) {
-    const level = result.remainingMs <= 120000 ? 2 : result.remainingMs <= 600000 ? 10 : null;
-    const seen = Array.isArray(timerReminderHistory[result.timerDay]) ? timerReminderHistory[result.timerDay] : [];
-    if (level && !seen.includes(level)) {
-      timerReminderHistory[result.timerDay] = [...new Set([...seen, 10, ...(level === 2 ? [2] : [])])];
-      timerReminderHistory = Object.fromEntries(Object.keys(timerReminderHistory).filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day)).sort().slice(-14).map(day => [day, timerReminderHistory[day]]));
-      await chrome.storage.local.set({timerReminderHistory});
-      result.timerReminder = level;
-    }
-  }
   return result;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

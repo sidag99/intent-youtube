@@ -66,13 +66,7 @@ async function toggleCount(page, name, enabled) {
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(file('settings.html'));
     await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
-    assert.equal(await page.getByRole('switch', {name: 'Low-time reminders', exact: true}).getAttribute('aria-checked'), 'false', 'quiet reminders are opt-in');
-    await toggleCount(page, 'Low-time reminders', true);
-    assert.equal((await stored(page)).timerReminders, true);
-    await page.reload();
-    await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
-    assert.equal(await page.getByRole('switch', {name: 'Low-time reminders', exact: true}).getAttribute('aria-checked'), 'true', 'reminder preference survives reload');
-    await toggleCount(page, 'Low-time reminders', false);
+    assert.equal(await page.getByRole('switch', {name: 'Low-time reminders', exact: true}).count(), 0, 'retired reminders are not advertised');
     builtinDefaults = await page.evaluate(() => Object.fromEntries(Object.entries(IntentCore.MODES).map(([mode, definition]) => [mode, {name: definition.name, scope: IntentSemantic.PROFILES[mode], topics: definition.topics, searches: IntentFeed.queries({...IntentCore.defaults(), mode})}])));
     assert.equal(await page.locator('.rules-panel').count(), 0, 'intent fields stay in an editor rather than a permanent page panel');
     assert.equal(await page.locator('#tab-pause').count(), 0, 'full settings never expose a tab-specific pause control');

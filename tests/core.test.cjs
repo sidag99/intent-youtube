@@ -241,13 +241,11 @@ test('legacy Leisure selections fall back to Work and old Leisure-only settings 
   assert.deepEqual(s.intentOrder, ['music', 'work', 'study']);
 });
 
-test('timer reminders are optional, boolean-only, and preserve existing timer preferences', () => {
-  assert.equal(C.defaults().timerReminders, false);
-  assert.equal(C.sanitize({}).timerReminders, false, 'older installations stay opted out');
-  for (const invalid of [undefined, null, 0, 1, 'true', 'false', [], {}]) assert.equal(C.sanitize({timerReminders: invalid}).timerReminders, false);
+test('retired reminder preferences are discarded without changing timer policy', () => {
   for (const timerReminders of [true, false]) {
     const settings = C.sanitize({timerReminders, dailyMinutes: 45, countPlayback: false, countModes: {music: true, work: false}});
-    assert.equal(settings.timerReminders, timerReminders); assert.equal(settings.dailyMinutes, 45); assert.equal(settings.countPlayback, false);
+    assert.equal(Object.hasOwn(settings, 'timerReminders'), false);
+    assert.equal(settings.dailyMinutes, 45); assert.equal(settings.countPlayback, false);
     assert.equal(settings.countModes.music, true); assert.equal(settings.countModes.work, false);
   }
 });

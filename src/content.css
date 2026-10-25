@@ -6,8 +6,6 @@ html[data-intent-feed] ytd-feed-filter-chip-bar-renderer { display: none !import
 
 /* Feed layout uses the same available content width; the masthead keeps its native layout. */
 html[data-intent-feed] ytd-browse[page-subtype="home"] #primary { min-width: 0; max-width: none; }
-ytd-masthead[data-intent-toolbar] #center > yt-searchbox,
-ytd-masthead[data-intent-toolbar] #center > ytd-searchbox { min-width: 0; }
 
 /* The native Home chip bar has its own reserved space as well as visible chips.
    Collapse both only while Intent replaces Home; watch headers stay untouched. */
@@ -29,8 +27,14 @@ html[data-intent-feed] ytd-browse [data-intent-empty-home-spacing] {
   margin: 0 !important;
   padding: 0 !important;
 }
-html[data-intent-feed] ytd-app > [data-intent-home-glass] {
-  height: var(--ytd-masthead-height, 56px) !important;
+html[data-intent-feed] ytd-app [data-intent-home-glass] {
+  box-sizing: border-box !important;
+  height: var(--intent-masthead-glass-height, var(--ytd-masthead-height, 56px)) !important;
+  max-height: var(--intent-masthead-glass-height, var(--ytd-masthead-height, 56px)) !important;
+  min-height: 0 !important;
+  bottom: auto !important;
+  padding: 0 !important;
+  overflow: hidden !important;
 }
 
 /* Cover incoming native Home cards before YouTube's SPA transition paints them.
