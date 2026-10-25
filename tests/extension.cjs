@@ -1,5 +1,14 @@
 const {chromium}=require('playwright'),path=require('path'),assert=require('assert/strict'),fs=require('fs'),os=require('os');
 
+// A tiny bundled-in-test silent WAV exercises real native media state across isolated worlds.
+const shortAudio=Buffer.alloc(16044);shortAudio.write('RIFF',0);shortAudio.writeUInt32LE(16036,4);shortAudio.write('WAVE',8);shortAudio.write('fmt ',12);shortAudio.writeUInt32LE(16,16);shortAudio.writeUInt16LE(1,20);shortAudio.writeUInt16LE(1,22);shortAudio.writeUInt32LE(8000,24);shortAudio.writeUInt32LE(16000,28);shortAudio.writeUInt16LE(2,32);shortAudio.writeUInt16LE(16,34);shortAudio.write('data',36);shortAudio.writeUInt32LE(16000,40);
+const directShortsFixture=`<!doctype html><meta charset="utf-8"><style>html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}ytd-masthead{position:fixed;top:0;left:0;right:0;z-index:2020;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--yt-spec-base-background)}ytd-masthead #center{display:flex;align-items:center;flex:1;min-width:0}#search{display:flex;flex:1}#search input{width:100%;min-width:0}#logo{display:block;color:inherit;padding:10px;text-decoration:none}ytd-guide-renderer{display:block;position:fixed;left:0;top:56px;bottom:0;width:200px;background:var(--yt-spec-base-background);z-index:2010}ytd-guide-entry-renderer{display:block;padding:14px}ytd-guide-renderer a{color:inherit}ytd-page-manager{display:block;margin:56px 0 0 216px;padding:16px;min-height:calc(100vh - 56px)}ytd-shorts{display:block;height:700px;background:#97004f;color:white}video{width:300px;height:550px}</style><ytd-app><ytd-masthead><div id="start"><a id="logo" href="/">YouTube</a></div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-guide-renderer><ytd-guide-entry-renderer><a id="guide-home" href="/">Home</a></ytd-guide-entry-renderer><ytd-guide-entry-renderer id="guide-shorts"><a href="/shorts/Q0000000000">Shorts</a></ytd-guide-entry-renderer></ytd-guide-renderer><ytd-page-manager><ytd-shorts id="shorts-player"><video id="short-video" autoplay muted loop src="data:audio/wav;base64,${shortAudio.toString('base64')}"></video><h2>Native Shorts player</h2></ytd-shorts></ytd-page-manager></ytd-app><script>window.shortPlayEvents=0;window.shortsPlayer=document.querySelector('#short-video');shortsPlayer.addEventListener('play',()=>shortPlayEvents++);shortsPlayer.play().catch(()=>{});</script>`;
+
+async function expandAdvanced(page) {
+ const advanced=page.locator('#intent-editor details.intent-advanced');
+ if(await advanced.count()&&await advanced.getAttribute('open')===null)await advanced.locator('summary').click();
+}
+
 async function chooseMode(toolbar, mode, customName) {
  const names={work:'Work',study:'Study',music:'Music',off:'Off'};
  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
@@ -12,7 +21,7 @@ async function chooseMode(toolbar, mode, customName) {
  const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
  const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1440,height:1100}});context.setDefaultTimeout(20000);
  const texts={W:['Ship a tiny app this weekend','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],M:['Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.'],S:['Why the sky changes colour','An accessible explanation of scattering and wavelengths from sunlight.']};
- const ids={};const renderers=[];
+ const ids={};const renderers=[];const networkCounts={searches:0,metadata:0};
  for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:prefix==='S'?'Curious Minds':'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'}}});}
  ids.Q0000000000={title:'Python programming tutorial in sixty seconds',description:'Build useful software with Python programming.'};
  ids.R0000000000={title:'Jazz piano improvisation in sixty seconds',description:'A quick piano jazz music performance.'};
@@ -23,11 +32,12 @@ async function chooseMode(toolbar, mode, customName) {
  try{
   await context.route('https://www.youtube.com/**',async route=>{
    const url=new URL(route.request().url());
-   if(url.pathname==='/results')return route.fulfill({contentType:'text/html',body:search});
+   if(url.pathname.startsWith('/shorts/'))return route.fulfill({contentType:'text/html',body:directShortsFixture});
+   if(url.pathname==='/results'){networkCounts.searches++;return route.fulfill({contentType:'text/html',body:search});}
    if(url.pathname==='/watch'){
     const videoId=url.searchParams.get('v');
     const metadata='<script>var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:videoId,title:ids[videoId]?.title,shortDescription:ids[videoId]?.description}})+';</script>';
-    if(!route.request().isNavigationRequest())return route.fulfill({contentType:'text/html',body:metadata});
+    if(!route.request().isNavigationRequest()){networkCounts.metadata++;return route.fulfill({contentType:'text/html',body:metadata});}
     return route.fulfill({contentType:'text/html',body:'<!doctype html><html dark><meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #333}ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px}#player{height:440px;background:#080808}#related{display:block}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-watch-flexy><main><div id="player"><video id="playing-video"></video></div><h2>'+ids[videoId].title+'</h2><p>'+ids[videoId].description+'</p></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related">Original unrelated recommendations</ytd-watch-next-secondary-results-renderer></div></aside></ytd-watch-flexy>'+metadata+'<script>window.testPlayer=document.querySelector("#playing-video");window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;</script></html>'});
    }
    return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#f8f8f2;color:#283b30;font-family:system-ui}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #dfe2d7}ytd-browse{display:block}#primary{width:100%;margin:0}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-grid-renderer id="native">Original unrelated recommendations</ytd-rich-grid-renderer></div></ytd-browse>'});
@@ -37,17 +47,41 @@ async function chooseMode(toolbar, mode, customName) {
   const settings=await context.newPage();await settings.goto(`chrome-extension://${id}/settings.html`);await settings.getByRole('heading',{name:'Your daily budget'}).waitFor();
   console.log('PASS fresh-install settings load without warming the model manually');
   const worker=context.serviceWorkers()[0];assert.ok(worker);
+  // Record actual Chrome icon writes while preserving the native API implementation.
+  await worker.evaluate(()=>{const original=chrome.action.setIcon;globalThis.__intentActionIconCalls=[];chrome.action.setIcon=function(details,...args){globalThis.__intentActionIconCalls.push({tabId:details.tabId,imageData:details.imageData});return original.call(chrome.action,details,...args);};});
+  const iconWrites=tabId=>worker.evaluate(tabId=>globalThis.__intentActionIconCalls.filter(call=>call.tabId===tabId).length,tabId);
+  const iconMatches=async(tabId,variant)=>worker.evaluate(async({tabId,variant})=>{const call=globalThis.__intentActionIconCalls.filter(call=>call.tabId===tabId).at(-1),expected=(await actionIconImages())[variant];return Boolean(call&&expected)&&[16,32].every(size=>call.imageData[size].data.every((value,index)=>value===expected[size].data[index]));},{tabId,variant});
+  const expectReloadRepaint=async(page,tabId,before)=>{const deadline=Date.now()+5000;while(await iconWrites(tabId)<=before&&Date.now()<deadline)await page.waitForTimeout(25);assert.ok(await iconWrites(tabId)>before,'the browser action icon is repainted automatically after reload');};
   const tabIdFor=page=>settings.evaluate(async url=>{const tabs=await chrome.tabs.query({url:'https://www.youtube.com/*'});return tabs.find(tab=>tab.url===url)?.id;},page.url());
   const actionFor=async page=>{const tabId=await tabIdFor(page);assert.ok(Number.isInteger(tabId));return settings.evaluate(async tabId=>({badge:await chrome.action.getBadgeText({tabId}),title:await chrome.action.getTitle({tabId})}),tabId);};
   const pixels=await worker.evaluate(async()=>{const images=await actionIconImages();return Object.fromEntries(Object.entries(images).map(([state,sizes])=>[state,Object.fromEntries(Object.entries(sizes).map(([size,image])=>[size,{width:image.width,height:image.height,gray:image.data.every((value,index,pixels)=>index%4!==0||value===pixels[index+1]&&value===pixels[index+2]),hasColor:image.data.some((value,index,pixels)=>index%4===0&&pixels[index+3]>0&&(value!==pixels[index+1]||value!==pixels[index+2]))}]))]));});
-  for(const size of [16,32]){assert.equal(pixels.active[size].width,size);assert.equal(pixels.inactive[size].height,size);assert.equal(pixels.active[size].hasColor,true);assert.equal(pixels.inactive[size].gray,true);}
+  for(const size of [16,32]){assert.equal(pixels.active[size].width,size);assert.equal(pixels.inactive[size].height,size);assert.equal(pixels.active[size].hasColor,true);assert.equal(pixels.inactive[size].gray,true);assert.equal(pixels.paused[size].width,size);assert.equal(pixels.paused[size].gray,true);}
+  assert.equal(await worker.evaluate(async()=>{const {paused,inactive}=await actionIconImages();return[16,32].every(size=>paused[size].data.some((value,index)=>value!==inactive[size].data[index]));}),true,'paused bars are visually distinct from the inactive brand icon');
+  assert.equal(await worker.evaluate(async()=>{const {paused}=await actionIconImages();return[16,32].every(size=>[.35,.65].every(fraction=>{const index=(Math.floor(size*.5)*size+Math.floor(size*fraction))*4;return[0,1,2,3].every(channel=>paused[size].data[index+channel]===255);}));}),true,'the paused action has two visible white bars at both toolbar resolutions');
 
   const yt=await context.newPage();await yt.goto('https://www.youtube.com/');const feed=yt.locator('#intent-home-feed');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length>=12,null,{timeout:60000});
   const titles=await feed.locator('.title').allTextContents();assert.ok(titles.every(t=>t.startsWith('Ship a tiny app')));assert.equal(await yt.locator('#native').isVisible(),false);
   assert.match((await actionFor(yt)).title,/Work intent.*timer counts toward your daily limit/);assert.equal((await actionFor(yt)).badge,'W');
-  console.log('PASS real offscreen model and background search produce a filled semantic Work feed');
-  const toolbar=yt.locator('#intent-toolbar');
+  const workTabId=await tabIdFor(yt),workWrites=await iconWrites(workTabId);
+  await yt.reload();
+  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.card').length>=12,null,{timeout:60000});
+  await expectReloadRepaint(yt,workTabId,workWrites);assert.equal(await iconMatches(workTabId,'active'),true);
+  assert.equal((await actionFor(yt)).badge,'W');assert.match((await actionFor(yt)).title,/Work intent.*timer counts toward your daily limit/);
+  assert.equal(await yt.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'work');
+  console.log('PASS real offscreen model produces a filled Work feed and reload automatically restores the active browser icon, badge and title');
+  const toolbar=yt.locator('#intent-toolbar');await toolbar.waitFor();
+  // Reordering the settings cards persists immediately and reaches the installed toolbar.
+  const expectOrder=async expected=>{await settings.waitForFunction(async expected=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return JSON.stringify(state.settings.intentOrder)===JSON.stringify(expected);},expected);await yt.waitForFunction(expected=>JSON.stringify([...document.querySelector('#intent-toolbar').shadowRoot.querySelectorAll('[role=option]')].map(option=>option.dataset.mode).filter(id=>id!=='off'))===JSON.stringify(expected),expected);};
+  await settings.locator('[data-drag-intent="study"]').dragTo(settings.locator('[data-order-intent="work"]'));
+  await expectOrder(['study','work','music']);
+  assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'work','dragging a card keeps this tab intent');
+  await settings.locator('[data-drag-intent="study"]').press('End');await expectOrder(['work','music','study']);
+  await settings.locator('[data-drag-intent="study"]').press('Home');await expectOrder(['study','work','music']);
+  await settings.reload();await settings.locator('[data-drag-intent="work"]').waitFor();await expectOrder(['study','work','music']);
+  await settings.locator('[data-drag-intent="work"]').press('Home');await expectOrder(['work','study','music']);
+  assert.equal(await settings.locator('#intent-order').count(),0);
+  console.log('PASS actual settings-card drag and keyboard ordering persist without switching intent and synchronize with the installed toolbar');
   await yt.locator('ytd-masthead #center #intent-toolbar').waitFor();
   assert.equal(await feed.locator('header').isVisible(),false,'intent controls are in the masthead rather than a separate banner');
   const width=await feed.evaluate(el=>({actual:el.getBoundingClientRect().width,available:el.parentElement.getBoundingClientRect().width}));
@@ -70,6 +104,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.ok((await feed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
   await settings.locator('[data-edit="work"]').click();
+  await expandAdvanced(settings);
   await settings.locator('#blocked-terms').fill('unsaved appearance draft');
   await settings.evaluate(()=>{window.draftField=document.querySelector('#blocked-terms');});
   await yt.goto('https://www.youtube.com/watch?v=M0000000000');
@@ -96,10 +131,46 @@ async function chooseMode(toolbar, mode, customName) {
   await chooseMode(toolbar,'off');
   await watchFeed.waitFor({state:'detached'});assert.equal(await yt.locator('#native-related').isVisible(),true);assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'off','mode off is visible while native recommendations return');
   assert.equal((await actionFor(yt)).badge,'OFF');assert.match((await actionFor(yt)).title,/Off on this tab; topic filtering is off; timer counts/);
+  const offWrites=await iconWrites(workTabId);
+  await yt.reload();await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-mode-trigger')?.dataset.mode==='off');
+  await expectReloadRepaint(yt,workTabId,offWrites);assert.equal(await iconMatches(workTabId,'inactive'),true);
+  assert.equal((await actionFor(yt)).badge,'OFF');assert.match((await actionFor(yt)).title,/Off on this tab; topic filtering is off; timer counts/);
+  assert.equal(await yt.locator('#native-related').isVisible(),true);assert.equal(await watchFeed.count(),0);
   await settings.evaluate(async()=>{const [tab]=await chrome.tabs.query({url:'https://www.youtube.com/watch?v=M0000000000'});return chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',targetTabId:tab.id,patch:{mode:'music'}});});
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
   console.log('PASS real installed extension replaces watch recommendations, excludes current video, follows YouTube appearance and preserves playback during mode changes');
   await settings.locator('#close-editor').click();
+  // The native Home grid must never flash during a watch-to-Home SPA transition.
+  await yt.evaluate(()=>{
+    document.querySelector('ytd-masthead #start').innerHTML='<a id="logo" href="/">YouTube</a>';
+    document.querySelector('#logo').addEventListener('click',event=>{
+      event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{endpoint:{commandMetadata:{webCommandMetadata:{url:'/'}}}}}));history.pushState({},'', '/');document.querySelector('ytd-watch-flexy').hidden=true;
+      const browse=document.createElement('ytd-browse');browse.setAttribute('page-subtype','home');browse.innerHTML='<div id="primary"><ytd-rich-grid-renderer id="home-flash-native">Unrelated native recommendations</ytd-rich-grid-renderer></div>';document.body.append(browse);
+      window.homeBeforeFinish=getComputedStyle(document.querySelector('#home-flash-native')).display;
+    });
+  });
+  await yt.locator('#logo').click();assert.equal(await yt.evaluate(()=>homeBeforeFinish),'none','the real installed extension hides inserted Home recommendations before navigation finishes');
+  await yt.evaluate(()=>document.dispatchEvent(new Event('yt-navigate-finish')));
+  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Blue notes'),null,{timeout:60000});
+  assert.equal(await yt.locator('#home-flash-native').isVisible(),false);
+  await yt.goto('https://www.youtube.com/watch?v=M0000000000');await yt.locator('#intent-toolbar').waitFor();
+  console.log('PASS watch-to-Home logo navigation hides native recommendations synchronously until the matching feed replaces them');
+  const directShorts=await context.newPage();await directShorts.goto('https://www.youtube.com/shorts/Q0000000000');
+  await directShorts.locator('#intent-shorts-gate').waitFor();
+  assert.equal(await directShorts.locator('#shorts-player').isVisible(),false);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),false);assert.equal(await directShorts.locator('#logo').isVisible(),true);assert.equal(await directShorts.locator('#guide-home').isVisible(),true);
+  await directShorts.waitForFunction(()=>shortPlayEvents>0&&shortsPlayer.paused);
+  const playEvents=await directShorts.evaluate(()=>shortPlayEvents);await directShorts.evaluate(()=>shortsPlayer.play().catch(()=>{}));await directShorts.waitForFunction(before=>shortPlayEvents>before&&shortsPlayer.paused,playEvents);
+  const gateLayout=await directShorts.locator('#intent-shorts-gate').evaluate(el=>{const r=el.getBoundingClientRect(),css=getComputedStyle(el);return{x:r.x,y:r.y,bg:css.backgroundColor,color:css.color};});
+  assert.ok(gateLayout.x>=200&&gateLayout.y>=56);assert.ok(!gateLayout.bg.startsWith('rgba(')||gateLayout.bg.endsWith(', 1)'));assert.notEqual(gateLayout.color,gateLayout.bg);
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:false}}));await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{hideShorts:true}}));await directShorts.locator('#intent-shorts-gate').waitFor();
+  const directId=await tabIdFor(directShorts);await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),directId);await directShorts.locator('#intent-shorts-gate').waitFor({state:'detached'});assert.equal(await directShorts.locator('#shorts-player').isVisible(),true);assert.equal(await directShorts.locator('#guide-shorts').isVisible(),true);
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:false}),directId);await directShorts.locator('#intent-shorts-gate').waitFor();
+  await directShorts.locator('#intent-shorts-gate').getByRole('heading',{name:'Shorts are hidden',exact:true}).waitFor();
+  await directShorts.locator('#intent-shorts-gate').getByRole('link',{name:'Back to Home',exact:true}).click();await directShorts.waitForURL('https://www.youtube.com/');await directShorts.locator('#intent-home-feed').waitFor();
+  await directShorts.goto('https://www.youtube.com/shorts/Q0000000000');await directShorts.locator('#intent-shorts-gate').waitFor();
+  await directShorts.locator('#logo').click();await directShorts.waitForURL('https://www.youtube.com/');await directShorts.locator('#intent-home-feed').waitFor();await directShorts.close();
+  console.log('PASS direct Shorts is paused and hidden behind an opaque content-only gate; guide/logo navigation and hide/pause restoration remain usable');
   // Each tab remembers its own intent, including reloads and configurable new-tab defaults.
   const second=await context.newPage();await second.goto('https://www.youtube.com/?intent-test=second');
   await chooseMode(second.locator('#intent-toolbar'),'study');
@@ -126,10 +197,14 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await second.locator('#native').isVisible(),true,'pause restores native YouTube recommendations');
   assert.equal(await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
   assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music');
-  assert.equal((await actionFor(second)).badge,'PAUSE');assert.equal((await actionFor(second)).title,'Intent — Paused on this tab; filters and timer are off');
+  assert.equal((await actionFor(second)).badge,'');assert.equal((await actionFor(second)).title,'Intent — Paused on this tab; filters and timer are off');
   await second.evaluate(()=>{document.querySelector('#native').insertAdjacentHTML('beforeend','<ytd-video-renderer id="paused-clickbait"><h3 id="video-title">You won’t believe this!!!</h3></ytd-video-renderer><ytd-reel-shelf-renderer id="paused-shorts">Shorts</ytd-reel-shelf-renderer>');});
   assert.equal(await second.locator('#paused-clickbait').isVisible(),true);assert.equal(await second.locator('#paused-shorts').isVisible(),true);
+  const pausedTabId=await tabIdFor(second),pausedWrites=await iconWrites(pausedTabId);
   await second.reload();await second.locator('#intent-toolbar [data-filter-state="paused"]').first().waitFor();
+  await expectReloadRepaint(second,pausedTabId,pausedWrites);assert.equal(await iconMatches(pausedTabId,'paused'),true);
+  assert.equal((await actionFor(second)).badge,'');assert.equal((await actionFor(second)).title,'Intent — Paused on this tab; filters and timer are off');
+  assert.equal(await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study','reload keeps the saved paused intent');
   assert.equal(await second.locator('#native').isVisible(),true);assert.equal(await second.locator('#intent-home-feed').count(),0);
   const pausePopup=await context.newPage();await second.bringToFront();await pausePopup.goto(`chrome-extension://${id}/popup.html`);
   await pausePopup.getByRole('button',{name:'Resume on this tab',exact:true}).waitFor();
@@ -159,7 +234,6 @@ async function chooseMode(toolbar, mode, customName) {
   await third.locator('#intent-toolbar .option[data-mode="custom-ai"] .option-symbol').filter({hasText:'⚛'}).waitFor();
   assert.equal(await thirdToolbar.getByRole('option',{name:'Artificial Intelligence',exact:true}).getAttribute('aria-selected'),'true');
   await thirdToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).press('Escape');
-  await settings.locator('#intent-order summary').click();
   for(let position=2;position>=0;position--){await settings.locator('[data-move-intent="custom-ai"][data-direction="-1"]').click();await settings.waitForFunction(async position=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return state.settings.intentOrder[position]==='custom-ai';},position);}
   await thirdToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
   await third.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('[role=option]')?.dataset.mode==='custom-ai');
@@ -170,15 +244,52 @@ async function chooseMode(toolbar, mode, customName) {
   await chooseMode(thirdToolbar,'music');
   console.log('PASS installed intent library adds without switching, preserves editable icons and synchronizes persistent ordering with the toolbar');
   // Create a custom intent through the actual UI and use its packaged semantic profile.
-  await settings.locator('#custom-intent-name').fill('Build apps');
-  await settings.locator('#custom-intent-description').fill('Build useful software applications and tools for clients, programming and delivering finished digital products.');
+  await settings.getByRole('button',{name:'Create your own intent',exact:true}).click();
+  await settings.locator('#intent-editor[open]').waitFor();
+  await settings.locator('#intent-name').fill('Build apps');
+  await settings.locator('#intent-description').fill('Build useful software applications and tools for clients, programming and delivering finished digital products.');
+  await settings.locator('#intent-icon').selectOption('tools');
+  await settings.locator('#channels').fill('Independent Builders');
+  await settings.locator('#intent-count-time').uncheck();
+  await expandAdvanced(settings);await settings.locator('#topics').fill('software tools');
   await settings.getByRole('button',{name:'Create intent',exact:true}).click();
+  await settings.locator('#intent-editor[open]').waitFor({state:'detached'});
   await settings.getByRole('button',{name:'Build apps Your custom intent',exact:true}).waitFor();
   const customId=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return Object.entries(state.settings.customIntents).find(([,record])=>record.name==='Build apps')[0];});
+  const createdState=await settings.evaluate(()=>chrome.runtime.sendMessage({type:'GET_STATE'}));
+  assert.equal(createdState.settings.customIntents[customId].icon,'tools');assert.equal(createdState.settings.channels[customId],'Independent Builders');assert.equal(createdState.settings.customTopics[customId],'software tools');assert.equal(createdState.settings.countModes[customId],false);
+  await settings.locator(`[data-edit="${customId}"]`).click();
+  assert.equal(await settings.locator('#intent-name').inputValue(),'Build apps');
+  assert.equal(await settings.locator('#intent-description').inputValue(),'Build useful software applications and tools for clients, programming and delivering finished digital products.');
+  assert.equal(await settings.locator('#intent-icon').inputValue(),'tools');
+  assert.equal(await settings.locator('#channels').inputValue(),'Independent Builders');
+  assert.equal(await settings.locator('#intent-count-time').isChecked(),false);
+  await expandAdvanced(settings);assert.equal(await settings.locator('#topics').inputValue(),'software tools');
+  await settings.locator('#close-editor').click();
+  // This later budget scenario intentionally counts the custom intent.
+  await settings.evaluate(customId=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{countModes:{[customId]:true}}}),customId);
   await chooseMode(third.locator('#intent-toolbar'),customId,'Build apps');
   await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
   assert.ok((await third.locator('#intent-home-feed .title').allTextContents()).every(t=>t.startsWith('Ship a tiny app')));
-  console.log('PASS custom intents created in settings classify video meaning with the bundled model');
+  console.log('PASS shared creation/editor persists custom icon, channels, extra topics and timer policy; the created intent classifies meaning with the bundled model');
+  // The opt-in preview uses the same packaged model, including meaning beyond lexical matches.
+  const beforePreview=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});const session=await chrome.storage.session.get(['tabModes','pausedTabs']);return{settings:state.settings,session};});
+  assert.equal(beforePreview.settings.mode,customId);
+  assert.equal(await settings.evaluate(({config,video})=>IntentCore.classify(video,config).visible,{config:beforePreview.settings,video:{...ids.W0000000000,id:'W0000000000',channel:'Studio W',shorts:false}}),false,'the preview example has no literal match to the saved custom scope');
+  assert.equal(await settings.locator('.real-preview').count(),0,'real candidates are fetched only after explicit preview');
+  assert.equal(await settings.locator('#show-hidden').isDisabled(),true,'custom intents do not show unrelated illustrative examples');
+  const beforePreviewNetwork={...networkCounts};
+  await settings.locator('#preview-intent').click();
+  await settings.locator('.real-preview[data-accepted="true"] h3').filter({hasText:'Ship a tiny app'}).first().waitFor({timeout:60000});
+  assert.equal(await settings.locator('.real-preview[data-accepted="false"]').count(),0,'filtered candidates are hidden until requested');
+  await settings.locator('#show-hidden').click();
+  await settings.locator('.real-preview[data-accepted="false"] h3').filter({hasText:'Blue notes'}).first().waitFor();
+  assert.ok(await settings.locator('.real-preview[data-accepted="true"]').count()>0);
+  assert.ok(networkCounts.searches-beforePreviewNetwork.searches<=2,'preview makes at most two public searches');
+  assert.equal(networkCounts.metadata,beforePreviewNetwork.metadata,'preview makes no additional video-page requests');
+  const afterPreview=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});const session=await chrome.storage.session.get(['tabModes','pausedTabs']);return{settings:state.settings,session};});
+  assert.deepEqual(afterPreview,beforePreview,'preview does not change saved intents, ordering, per-tab modes or pause state');
+  console.log('PASS real-model custom preview includes a semantic paraphrase and optional rejected music examples, with bounded searches and unchanged settings/tab choices');
   await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
   await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();
   await second.locator('#intent-home-feed').waitFor({state:'detached'});

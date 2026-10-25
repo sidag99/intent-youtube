@@ -2,17 +2,17 @@
   const C = IntentCore, app = document.querySelector('#app');
   const full = document.body.classList.contains('settings');
   const live = Boolean(globalThis.chrome?.runtime?.id);
-  let state, selected = 'work', editing = null, saving = false, showHidden = false, targetTabId, targetURL;
+  let state, selected = 'work', editing = null, saving = false, targetTabId, targetURL, draggedIntent;
   // Resolve once: a popup belongs to the tab from which it was opened.
   const targetReady = !full && live && chrome.tabs?.query ? chrome.tabs.query({active: true, currentWindow: true}).then(tabs => {
     const tab = tabs[0];
     if (Number.isInteger(tab?.id) && (C.isYouTube(tab.url) || tab.url?.startsWith(chrome.runtime.getURL('blocked.html')))) {targetTabId = tab.id; targetURL = tab.url;}
   }).catch(() => {}) : Promise.resolve();
-  const drafts = {customTopics: {}, channels: {}, descriptions: {}, names: {}, icons: {}};
-  const createDraft = {name: '', description: ''};
+  const NEW_INTENT = '__new__';
+  const drafts = {customTopics: {}, channels: {}, descriptions: {}, names: {}, icons: {}, countModes: {}};
   let blockedDraft;
   const rolePresetsUI = full ? new IntentRolePresets({getSettings: () => state.settings, update}) : null;
-  const libraryUI = full ? new IntentLibrary({getSettings: () => state.settings, update}) : null;
+  const libraryUI = full ? new IntentLibrary({getSettings: () => state.settings, update, onCreate: () => {editing = NEW_INTENT; render();}}) : null;
   const escape = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const icons = {
     work: '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 12c5 3 11 3 16 0M12 12v3"/>',
@@ -37,6 +37,7 @@
     {title: 'A quick productivity hack #shorts', channel: 'Everyday Ideas', color: 'blue', cover: 'Just one\nmore scroll.', duration: '0:28', shorts: true},
     {title: 'Lecture: how memory and learning work', channel: 'Open Classroom', color: 'sage', cover: 'Stay\ncurious.', duration: '32:10'}
   ];
+  const previewUI = full ? new IntentPreview({getSettings: () => state.settings, live, samples}) : null;
   async function request(type, patch, options = {}) {
     if (type === 'SET_TAB_PAUSED' && typeof options.paused !== 'boolean') throw new Error('Choose whether to pause or resume this tab.');
     if (live) {
@@ -87,12 +88,28 @@
     const paused = state.tabPaused === true;
     const label = paused ? 'Resume on this tab' : 'Pause on this tab';
     const detail = paused ? 'Filters and the timer are paused here. Other tabs remain active.' : 'Pause filters and time tracking for this tab without changing its saved intent.';
-    return `<div class="tab-pause-control">${paused ? '<span class="tab-pause-state" role="status">Paused</span>' : ''}<button type="button" class="tab-pause-action" id="tab-pause" aria-label="${label}" aria-pressed="${paused}" aria-describedby="tab-pause-detail" title="${detail}">${icon(paused ? 'resume' : 'pause')}<span>${paused ? 'Resume' : 'Pause'}</span></button><span id="tab-pause-detail" class="visually-hidden">${detail}</span></div>`;
+    return `<div class="tab-pause-control">${paused ? '<span class="tab-pause-state" role="status">Paused</span>' : ''}<button type="button" class="tab-pause-action" id="tab-pause" aria-label="${label}" aria-pressed="${paused}" aria-describedby="tab-pause-detail" title="${label}. ${detail}">${icon(paused ? 'resume' : 'pause')}<span>${paused ? 'Resume' : 'Pause'}</span></button><span id="tab-pause-detail" class="visually-hidden">${detail}</span></div>`;
+  }
+  function reorderControls(id, name, index, total) {
+    return `<div class="intent-reorder-controls"><button type="button" data-move-intent="${id}" data-direction="-1" aria-label="Move ${escape(name)} earlier" title="Move earlier" ${index === 0 ? 'disabled' : ''}>←</button><button type="button" class="intent-drag-handle" id="intent-reorder-${id}" data-drag-intent="${id}" draggable="true" aria-label="Reorder ${escape(name)}" title="Drag to reorder, or use arrow keys, Home and End">⠿</button><button type="button" data-move-intent="${id}" data-direction="1" aria-label="Move ${escape(name)} later" title="Move later" ${index === total - 1 ? 'disabled' : ''}>→</button></div>`;
+  }
+  async function moveIntent(id, position) {
+    if (!full || saving) return false;
+    const ids = Object.keys(modes()), index = ids.indexOf(id);
+    if (index < 0 || !Number.isInteger(position)) return false;
+    const target = Math.max(0, Math.min(ids.length - 1, position));
+    if (target === index) return false;
+    ids.splice(index, 1); ids.splice(target, 0, id);
+    return update({intentOrder: ids}, `Moved ${modes()[id].name} to position ${target + 1} of ${ids.length}.`);
+  }
+  function clearDrag() {
+    draggedIntent = null;
+    for (const tile of app.querySelectorAll('.intent-dragging,.intent-drop-target')) tile.classList.remove('intent-dragging', 'intent-drop-target');
   }
   function render() {
     if (!full && live && !Number.isInteger(targetTabId)) {
       applyAppearance();
-      app.innerHTML = `<header class="topbar"><a class="brand" href="settings.html" target="_blank"><img class="brand-mark" src="icons/48.png" alt="" width="28" height="28">intent<span class="brand-dot">.</span></a><button class="icon-button" id="settings" aria-label="Open all settings">↗</button></header><section class="outside-youtube"><span class="off-indicator">Off on this site</span><h1>Intent only runs on YouTube.</h1><p>This page is not read or filtered. Intent controls become available when you open a YouTube tab.</p><a class="button primary" href="https://www.youtube.com/" target="_blank" rel="noopener">Open YouTube</a><a class="all-settings" href="settings.html" target="_blank">Extension settings ↗</a></section>`;
+      app.innerHTML = `<header class="topbar"><span class="brand"><img class="brand-mark" src="icons/48.png" alt="" width="28" height="28">intent<span class="brand-dot">.</span></span></header><section class="outside-youtube"><span class="off-indicator">Off on this site</span><h1>Intent only runs on YouTube.</h1><p>This page is not read or filtered. Intent controls become available when you open a YouTube tab.</p><a class="button primary" href="https://www.youtube.com/" target="_blank" rel="noopener">Open YouTube</a><a class="all-settings" href="settings.html" target="_blank">Settings ↗</a></section>`;
       return;
     }
 
@@ -100,22 +117,22 @@
     const s = state.settings, definitions = modes(), active = definitions[s.mode], mode = definitions[selected] || definitions.work;
     const isCustom = Object.hasOwn(s.customIntents || {}, selected);
     app.innerHTML = `
-      <header class="topbar"><a class="brand" href="settings.html" ${full ? '' : 'target="_blank"'}><img class="brand-mark" src="icons/48.png" alt="" width="28" height="28">intent<span class="brand-dot">.</span></a><span class="top-note">${full ? 'YouTube controls' : 'YouTube controls'}</span>${tabPauseControl()}${full ? '<a class="youtube-link" href="https://www.youtube.com/" target="_blank" rel="noopener">Open YouTube ↗</a>' : '<button class="icon-button" id="settings" aria-label="Open all settings">↗</button>'}</header>
+      <header class="topbar"><span class="brand"><img class="brand-mark" src="icons/48.png" alt="" width="28" height="28">intent<span class="brand-dot">.</span></span><span class="top-note">${full ? 'YouTube controls' : 'YouTube controls'}</span>${tabPauseControl()}${full ? '<a class="youtube-link" href="https://www.youtube.com/" target="_blank" rel="noopener">Open YouTube ↗</a>' : ''}</header>
       ${!live ? '<div class="demo-banner">INTERACTIVE PREVIEW · Settings here are a demo. Load the extension to filter YouTube.</div>' : ''}
       ${canPauseTab() && state.tabPaused && targetURL?.startsWith(chrome.runtime.getURL('blocked.html')) ? '<button type="button" class="text-button return-paused-youtube" id="return-paused-youtube">Open YouTube in this tab ↗</button>' : ''}
       <section class="intro"><div><div class="eyebrow"><span class="tiny-dot"></span> Your feed, your choice</div><h1>YouTube, with intent.</h1><p>Choose what you want to watch. Make room for it.</p></div></section>
 
       <div class="workspace"><div class="main-column">
-      <section class="panel modes-panel"><div class="section-head"><h2>What are you here for?</h2><button class="text-button" data-mode="off" aria-pressed="${s.mode === 'off'}">${s.mode === 'off' ? 'Modes are off' : 'Turn modes off'}</button></div><p class="section-copy">${!full && Number.isInteger(targetTabId) ? "Choose the intent for this YouTube tab. Other tabs keep their own mode." : "Choose your last used intent. Existing YouTube tabs keep their own mode."}</p>${pageScopeNotice() ? `<p class="scope-notice" role="status">${escape(pageScopeNotice())}</p>` : ''}<div class="mode-grid">${Object.entries(definitions).map(([key, m]) => `<div class="mode-tile"><button class="mode ${s.mode === key ? 'selected' : ''}" data-mode="${key}" aria-pressed="${s.mode === key}"><span class="mode-icon">${Object.hasOwn(s.customIntents, key) ? `<span class="intent-symbol" aria-hidden="true">${escape(m.symbol)}</span>` : icon(key)}</span><span class="mode-check" aria-hidden="true">${s.mode === key ? '✓' : ''}</span><strong>${escape(m.name)}</strong><small>${key === 'work' ? 'Get in the zone' : key === 'study' ? 'Stay curious' : key === 'music' ? 'Find your rhythm' : 'Your custom intent'}</small></button><button type="button" class="edit-intent" data-edit="${key}" aria-label="Edit ${escape(m.name)} intent" title="Edit ${escape(m.name)} intent">${icon('edit')}</button></div>`).join('')}</div><div class="mode-caption"><span class="tiny-dot"></span><span>${canPauseTab() && state.tabPaused ? `${escape(modeName(s.mode))} is saved for this tab. Filters and the timer are paused here.` : active ? `${escape(active.name)} mode is ${!full && Number.isInteger(targetTabId) ? 'saved for this tab' : 'your last used intent'}. ${C.countsMode(s, s.mode) ? 'This mode counts toward the daily limit.' : 'This mode is exempt from the daily limit.'}` : `Modes are off. Your distraction filters still apply. ${C.countsMode(s, 'off') ? 'This browsing counts toward the daily limit.' : 'This browsing is exempt from the daily limit.'}`}</span></div></section>
-      ${full ? '<section class="panel" id="intent-library" aria-label="Intent library and ordering"></section><section class="panel" id="role-presets" aria-label="Role presets"></section>' : '<a class="all-settings" href="settings.html#intent-library" target="_blank">Intent library & order ↗</a>'}
+      <section class="panel modes-panel"><div class="section-head"><h2>What are you here for?</h2><button type="button" class="mode-off-button" data-mode="off" aria-pressed="${s.mode === 'off'}" aria-describedby="intent-off-help" title="Turn off topic filtering. Distraction filters and this mode’s timer rule still apply. Pause is separate and stops filters and timer on this tab.">${s.mode === 'off' ? 'Intent off' : 'Turn intent off'}</button></div><p class="section-copy">${!full && Number.isInteger(targetTabId) ? "Choose the intent for this YouTube tab. Other tabs keep their own mode." : "Choose your last used intent. Existing YouTube tabs keep their own mode."}</p><span class="visually-hidden" id="intent-off-help">Intent off stops topic filtering; distraction filters and its timer rule still apply. Pause stops all filters and timer counting on a particular tab.</span>${pageScopeNotice() ? `<p class="scope-notice" role="status">${escape(pageScopeNotice())}</p>` : ''}<div class="mode-grid">${Object.entries(definitions).map(([key, m], index) => `<div class="mode-tile" ${full ? `data-order-intent="${key}"` : ''}><button class="mode ${s.mode === key ? 'selected' : ''}" data-mode="${key}" aria-pressed="${s.mode === key}"><span class="mode-icon">${Object.hasOwn(s.customIntents, key) ? `<span class="intent-symbol" aria-hidden="true">${escape(m.symbol)}</span>` : icon(key)}</span><span class="mode-check" aria-hidden="true">${s.mode === key ? '✓' : ''}</span><strong>${escape(m.name)}</strong><small>${key === 'work' ? 'Get in the zone' : key === 'study' ? 'Stay curious' : key === 'music' ? 'Find your rhythm' : 'Your custom intent'}</small></button><button type="button" class="edit-intent" data-edit="${key}" aria-label="Edit ${escape(m.name)} intent" title="Edit ${escape(m.name)} intent">${icon('edit')}</button>${full ? reorderControls(key, m.name, index, Object.keys(definitions).length) : ''}</div>`).join('')}</div>${full ? '<p class="field-hint intent-order-hint">Drag handles to reorder intents, or use the move buttons. Focus a handle to use arrow keys, Home or End.</p>' : ''}<div class="mode-caption"><span class="tiny-dot"></span><span>${canPauseTab() && state.tabPaused ? `${escape(modeName(s.mode))} is saved for this tab. Filters and the timer are paused here.` : active ? `${escape(active.name)} mode is ${!full && Number.isInteger(targetTabId) ? 'saved for this tab' : 'your last used intent'}. ${C.countsMode(s, s.mode) ? 'This mode counts toward the daily limit.' : 'This mode is exempt from the daily limit.'}` : `Modes are off. Your distraction filters still apply. ${C.countsMode(s, 'off') ? 'This browsing counts toward the daily limit.' : 'This browsing is exempt from the daily limit.'}`}</span></div></section>
+      ${full ? '<section class="panel" id="intent-library" aria-label="Intent library and ordering"></section><section class="panel" id="role-presets" aria-label="Role presets"></section>' : ''}
       ${full ? `<section class="panel tab-policy-panel"><div class="section-head"><h2>New YouTube tabs</h2></div><p class="section-copy">Each tab keeps its own intent, including after a reload. Choose how newly opened YouTube tabs start.</p><label for="new-tab-mode">Intent for new YouTube tabs</label><select id="new-tab-mode"><option value="last" ${s.newTabMode === 'last' ? 'selected' : ''}>Follow last used intent</option>${[...Object.entries(definitions).map(([key, item]) => [key, item.name]), ['off', 'Modes off']].map(([key, name]) => `<option value="${key}" ${s.newTabMode === key ? 'selected' : ''}>${key === 'off' ? 'Start with modes off' : `Always ${escape(name)}`}</option>`).join('')}</select><p class="field-hint">Changing this setting affects new tabs. Open tabs keep the intent you selected for them.</p></section>` : ''}
       <section class="panel filter-panel"><div class="section-head"><h2>Distraction filters</h2><span class="subtle">YOUR FILTERS</span></div><div class="setting-row"><span class="row-icon">${icon('shorts')}</span><div><h3>Hide Shorts</h3><p>Remove Shorts from YouTube.</p></div>${toggle('hideShorts', 'Hide Shorts')}</div><div class="setting-row"><span class="row-icon">${icon('bait')}</span><div><h3>Filter clickbait</h3><p>Hide titles with common clickbait patterns.</p></div>${toggle('hideClickbait', 'Filter clickbait')}</div><p class="helper">Clickbait detection uses title patterns. It may miss some videos or hide useful ones.</p></section>
 
       ${full ? `<section class="panel metadata-panel"><div class="section-head"><h2>Fuller video checks</h2></div><p id="metadata-cost" class="section-copy">Each uncached check makes one additional request to a public YouTube video page. Higher limits can improve topic matching but use more network requests and may load more slowly. Cached descriptions need no extra request.</p><label for="metadata-limit">Maximum fuller checks per batch</label><div class="metadata-limit-row"><input id="metadata-limit" type="number" min="0" max="40" step="1" required value="${s.metadataLimit ?? 4}" aria-describedby="metadata-cost metadata-policy"><span>0–40 checks</span></div><p id="metadata-policy" class="field-hint">0 uses available search metadata only. Applies separately to each search batch; the first feed can load two batches. Stops earlier when enough clear matches are found. Up to four checks run at once.</p></section>` : ''}
-      ${full ? `<section class="panel custom-intent-panel"><div class="section-head"><h2>Create your own intent</h2></div><p class="section-copy">Use a specific goal, such as learning a language or restoring a bicycle. Custom intents have their own topics, channel rules and timer switch.</p><form id="create-intent"><label for="custom-intent-name">Custom intent name</label><input id="custom-intent-name" type="text" required maxlength="48" value="${escape(createDraft.name)}" placeholder="e.g. Learning German"><label for="custom-intent-description">What should this intent show?</label><textarea id="custom-intent-description" rows="3" required maxlength="1000" placeholder="e.g. Beginner German lessons, listening practice, pronunciation and vocabulary.">${escape(createDraft.description)}</textarea><div class="form-end"><span class="helper">${Object.keys(s.customIntents || {}).length} / ${C.MAX_CUSTOM_INTENTS} custom intents</span><button type="submit" class="button primary" ${Object.keys(s.customIntents || {}).length >= C.MAX_CUSTOM_INTENTS ? 'disabled' : ''}>Create intent</button></div></form></section>` : ''}
-      </div><aside class="side-column"><section class="panel budget-panel"><div class="section-head"><h2>Your daily budget</h2>${toggle('limitEnabled', 'Enable daily time limit')}</div><p class="section-copy">Set how much time you want to spend on YouTube.</p><div class="budget-ring"><svg viewBox="0 0 200 200" aria-hidden="true"><circle class="ring-track" cx="100" cy="100" r="87"/><circle class="ring-value" id="ring-value" cx="100" cy="100" r="87"/></svg><div><strong id="remaining-value">60<span>min</span></strong><span id="remaining-label">left for today</span></div></div><div class="budget-summary"><span id="used-label">0 min used</span><span id="limit-label">60 min budget</span></div><div class="presets" aria-label="Daily budget presets">${[30, 60, 90].map(n => `<button data-minutes="${n}" class="${s.dailyMinutes === n ? 'active' : ''}" aria-pressed="${s.dailyMinutes === n}">${n} min</button>`).join('')}</div><label class="custom-budget" for="daily-minutes">Daily limit <span><input id="daily-minutes" type="number" min="1" max="1440" step="1" value="${s.dailyMinutes}" aria-describedby="budget-note"> min / day</span></label><p id="budget-note" class="budget-note">${escape(budgetNote())}</p><div class="playback-row"><div><h3>Count background playback</h3><p>Only modes included in the timer add time.</p></div>${toggle('countPlayback', 'Count background playback')}</div><p class="helper timer-explainer">Selected modes count while the browser is focused and you’re active. Playing media can also count. Multiple tabs count once; exempt tabs add no time. Resets at local midnight.</p></section>${full ? `<section class="panel timer-modes-panel"><div class="section-head"><h2>Modes that count</h2></div><p class="section-copy">Choose which modes use the shared daily budget. Exempt modes remain accessible after the limit is reached.</p><div class="count-mode-list">${[...Object.keys(definitions), 'off'].map(countModeToggle).join('')}</div><p class="helper">Music is excluded by default. Turning a mode on here includes foreground use and eligible playback in that mode.</p></section>` : '<a class="all-settings" href="settings.html" target="_blank">Timer settings <span>↗</span></a>'}${full ? '<div class="privacy-note"><span>↳</span><div><strong>Private by default</strong><p>Bundled local AI. No accounts or analytics.<br>Your settings and time stay in your browser.</p></div></div>' : '<a class="all-settings" href="settings.html" target="_blank">Customize topics & channels <span>↗</span></a>'}${!full ? '<a class="all-settings" href="settings.html#metadata-limit" target="_blank">Topic analysis settings <span>↗</span></a>' : ''}</aside></div>
-      ${full ? `<section class="preview-section"><div class="section-head"><div><p class="eyebrow">FILTER PREVIEW</p><h2>Try your filters</h2></div><button id="show-hidden" class="text-button" aria-pressed="${showHidden}">${showHidden ? 'Hide filtered examples' : 'Show filtered examples'}</button></div><p class="section-copy">Sample cards demonstrate keyword and distraction controls. Your live Intent feed also uses the bundled semantic model.</p><div id="sample-grid" class="sample-grid"></div></section>` : ''}
-      ${editorMarkup()}${full ? '<dialog id="reset-dialog" aria-labelledby="reset-heading"><h2 id="reset-heading">Reset settings to factory defaults?</h2><p>This restores built-in intents, the role-preset library, intent order, timer rules, new-tab preferences and fuller-check limits, and clears per-tab pauses. Your custom intents and filter rules will be removed. Daily time already used and usage history will be kept.</p><div class="dialog-actions"><button type="button" class="button" id="cancel-reset">Cancel</button><button type="button" class="button primary" id="confirm-reset">Reset to defaults</button></div></dialog>' : ''}<footer><span>Your settings stay on this device.</span>${full ? '<button type="button" class="text-button" id="reset-settings">Reset settings</button>' : ''}<span>intent · ${full ? '1.7.0' : 'LOCAL & PRIVATE'}</span></footer><div id="notice" role="status" aria-live="polite"></div>`;
+
+      </div><aside class="side-column"><section class="panel budget-panel"><div class="section-head"><h2>Your daily budget</h2>${toggle('limitEnabled', 'Enable daily time limit')}</div><p class="section-copy">Set how much time you want to spend on YouTube.</p><div class="budget-ring"><svg viewBox="0 0 200 200" aria-hidden="true"><circle class="ring-track" cx="100" cy="100" r="87"/><circle class="ring-value" id="ring-value" cx="100" cy="100" r="87"/></svg><div><strong id="remaining-value">60<span>min</span></strong><span id="remaining-label">left for today</span></div></div><div class="budget-summary"><span id="used-label">0 min used</span><span id="limit-label">60 min budget</span></div><div class="presets" aria-label="Daily budget presets">${[30, 60, 90].map(n => `<button data-minutes="${n}" class="${s.dailyMinutes === n ? 'active' : ''}" aria-pressed="${s.dailyMinutes === n}">${n} min</button>`).join('')}</div><label class="custom-budget" for="daily-minutes">Daily limit <span><input id="daily-minutes" type="number" min="1" max="1440" step="1" value="${s.dailyMinutes}" aria-describedby="budget-note"> min / day</span></label><p id="budget-note" class="budget-note">${escape(budgetNote())}</p><div class="playback-row"><div><h3>Count background playback</h3><p>Only modes included in the timer add time.</p></div>${toggle('countPlayback', 'Count background playback')}</div><p class="helper timer-explainer">Selected modes count while the browser is focused and you’re active. Playing media can also count. Multiple tabs count once; exempt tabs add no time. Resets at local midnight.</p></section>${full ? `<section class="panel timer-modes-panel"><div class="section-head"><h2>Modes that count</h2></div><p class="section-copy">Choose which modes use the shared daily budget. Exempt modes remain accessible after the limit is reached.</p><div class="count-mode-list">${[...Object.keys(definitions), 'off'].map(countModeToggle).join('')}</div><p class="helper">Music is excluded by default. Turning a mode on here includes foreground use and eligible playback in that mode.</p></section>` : ''}${full ? '<div class="privacy-note"><span>↳</span><div><strong>Private by default</strong><p>Bundled local AI. No accounts or analytics.<br>Your settings and time stay in your browser.</p></div></div>' : '<a class="all-settings" href="settings.html" target="_blank">Settings <span>↗</span></a>'}</aside></div>
+      ${full ? '<section class="preview-section" id="intent-preview" aria-label="Filter preview"></section>' : ''}
+      ${editorMarkup()}${full ? '<dialog id="reset-dialog" aria-labelledby="reset-heading"><h2 id="reset-heading">Reset settings to factory defaults?</h2><p>This restores built-in intents, the role-preset library, intent order, timer rules, new-tab preferences and fuller-check limits, and clears per-tab pauses. Your custom intents and filter rules will be removed. Daily time already used and usage history will be kept.</p><div class="dialog-actions"><button type="button" class="button" id="cancel-reset">Cancel</button><button type="button" class="button primary" id="confirm-reset">Reset to defaults</button></div></dialog>' : ''}<footer><span>Your settings stay on this device.</span>${full ? '<button type="button" class="text-button" id="reset-settings">Reset settings</button>' : ''}<span>intent · ${full ? '1.7.1' : 'LOCAL & PRIVATE'}</span></footer><div id="notice" role="status" aria-live="polite"></div>`;
     paintTime(); paintSamples(); rolePresetsUI?.render(); libraryUI?.render();
     const editor = document.querySelector('#intent-editor');
     if (editing && editor && !editor.open) editor.showModal();
@@ -129,38 +146,46 @@
   }
   function scopeStatus(description) {return description.trim() ? 'Custom scope replaces the built-in scope' : 'Using built-in scope';}
   function editorMarkup() {
-    const s = state.settings, mode = modes()[editing];
+    const s = state.settings, creating = editing === NEW_INTENT;
+    const mode = creating ? {name: 'New intent'} : modes()[editing];
     if (!mode) return '';
-    const custom = Boolean(s.customIntents[editing]);
-    const description = drafts.descriptions[editing] ?? (custom ? s.customIntents[editing].description : s.intentDescriptions[editing]);
+    const record = s.customIntents[editing];
+    const custom = creating || Boolean(record);
+    const description = drafts.descriptions[editing] ?? (custom ? record?.description || '' : s.intentDescriptions[editing]);
+    const name = drafts.names[editing] ?? (creating ? '' : mode.name);
+    const topics = drafts.customTopics[editing] ?? s.customTopics[editing] ?? '';
+    const channels = drafts.channels[editing] ?? s.channels[editing] ?? '';
+    const counted = drafts.countModes[editing] ?? (creating ? true : C.countsMode(s, editing));
     const role = ['work', 'study'].includes(editing) && s.rolePresets[s.lastRolePreset];
     return `<dialog id="intent-editor" aria-labelledby="editor-heading">
-      <header class="dialog-heading"><h2 id="editor-heading">Edit ${escape(mode.name)} intent</h2><button type="button" class="icon-button" id="close-editor" aria-label="Close intent editor">×</button></header>
-      <form id="rules-form"><label for="intent-name">Intent name</label><input id="intent-name" required maxlength="48" value="${escape(drafts.names[editing] ?? mode.name)}">
-      ${custom ? `<label for="intent-icon">Intent icon</label><select id="intent-icon">${Object.entries(C.INTENT_ICONS).map(([key, symbol]) => `<option value="${key}" ${(drafts.icons[editing] ?? s.customIntents[editing].icon) === key ? 'selected' : ''}>${escape(symbol)} ${escape(key.replaceAll('-', ' '))}</option>`).join('')}</select>` : builtinDefaultsMarkup(editing)}
+      <header class="dialog-heading"><h2 id="editor-heading">${creating ? 'Create intent' : `Edit ${escape(mode.name)} intent`}</h2><button type="button" class="icon-button" id="close-editor" aria-label="Close intent editor">×</button></header>
+      <form id="rules-form"><label for="intent-name">Intent name</label><input id="intent-name" required maxlength="48" value="${escape(name)}" placeholder="e.g. Learning German">
+      ${custom ? `<label for="intent-icon">Intent icon</label><select id="intent-icon">${Object.entries(C.INTENT_ICONS).map(([key, symbol]) => `<option value="${key}" ${(drafts.icons[editing] ?? record?.icon ?? 'compass') === key ? 'selected' : ''}>${escape(symbol)} ${escape(key.replaceAll('-', ' '))}</option>`).join('')}</select>` : builtinDefaultsMarkup(editing)}
       ${role ? `<p class="field-hint">Last applied role preset: ${escape(role.name)}. Editing this intent is independent of the saved preset.</p>` : ''}
-      <label for="intent-description">Intent description for ${escape(mode.name.toLowerCase())}</label>
+      <label for="intent-description">${creating ? 'What should this intent show?' : `Intent description for ${escape(mode.name.toLowerCase())}`}</label>
       ${custom ? '' : `<div class="scope-choice"><span id="intent-scope-status" role="status" aria-live="polite">${scopeStatus(description)}</span><button type="button" class="text-button" id="use-built-in-scope">Use built-in scope</button></div>`}
-      <textarea id="intent-description" rows="3" maxlength="1000" ${custom ? 'required' : ''} aria-describedby="intent-description-help${custom ? '' : ' intent-scope-status'}" placeholder="${custom ? 'Describe the videos you want to see.' : 'Leave blank to use the defaults shown above.'}">${escape(description)}</textarea>
-      <p id="intent-description-help" class="field-hint">Describe the subjects you want. This guides topic matching and searches.${custom ? '' : ' A custom description replaces the built-in scope and discovery searches above. Leave it blank to restore them. Extra topics add to either scope; included channels still apply.'}</p>
-      <label for="topics">Extra topics for ${escape(mode.name.toLowerCase())}</label><textarea id="topics" rows="2" maxlength="4000" placeholder="Topics separated by commas">${escape(drafts.customTopics[editing] ?? s.customTopics[editing])}</textarea>
-      <label for="channels">Always include these channels in this mode</label><textarea id="channels" rows="2" maxlength="4000" placeholder="Exact channel names, separated by commas">${escape(drafts.channels[editing] ?? s.channels[editing])}</textarea><p class="field-hint">Shorts, clickbait and blocked phrases still take priority.</p>
-      <label for="blocked-terms">Hide these words or phrases in every mode</label><textarea id="blocked-terms" rows="2" maxlength="4000">${escape(blockedDraft ?? s.blockedTerms)}</textarea><p id="draft-status" class="helper">Changes apply when you save.</p>
-      <div class="dialog-actions">${custom ? '<button type="button" class="text-button danger-button" id="delete-intent">Delete intent</button>' : ''}<button type="button" class="button" id="cancel-editor">Cancel</button><button type="submit" class="button primary">Save preferences</button></div></form></dialog>`;
+      <textarea id="intent-description" rows="4" maxlength="1000" ${custom ? 'required' : ''} aria-describedby="intent-description-help${custom ? '' : ' intent-scope-status'}" placeholder="${custom ? 'Describe your purpose and subjects, e.g. beginner German lessons, listening practice and pronunciation.' : 'Leave blank to use the defaults shown above.'}">${escape(description)}</textarea>
+      <p id="intent-description-help" class="field-hint">Put your purpose and subjects together here. This guides matching by meaning and the main video searches.${custom ? '' : ' A custom description replaces the built-in scope and discovery searches above. Leave it blank to restore them.'} Optional extra topics in Advanced options add discovery searches without rewriting this description; they expand the scope.</p>
+      <label for="channels">Always include these channels in this mode</label><textarea id="channels" rows="2" maxlength="4000" placeholder="Exact channel names, separated by commas">${escape(channels)}</textarea><p class="field-hint">Shorts, clickbait and blocked phrases still take priority.</p>
+      <label class="intent-count-control" for="intent-count-time"><input type="checkbox" id="intent-count-time" ${counted ? 'checked' : ''}>Count this intent toward the daily limit</label><p class="field-hint">When excluded, this intent adds no time and stays available after the limit.</p>
+      <details class="intent-advanced" ${topics.trim() ? 'open' : ''}><summary>Advanced options</summary><label for="topics">Additional discovery topics (optional)</label><textarea id="topics" rows="2" maxlength="4000" placeholder="Short topics separated by commas">${escape(topics)}</textarea><p class="field-hint">These launch extra topic searches and add matching examples while keeping your main description intact. Leave this empty when the description already covers what you want.</p>
+      <label for="blocked-terms">Hide these words or phrases in every mode</label><textarea id="blocked-terms" rows="2" maxlength="4000">${escape(blockedDraft ?? s.blockedTerms)}</textarea><p class="field-hint">This blocked-phrase list is shared by all intents.</p></details><p id="draft-status" class="helper">Changes apply when you save.</p>
+      <div class="dialog-actions">${custom && !creating ? '<button type="button" class="text-button danger-button" id="delete-intent">Delete intent</button>' : ''}<button type="button" class="button" id="cancel-editor">Cancel</button><button type="submit" class="button primary">${creating ? 'Create intent' : 'Save preferences'}</button></div></form></dialog>`;
   }
   function closeEditor() {
     const previous = editing;
     if (previous) for (const field of Object.values(drafts)) delete field[previous];
     blockedDraft = undefined; editing = null; render();
-    document.querySelector(`[data-edit="${previous}"]`)?.focus();
+    if (previous === NEW_INTENT) document.querySelector('#new-intent')?.focus(); else document.querySelector(`[data-edit="${previous}"]`)?.focus();
   }
   async function factoryReset() {
     if (saving) return;
     saving = true;
     try {
+      previewUI?.reset();
       state = await request('RESET_SETTINGS'); editing = null; selected = state.settings.mode;
       for (const key of Object.keys(drafts)) drafts[key] = {};
-      createDraft.name = ''; createDraft.description = ''; blockedDraft = undefined;
+      blockedDraft = undefined;
       render(); notify('Factory settings restored. Daily usage was kept.');
     } catch(error) {notify(error.message,true);}
     finally {saving = false;}
@@ -178,11 +203,7 @@
     ring.style.stroke = state.blocked ? 'var(--danger)' : 'var(--blue)';
     document.querySelector('#budget-note').textContent = budgetNote();
   }
-  function paintSamples() {
-    const grid = document.querySelector('#sample-grid'); if (!grid) return;
-    const videos = samples.map(v => ({...v, result: C.classify(v, state.settings)})).filter(v => showHidden || v.result.visible);
-    grid.innerHTML = videos.length ? videos.map(v => `<article class="sample-card ${v.result.visible ? '' : 'filtered'}"><div class="sample-cover ${v.color}"><span>${escape(v.cover).replace(/\n/g, '<br>')}</span><small>${v.duration}</small>${!v.result.visible ? `<div class="filter-label">Hidden · ${escape(v.result.reason)}</div>` : ''}</div><h3>${escape(v.title)}</h3><p>${escape(v.channel)}</p></article>`).join('') : '<p class="sample-empty">No example videos match these settings. Add topics or channels above to broaden your feed.</p>';
-  }
+  function paintSamples() {previewUI?.render();}
   function notify(message, error = false) {
     const notice = document.querySelector('#notice'); notice.textContent = message;
     notice.className = `visible ${error ? 'error' : ''}`;
@@ -213,6 +234,7 @@
   }
   app.addEventListener('click', async e => {
     const button = e.target.closest('button'); if (!button) return;
+    if (button.dataset.moveIntent) {const ids = Object.keys(modes()); await moveIntent(button.dataset.moveIntent, ids.indexOf(button.dataset.moveIntent) + Number(button.dataset.direction)); return;}
     if (button.id === 'tab-pause') {await setTabPaused(); return;}
     if (button.id === 'return-paused-youtube' && canPauseTab() && state.tabPaused) {
       try {await chrome.tabs.update(targetTabId, {url: 'https://www.youtube.com/'});} catch (error) {notify(error.message, true);}
@@ -233,8 +255,38 @@
       for (const field of Object.values(drafts)) delete field[removed];
       await update({customIntents, ...(state.settings.mode === removed ? {mode: 'work'} : {}), ...(state.settings.newTabMode === removed ? {newTabMode: 'last'} : {})}, 'Intent deleted. Work is now your last used intent.');
     }
-    else if (button.id === 'settings') { if (live) chrome.runtime.openOptionsPage(); else location.href = 'settings.html'; }
-    else if (button.id === 'show-hidden') { showHidden = !showHidden; button.setAttribute('aria-pressed', showHidden); button.textContent = showHidden ? 'Hide filtered examples' : 'Show filtered examples'; paintSamples(); }
+
+  });
+  app.addEventListener('dragstart', event => {
+    const handle = event.target.closest('[data-drag-intent]');
+    if (!full || saving || !handle || !Object.hasOwn(modes(), handle.dataset.dragIntent)) return;
+    draggedIntent = handle.dataset.dragIntent;
+    event.dataTransfer.setData('text/plain', draggedIntent); event.dataTransfer.effectAllowed = 'move';
+    handle.closest('.mode-tile').classList.add('intent-dragging');
+  });
+  app.addEventListener('dragover', event => {
+    if (!full || !draggedIntent || !event.target.closest('.mode-grid')) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    for (const tile of app.querySelectorAll('.intent-drop-target')) tile.classList.remove('intent-drop-target');
+    const tile = event.target.closest('[data-order-intent]');
+    if (tile && tile.dataset.orderIntent !== draggedIntent) tile.classList.add('intent-drop-target');
+  });
+  app.addEventListener('drop', async event => {
+    if (!full || !draggedIntent || !event.target.closest('.mode-grid')) return;
+    event.preventDefault();
+    const id = draggedIntent, ids = Object.keys(modes()), tile = event.target.closest('[data-order-intent]');
+    const target = tile ? ids.indexOf(tile.dataset.orderIntent) : ids.length - 1;
+    clearDrag();
+    if (await moveIntent(id, target)) document.querySelector(`[data-drag-intent="${id}"]`)?.focus();
+  });
+  app.addEventListener('dragend', clearDrag);
+  app.addEventListener('keydown', async event => {
+    const handle = event.target.closest('[data-drag-intent]');
+    if (!full || !handle || !['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const ids = Object.keys(modes()), index = ids.indexOf(handle.dataset.dragIntent);
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : index + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1);
+    await moveIntent(handle.dataset.dragIntent, target);
   });
   app.addEventListener('change', e => {
     if (e.target.id === 'metadata-limit') {
@@ -248,27 +300,28 @@
     }
   });
   app.addEventListener('input', e => {
-    if (e.target.id === 'custom-intent-name') {createDraft.name = e.target.value; return;}
-    if (e.target.id === 'custom-intent-description') {createDraft.description = e.target.value; return;}
     if (e.target.id === 'intent-description') {drafts.descriptions[editing] = e.target.value; const status = document.querySelector('#intent-scope-status'); if (status) status.textContent = scopeStatus(e.target.value);}
     if (e.target.id === 'intent-icon') drafts.icons[editing] = e.target.value;
+    if (e.target.id === 'intent-count-time') drafts.countModes[editing] = e.target.checked;
     if (e.target.id === 'intent-name') drafts.names[editing] = e.target.value;
     if (e.target.id === 'topics') drafts.customTopics[editing] = e.target.value;
     if (e.target.id === 'channels') drafts.channels[editing] = e.target.value;
     if (e.target.id === 'blocked-terms') blockedDraft = e.target.value;
-    if (['topics', 'channels', 'blocked-terms', 'intent-description', 'intent-name', 'intent-icon'].includes(e.target.id) && document.querySelector('#draft-status')) document.querySelector('#draft-status').textContent = 'Unsaved topic changes';
+    if (['topics', 'channels', 'blocked-terms', 'intent-description', 'intent-name', 'intent-icon', 'intent-count-time'].includes(e.target.id) && document.querySelector('#draft-status')) document.querySelector('#draft-status').textContent = 'Unsaved topic changes';
   });
   app.addEventListener('submit', async e => {
     e.preventDefault();
-    if (e.target.id === 'create-intent') {
-      const name = createDraft.name.trim(), description = createDraft.description.trim();
+    if (e.target.id !== 'rules-form') return;
+    if (editing === NEW_INTENT) {
+      if (Object.keys(state.settings.customIntents).length >= C.MAX_CUSTOM_INTENTS) {notify('Remove an optional intent before creating another.', true); return;}
+      const name = (drafts.names[NEW_INTENT] || '').trim(), description = (drafts.descriptions[NEW_INTENT] || '').trim();
       if (!name || !description) {notify('Add a name and description for your intent.', true); return;}
-      const id = 'custom-' + crypto.randomUUID().slice(0, 8);
-      const ok = await update({customIntents: {...state.settings.customIntents, [id]: {name, description}}, mode: id}, 'Custom intent created. Choose it in any YouTube tab.');
-      if (ok) {createDraft.name = ''; createDraft.description = ''; document.querySelector('#custom-intent-name').value = ''; document.querySelector('#custom-intent-description').value = '';}
+      const id = 'custom-' + crypto.randomUUID().slice(0, 8), s = state.settings;
+      const ok = await update({customIntents: {...s.customIntents, [id]: {name, description, icon: drafts.icons[NEW_INTENT] || 'compass'}}, customTopics: {...s.customTopics, [id]: drafts.customTopics[NEW_INTENT] || ''}, channels: {...s.channels, [id]: drafts.channels[NEW_INTENT] || ''}, countModes: {...s.countModes, [id]: drafts.countModes[NEW_INTENT] ?? true}, blockedTerms: blockedDraft ?? s.blockedTerms, intentOrder: [...Object.keys(C.modes(s)), id], mode: id}, 'Custom intent created. Its icon, channels and timer rule are saved.');
+      if (ok) {for (const field of Object.values(drafts)) delete field[NEW_INTENT]; blockedDraft = undefined; editing = null; render(); document.querySelector(`[data-edit="${id}"]`)?.focus();}
       return;
     }
-    if (e.target.id !== 'rules-form') return;
+
     const customIntents = {...state.settings.customIntents}, intentDescriptions = {...state.settings.intentDescriptions}, intentNames = {...state.settings.intentNames};
     for (const [id, description] of Object.entries(drafts.descriptions)) {
       if (customIntents[id]) customIntents[id] = {...customIntents[id], description: description.trim()};
@@ -277,7 +330,7 @@
     for (const [id, name] of Object.entries(drafts.names)) {if (customIntents[id]) customIntents[id] = {...customIntents[id], name: name.trim()}; else intentNames[id] = name.trim();}
     for (const [id, value] of Object.entries(drafts.icons)) if (customIntents[id]) customIntents[id] = {...customIntents[id], icon: value};
     for (const value of Object.values(customIntents)) if (!value.name || !value.description) {notify('Custom intents need both a name and a description. Finish the draft before saving.', true); return;}
-    const ok = await update({customIntents, intentDescriptions, intentNames, customTopics: {...state.settings.customTopics, ...drafts.customTopics}, channels: {...state.settings.channels, ...drafts.channels}, blockedTerms: blockedDraft ?? state.settings.blockedTerms}, 'Preferences saved. Make yourself at home.');
+    const ok = await update({customIntents, intentDescriptions, intentNames, customTopics: {...state.settings.customTopics, ...drafts.customTopics}, channels: {...state.settings.channels, ...drafts.channels}, countModes: {...state.settings.countModes, ...drafts.countModes}, blockedTerms: blockedDraft ?? state.settings.blockedTerms}, 'Preferences saved. Make yourself at home.');
     if (ok) {for (const key of Object.keys(drafts)) drafts[key] = {}; blockedDraft = undefined; document.querySelector('#draft-status').textContent = 'All preferences saved on this device.';}
   });
   app.innerHTML = '<div class="loading-state" role="status"><span class="brand"><img class="brand-mark" src="icons/48.png" alt="" width="28" height="28">intent.</span><p>Making a little room to focus…</p></div>';

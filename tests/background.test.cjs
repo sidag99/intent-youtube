@@ -53,7 +53,7 @@ function harness(stored = {}, start = new Date(2026, 9, 24, 12).getTime(), fetch
   vm.runInContext(source('background.js'), context);
   const sender = {url: 'chrome-extension://intent/settings.html'};
   const send = (message, from = sender) => new Promise(resolve => listener(message, from, resolve));
-  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, badges, titles, icons, iconFetches, queries, queryResults, drain: () => vm.runInContext('queue', context), associated: id => vm.runInContext(`associatedTab(${Number(id)})`, context), updateEvent: (id, info) => events.updated(id, info), removeEvent: id => events.removed(id), advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, updateTab: async (id, info) => {tabs = tabs.map(tab => tab.id === id ? {...tab, ...info} : tab); events.updated(id, info); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
+  return {send, local, session, redirects, rules, sessionRules, dynamic, perTabRules, broadcasts, badges, titles, icons, iconFetches, queries, queryResults, drain: () => vm.runInContext('queue', context), associated: id => vm.runInContext(`associatedTab(${Number(id)})`, context), updateEvent: (id, info, tab) => events.updated(id, info, tab), removeEvent: id => events.removed(id), advance: ms => {now += ms;}, setTabs: value => {tabs = value.map(tab => ({url: 'https://www.youtube.com/', ...tab}));}, setFocus: value => {focus = value;}, setIdle: value => {idle = value;}, createTab: async tab => {tabs.push({url: 'https://www.youtube.com/', ...tab}); events.created(tab); await send({type: 'GET_STATE'});}, updateTab: async (id, info) => {tabs = tabs.map(tab => tab.id === id ? {...tab, ...info} : tab); events.updated(id, info, tabs.find(tab => tab.id === id)); await send({type: 'GET_STATE'});}, removeTab: async id => {tabs = tabs.filter(tab => tab.id !== id); events.removed(id); await send({type: 'GET_STATE'});}};
 }
 test('foreground use counts once across tabs; an unfocused browser stops counting', async () => {
   const h = harness(); await h.send({type: 'GET_STATE'});
@@ -462,7 +462,7 @@ test('paused counted tabs remain accessible after exhaustion and preserve their 
   const paused = await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
   assert.equal(paused.blocked, false); assert.equal(paused.budgetExhausted, true); assert.equal(paused.settings.mode, 'work');
   assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1)); assert.ok(h.perTabRules.get(2).condition.tabIds.includes(2));
-  assert.ok(h.redirects.every(item => item.id === 2)); assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'PAUSE');
+  assert.ok(h.redirects.every(item => item.id === 2)); assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
   h.setTabs([{id: 1, url: 'about:blank', active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]); await h.send({type: 'GET_STATE'});
   assert.ok(h.perTabRules.get(3).condition.tabIds.includes(1));
   h.setTabs([{id: 1, active: true, windowId: 1}, {id: 2, active: false, windowId: 1}]);
@@ -534,7 +534,7 @@ test('unrelated tab update and removal events create no associations, badge work
   const before = {queries: h.queries.length, badges: h.badges.length, rules: h.rules.length, sessionRules: h.sessionRules.length};
   h.updateEvent(99, {url: 'https://example.com/'}); await h.drain();
   assert.equal(h.associated(99), false);
-  h.updateEvent(99, {url: 'https://another.example/'}); h.updateEvent(99, {audible: true, status: 'complete'}); await h.drain();
+  h.updateEvent(99, {url: 'https://another.example/'}); h.updateEvent(99, {status: 'loading'}, {id: 99, url: 'https://example.com/'}); h.updateEvent(99, {audible: true, status: 'complete'}); await h.drain();
   h.removeEvent(99); await h.drain();
   assert.equal(h.associated(99), false);
   assert.deepEqual({queries: h.queries.length, badges: h.badges.length, rules: h.rules.length, sessionRules: h.sessionRules.length}, before);
@@ -573,10 +573,17 @@ test('browser action defaults to gray outside YouTube and gives supported tabs a
 test('browser action distinguishes paused tabs from Off and states the Off timer policy', async () => {
   const h = harness(); await h.send({type: 'GET_STATE'});
   await h.send({type: 'SET_TAB_PAUSED', paused: true, targetTabId: 1});
-  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'PAUSE');
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
   assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Paused on this tab; filters and timer are off');
   const paused = h.icons.filter(item => item.tabId === 1).at(-1).imageData[32].data;
   assert.equal(paused[0], paused[1]); assert.equal(paused[1], paused[2]);
+  for (const size of [16, 32]) {
+    const image = h.icons.filter(item => item.tabId === 1).at(-1).imageData[size];
+    const pixel = (x, y) => Array.from(image.data.slice((y * size + x) * 4, (y * size + x) * 4 + 4));
+    assert.deepEqual(pixel(Math.floor(size * .35), Math.floor(size * .5)), [255, 255, 255, 255], 'left pause bar is visible in the actual icon');
+    assert.deepEqual(pixel(Math.floor(size * .65), Math.floor(size * .5)), [255, 255, 255, 255], 'right pause bar is visible in the actual icon');
+    assert.deepEqual(pixel(Math.floor(size * .5), Math.floor(size * .5)), [72, 72, 72, 255], 'the pause bars have a contrasting gray center');
+  }
   await h.send({type: 'SET_TAB_PAUSED', paused: false, targetTabId: 1});
   await h.send({type: 'UPDATE_SETTINGS', targetTabId: 1, patch: {mode: 'off'}});
   assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, 'OFF');
@@ -586,4 +593,147 @@ test('browser action distinguishes paused tabs from Off and states the Off timer
   assert.equal(h.titles.filter(item => item.tabId === 1).at(-1).title, 'Intent — Off on this tab; topic filtering is off; timer is exempt from your daily limit');
   const off = h.icons.filter(item => item.tabId === 1).at(-1).imageData[16].data;
   assert.equal(off[0], off[1]); assert.equal(off[1], off[2]);
+  assert.notDeepEqual(Array.from(paused), Array.from(h.icons.filter(item => item.tabId === 1).at(-1).imageData[32].data), 'paused and inactive icons remain visually distinct without relying on a badge');
+});
+
+test('loading and complete automatically repaint unchanged active, Off and paused action states across reload query gaps', async () => {
+  for (const scenario of [
+    {mode: 'work', paused: false, badge: 'W', title: /Work intent/},
+    {mode: 'off', paused: false, badge: 'OFF', title: /Off on this tab; topic filtering is off/},
+    {mode: 'study', paused: true, badge: '', title: /Paused on this tab; filters and timer are off/}
+  ]) {
+    const h = harness({settings: {mode: scenario.mode, dailyMinutes: 1}, days: {'2026-10-24': 60000}}, undefined, undefined, undefined,
+      {tabModes: {'1': scenario.mode}, pausedTabs: scenario.paused ? {'1': true} : {}});
+    // Exhausted paused tabs must keep their allow rule and symbol during reload.
+    if (!scenario.paused) h.local.days = {};
+    await h.send({type: 'GET_STATE'});
+    const saved = structuredClone({settings: h.local.settings, modes: h.session.tabModes, paused: h.session.pausedTabs, days: h.local.days});
+    const expected = h.icons.filter(item => item.tabId === 1).at(-1).imageData;
+    let count = h.icons.filter(item => item.tabId === 1).length;
+    let badgeCount = h.badges.filter(item => item.tabId === 1).length, titleCount = h.titles.filter(item => item.tabId === 1).length;
+    h.setTabs([]);
+    h.updateEvent(1, {status: 'loading'}); await h.drain();
+    assert.equal(h.icons.filter(item => item.tabId === 1).length, ++count, scenario.mode + ' repaints on loading without a heartbeat');
+    assert.equal(h.badges.filter(item => item.tabId === 1).length, ++badgeCount);
+    assert.equal(h.titles.filter(item => item.tabId === 1).length, ++titleCount);
+    assert.deepEqual(h.icons.filter(item => item.tabId === 1).at(-1).imageData, expected);
+    assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, scenario.badge);
+    assert.match(h.titles.filter(item => item.tabId === 1).at(-1).title, scenario.title);
+    h.setTabs([{id: 1, active: true, windowId: 1}]);
+    h.updateEvent(1, {status: 'complete'}); await h.drain();
+    assert.equal(h.icons.filter(item => item.tabId === 1).length, ++count, scenario.mode + ' repaints on completion without a user action');
+    assert.equal(h.badges.filter(item => item.tabId === 1).length, ++badgeCount);
+    assert.equal(h.titles.filter(item => item.tabId === 1).length, ++titleCount);
+    assert.deepEqual(h.icons.filter(item => item.tabId === 1).at(-1).imageData, expected);
+    assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, scenario.badge);
+    assert.match(h.titles.filter(item => item.tabId === 1).at(-1).title, scenario.title);
+    assert.deepEqual({settings: h.local.settings, modes: h.session.tabModes, paused: h.session.pausedTabs, days: h.local.days}, saved);
+    assert.equal(h.iconFetches.length, 1, 'repainting reuses bundled image data');
+    if (scenario.paused) assert.deepEqual(h.perTabRules.get(3).condition.tabIds, [1]);
+  }
+});
+
+test('a YouTube loading event wakes a worker and restores its persisted paused indicator without interaction', async () => {
+  const h = harness({}, undefined, undefined, undefined, {tabModes: {'1': 'music'}, pausedTabs: {'1': true}});
+  h.setTabs([]);
+  h.updateEvent(1, {status: 'loading'}, {id: 1, url: 'https://www.youtube.com/'}); await h.drain();
+  assert.equal(h.badges.filter(item => item.tabId === 1).at(-1).text, '');
+  assert.match(h.titles.filter(item => item.tabId === 1).at(-1).title, /Paused on this tab/);
+  assert.equal(h.session.tabModes[1], 'music'); assert.equal(h.session.pausedTabs[1], true);
+  h.setTabs([{id: 1, active: true, windowId: 1}]);
+  const paints = h.icons.length; h.updateEvent(1, {status: 'complete'}); await h.drain();
+  assert.equal(h.icons.length, paints + 1);
+});
+
+const previewPage = videos => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: videos.map(({id, title, shorts = false}) => ({videoRenderer: {videoId: id, title: {simpleText: title}, ownerText: {simpleText: 'Studio North'}, ...(shorts ? {navigationEndpoint: {commandMetadata: {webCommandMetadata: {url: '/shorts/' + id}}}} : {})}}))}}}}}) + ';</script>';
+test('preview requests are restricted to the top-level settings page and cannot override saved configuration or URLs', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let fetches = 0;
+  const h = harness({}, undefined, async () => {fetches++; throw new Error('Forbidden request must not fetch');});
+  const request = {type: 'GET_PREVIEW', mode: 'work', key: IntentFeed.key(IntentCore.defaults())};
+  for (const sender of [
+    {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0},
+    {url: 'https://example.com/'},
+    {url: 'chrome-extension://intent/settings.html', frameId: 2},
+    {url: 'chrome-extension://intent/popup.html'},
+    {url: 'chrome-extension://intent/settings.html', tab: {id: 1, url: 'https://www.youtube.com/'}},
+    {url: 'chrome-extension://other/settings.html'}
+  ]) assert.equal((await h.send(request, sender)).ok, false);
+  for (const override of [{targetTabId: 1}, {patch: {mode: 'music'}}, {url: 'https://example.com/'}, {cursor: 100}]) assert.equal((await h.send({...request, ...override})).ok, false);
+  for (const mode of ['off', '__proto__', 'custom-missing', ['work']]) assert.equal((await h.send({...request, mode})).ok, false);
+  assert.equal((await h.send({...request, key: 'old'})).stale, true); assert.equal(fetches, 0);
+});
+test('preview uses saved intent metadata and actual decisions without mutating modes, preferences, usage or tab state', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const settings = IntentCore.sanitize({mode: 'music', metadataLimit: 40, intentDescriptions: {work: 'Professional project planning'}, blockedTerms: 'spoilers'});
+  const days = {'2026-10-24': 12000}, pausedTabs = {'1': true}, tabModes = {'1': 'study'};
+  const searches = [], judged = [];
+  const fixture = previewPage([
+    {id: 'aaaaaaaaaaa', title: 'Make room for what matters'},
+    {id: 'bbbbbbbbbbb', title: 'Quiet notes after midnight'},
+    {id: 'ccccccccccc', title: 'A practical project', shorts: true},
+    {id: 'ddddddddddd', title: 'You won’t believe this workflow!!!'},
+    {id: 'eeeeeeeeeee', title: 'Spoilers from a project'}
+  ]);
+  const h = harness({settings, days, appearance: 'dark'}, undefined, async url => {searches.push(url); return {ok: true, url, text: async () => fixture};}, async (videos, config) => {
+    judged.push({videos: structuredClone(videos), settings: structuredClone(config)});
+    return videos.map(video => ({accepted: video.id === 'aaaaaaaaaaa', uncertain: true}));
+  }, {tabModes, pausedTabs});
+  const key = IntentFeed.key({...settings, mode: 'work'});
+  const result = await h.send({type: 'GET_PREVIEW', mode: 'work', key});
+  assert.equal(result.ok, true); assert.equal(result.key, key); assert.equal(result.semantic, true); assert.equal(result.searchLimit, 2);
+  assert.equal(result.previewItems.length, 5); assert.equal(result.items, undefined);
+  assert.equal(result.previewItems.find(item => item.video.id === 'aaaaaaaaaaa').accepted, true);
+  assert.equal(result.previewItems.find(item => item.video.id === 'bbbbbbbbbbb').reason, 'Outside intent');
+  assert.equal(result.previewItems.find(item => item.video.id === 'ccccccccccc').reason, 'shorts');
+  assert.equal(result.previewItems.find(item => item.video.id === 'ddddddddddd').reason, 'clickbait');
+  assert.equal(result.previewItems.find(item => item.video.id === 'eeeeeeeeeee').reason, 'blocked term');
+  assert.equal(judged.length, 1); assert.equal(judged[0].settings.mode, 'work'); assert.equal(judged[0].settings.metadataLimit, 0);
+  assert.equal(judged[0].settings.intentDescriptions.work, 'Professional project planning');
+  assert.ok(searches.length <= 2 && searches.every(url => new URL(url).pathname === '/results'));
+  assert.deepEqual(h.local, {settings, days, appearance: 'dark'}); assert.deepEqual(h.session, {tabModes, pausedTabs});
+  assert.equal(h.queries.length, 0); assert.equal(h.broadcasts.length, 0); assert.equal(h.badges.length, 0);
+});
+test('previews respect exhausted counted budgets while exempt intents remain previewable', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const settings = IntentCore.sanitize({dailyMinutes: 1, metadataLimit: 40}); let searches = 0;
+  const h = harness({settings, days: {'2026-10-24': 60000}}, undefined, async url => {searches++; return {ok: true, url, text: async () => previewPage([{id: 'abcdefghijk', title: 'Quiet notes after midnight'}])};});
+  const work = await h.send({type: 'GET_PREVIEW', mode: 'work', key: IntentFeed.key(settings)});
+  assert.equal(work.blocked, true); assert.equal(work.previewItems, undefined); assert.equal(searches, 0);
+  const music = await h.send({type: 'GET_PREVIEW', mode: 'music', key: IntentFeed.key({...settings, mode: 'music'})});
+  assert.equal(music.ok, true); assert.equal(music.previewItems.length, 1); assert.equal(music.blocked, undefined);
+  assert.equal(searches, 2); assert.equal(h.local.days['2026-10-24'], 60000); assert.deepEqual(h.session, {});
+});
+test('preview results are stale after an intent edit or factory reset, including an identical restored key', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  for (const mutation of [{type: 'UPDATE_SETTINGS', patch: {intentDescriptions: {work: 'A changed professional focus'}}}, {type: 'RESET_SETTINGS'}]) {
+    let release, requested, judgments = 0;
+    const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+    const h = harness({}, undefined, async url => {requested(); await gate; return {ok: true, url, text: async () => previewPage([{id: 'abcdefghijk', title: 'A useful project'}])};}, async videos => {judgments++; return videos.map(() => ({accepted: true, uncertain: false}));});
+    const pending = h.send({type: 'GET_PREVIEW', mode: 'work', key: IntentFeed.key(IntentCore.defaults())});
+    await started; await h.send(mutation); release();
+    const result = await pending; assert.equal(result.stale, true); assert.equal(result.previewItems, undefined); assert.equal(judgments, 0);
+  }
+});
+test('a normal YouTube feed cannot enable preview mode or expose rejected examples', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let judged;
+  const h = harness({}, undefined, async url => ({ok: true, url, text: async () => previewPage([{id: 'aaaaaaaaaaa', title: 'Python programming'}, {id: 'bbbbbbbbbbb', title: 'Python programming short', shorts: true}])}), async videos => {judged = videos; return videos.map(() => ({accepted: true, uncertain: false}));});
+  const result = await h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults()), preview: true}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  assert.equal(result.ok, true); assert.equal(result.previewItems, undefined); assert.equal(result.items.length, 1);
+  assert.deepEqual(Array.from(judged, video => video.id), ['aaaaaaaaaaa']);
+});
+
+test('a preview cannot bypass a counted budget that is reached while its searches run', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const now = new Date(2026, 9, 24, 12).getTime(), settings = IntentCore.sanitize({dailyMinutes: 1});
+  let release, requested, judgments = 0;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const tracker = {lastAt: now, counting: true};
+  const h = harness({settings, days: {'2026-10-24': 59000}}, now, async url => {requested(); await gate; return {ok: true, url, text: async () => previewPage([{id: 'abcdefghijk', title: 'A useful project'}])};}, async videos => {judgments++; return videos.map(() => ({accepted: true, uncertain: false}));}, {tracker});
+  const pending = h.send({type: 'GET_PREVIEW', mode: 'work', key: IntentFeed.key(settings)});
+  await started; h.advance(2000); release();
+  const result = await pending; assert.equal(result.blocked, true); assert.equal(result.previewItems, undefined); assert.equal(judgments, 0);
+  assert.equal(h.local.days['2026-10-24'], 59000, 'preview budget checking projects pending usage without persisting or charging settings-page time');
+  assert.deepEqual(h.session, {tracker});
 });

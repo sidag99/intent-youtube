@@ -86,6 +86,33 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(selectedIcons.records[0].searchWidth, selectedIcons.records[1].searchWidth, 'custom icon changes preserve search width');
     assert.equal(selectedIcons.hiddenPaused, true); assert.equal(selectedIcons.hiddenOff, true); assert.equal(selectedIcons.hiddenBuiltin, true);
     assert.equal(await toolbar.locator('.selected-symbol').getAttribute('aria-hidden'), 'true');
+    // A manual Off selection wins over unsupported-page coverage and does not inherit its explanation.
+    await page.evaluate(() => {
+      history.replaceState({}, '', '/');
+      toolbar.sync(IntentCore.sanitize({...testSettings, mode: 'off'}), true, {state: 'off-here', detail: 'Intent filtering is off on search results. The saved intent applies elsewhere.'});
+    });
+    await trigger.click();
+    await toolbar.getByRole('heading', {name: 'Intent is off', exact: true}).waitFor();
+    assert.equal(await toolbar.locator('.coverage-detail').innerText(), 'Topic filtering off · timer rules apply');
+    assert.doesNotMatch(await toolbar.locator('.coverage-detail').getAttribute('title'), /search results|saved intent applies elsewhere/i);
+    assert.match(await trigger.getAttribute('title'), /^Intent is off\./);
+    assert.equal(await trigger.getAttribute('data-filter-state'), 'off');
+    await page.evaluate(() => toolbar.sync(IntentCore.sanitize({...testSettings, mode: 'off', countModes: {...testSettings.countModes, off: false}}), true, {state: 'off-here', detail: 'Unsupported search results'}));
+    assert.equal(await toolbar.locator('.coverage-detail').innerText(), 'Topic filtering off · timer exempt');
+    assert.match(await toolbar.locator('.coverage-detail').getAttribute('title'), /exempt from the daily timer/);
+    const conciseStates = await page.evaluate(() => {
+      const variants = ['active', 'loading', 'unavailable', 'off-here', 'paused'];
+      const rows = variants.map(state => {
+        const detail = state === 'off-here' ? 'Intent filtering is off on search results. Your selected Work intent is kept for Home and video recommendations. Distraction rules and timer policies still apply.' : `Complete explanation for ${state}: the saved intent and configured timer rules are preserved for this tab.`;
+        toolbar.sync(testSettings, true, {state, detail});
+        return {state, visible: toolbar.coverageDetail.textContent, long: toolbar.coverageStatus.textContent, title: toolbar.coverageDetail.title, heading: toolbar.menuHeading.textContent, height: toolbar.coverageDetail.getBoundingClientRect().height};
+      });
+      toolbar.sync(testSettings, true, testCoverage); return rows;
+    });
+    assert.ok(conciseStates.every(row => row.visible.length <= 48 && row.height <= 24 && row.title === row.long && row.long.length > row.visible.length), 'all menu states show one compact status line while keeping full explanations accessible');
+    const unsupportedRow = conciseStates.find(row => row.state === 'off-here');
+    assert.equal(unsupportedRow.heading, 'Intent for this tab'); assert.equal(unsupportedRow.visible, 'Off here · intent saved'); assert.match(unsupportedRow.title, /search results/);
+    await page.keyboard.press('Escape');
     await trigger.click();
     await toolbar.getByRole('listbox').waitFor();
     assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
@@ -198,8 +225,9 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.match(await trigger.getAttribute('title'), /filtering is off on search results/);
     assert.equal(await trigger.getAttribute('aria-describedby'), 'intent-filter-status');
     assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
-    await trigger.click(); await toolbar.getByRole('heading', {name: 'Saved intent for this tab'}).waitFor();
-    assert.equal(await toolbar.locator('.coverage-detail').innerText(), 'Intent filtering is off on search results. Saved intent applies on Home/video recommendations. Shorts/clickbait rules and timer still apply.');
+    await trigger.click(); await toolbar.getByRole('heading', {name: 'Intent for this tab'}).waitFor();
+    assert.equal(await toolbar.locator('.coverage-detail').innerText(), 'Off here · intent saved');
+    assert.equal(await toolbar.locator('.coverage-detail').getAttribute('title'), 'Intent filtering is off on search results. Saved intent applies on Home/video recommendations. Shorts/clickbait rules and timer still apply.');
     await option('Music').click();
     await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'music');
     assert.equal(await toolbar.getAttribute('data-filter-state'), 'off-here', 'changing the saved mode on search never pretends filtering became active');

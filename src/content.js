@@ -4,7 +4,7 @@
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
   const toolbar = window.top === window ? new IntentToolbar(chrome.runtime, {
-    onSettings: value => { settings = C.sanitize(value); schedule(); },
+    onSettings: value => { applySettings(value); schedule(); },
     onPaused: value => { setTabPaused(value); schedule(); },
     onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
   }) : null;
@@ -16,6 +16,54 @@
   const SHORT_LINKS = 'a[href^="/shorts/"],a[href*="youtube.com/shorts/"]';
   const markedShortShelves = new Set();
   const markedHiddenElements = new Set();
+  const markedShortNav = new Set(), markedShortPlayers = new Set();
+  const GUIDE_ENTRIES = 'ytd-guide-entry-renderer,ytd-mini-guide-entry-renderer,ytd-guide-entry,ytd-mini-guide-entry,yt-guide-entry-view-model,yt-mini-guide-entry-view-model,yt-guide-entry-renderer,yt-mini-guide-entry-renderer,yt-guide-entry,yt-mini-guide-entry,ytm-pivot-bar-item-renderer';
+  const GUIDE_AREAS = 'ytd-guide-renderer,ytd-mini-guide-renderer,yt-guide-renderer,yt-mini-guide-renderer,#guide,#guide-content,#guide-inner-content,nav,[role="navigation"]';
+  const SHORT_PLAYERS = 'ytd-shorts,ytm-shorts,ytm-shorts-player,ytd-reel-video-renderer,ytm-reel-video-renderer,#shorts-player,#shorts-container,#shorts-inner-container';
+  let homePendingTimer;
+  const isShortsPage = () => /^\/shorts(?:\/|$)/.test(location.pathname);
+  function clearHomePending() {
+    clearTimeout(homePendingTimer); homePendingTimer = null;
+    document.documentElement?.removeAttribute('data-intent-home-pending');
+  }
+  function armHomePending(allowUnknown = false) {
+    if (window.top !== window || tabPaused || location.hostname.startsWith('music.') || (!settings && !allowUnknown) || settings?.mode === 'off') return;
+    if (!document.documentElement) return;
+    document.documentElement.setAttribute('data-intent-home-pending', '');
+    clearTimeout(homePendingTimer);
+    // A failed navigation or unsupported layout must never leave native Home hidden.
+    homePendingTimer = setTimeout(clearHomePending, 15000);
+  }
+  function applySettings(value) {
+    settings = C.sanitize(value);
+    if (settings.mode === 'off' || tabPaused) {
+      clearHomePending();
+      if (settings.mode === 'off') {homeFeed?.destroy(); watchFeed?.destroy();}
+    }
+    else if (isHome() && !homeFeed?.host?.isConnected) armHomePending();
+    document.documentElement?.toggleAttribute('data-intent-shorts', !tabPaused && settings.hideShorts);
+    filterShortsNavigation();
+    if (!settings.hideShorts) restoreShortsGate();
+  }
+  function restoreShortsGate() {
+    document.getElementById('intent-shorts-gate')?.remove();
+    for (const element of markedShortPlayers) element.removeAttribute('data-intent-shorts-player-hidden');
+    markedShortPlayers.clear();
+  }
+  function shortsDestination(value) {
+    try { const url = new URL(value, location.href); return /(^|\.)youtube\.com$/.test(url.hostname) && /^\/shorts(?:\/|$)/.test(url.pathname); }
+    catch { return false; }
+  }
+  function filterShortsNavigation() {
+    const found = new Set();
+    if (settings.hideShorts && !tabPaused) for (const link of document.querySelectorAll('a[href],[role="link"][href],[role="link"][data-href]')) {
+      const entry = link.closest(GUIDE_ENTRIES);
+      if (!(entry || link.closest(GUIDE_AREAS)) || !shortsDestination(link.getAttribute('href') || link.getAttribute('data-href'))) continue;
+      found.add(entry || link);
+    }
+    for (const element of markedShortNav) if (!found.has(element)) {element.removeAttribute('data-intent-short-nav'); markedShortNav.delete(element);}
+    for (const element of found) if (!element.hasAttribute('data-intent-short-nav')) {element.setAttribute('data-intent-short-nav', ''); markedShortNav.add(element);}
+  }
   const isHome = () => location.pathname === '/' && !location.hostname.startsWith('music.');
   const isWatch = () => location.pathname === '/watch' && !location.hostname.startsWith('music.') && /^[\w-]{11}$/.test(new URL(location.href).searchParams.get('v') || '');
   const text = (el, selector) => el.querySelector(selector)?.textContent?.trim() || '';
@@ -28,13 +76,15 @@
     if (paused === tabPaused) return;
     tabPaused = paused;
     if (paused) {
-      homeFeed?.destroy(); watchFeed?.destroy();
+      clearHomePending(); homeFeed?.destroy(); watchFeed?.destroy();
       for (const element of markedHiddenElements) element.removeAttribute('data-intent-hidden');
       markedHiddenElements.clear();
       for (const shelf of markedShortShelves) shelf.removeAttribute('data-intent-short-shelf');
       markedShortShelves.clear();
       document.documentElement?.removeAttribute('data-intent-shorts');
-      document.getElementById('intent-shorts-gate')?.remove();
+      for (const element of markedShortNav) element.removeAttribute('data-intent-short-nav');
+      markedShortNav.clear();
+      restoreShortsGate();
     }
   }
   function hasNormalVideos(shelf) {
@@ -94,20 +144,31 @@
     refreshTheme();
   }
   function shortsGate() {
+    const blocked = !tabPaused && settings.hideShorts && isShortsPage();
+    if (!blocked) { restoreShortsGate(); return; }
+    // Hide the actual Shorts surface as well as stopping its media. The guard is
+    // normal page content, so YouTube's masthead and guide remain usable.
+    const players = new Set(document.querySelectorAll(SHORT_PLAYERS + ',video,audio'));
+    for (const element of markedShortPlayers) if (!players.has(element)) {element.removeAttribute('data-intent-shorts-player-hidden'); markedShortPlayers.delete(element);}
+    for (const element of players) if (!element.hasAttribute('data-intent-shorts-player-hidden')) {element.setAttribute('data-intent-shorts-player-hidden', ''); markedShortPlayers.add(element);}
+    document.querySelectorAll('video,audio').forEach(media => {if (!media.paused) media.pause();});
     let gate = document.getElementById('intent-shorts-gate');
-    const blocked = !tabPaused && settings.hideShorts && location.pathname.startsWith('/shorts');
-    if (!blocked) { gate?.remove(); return; }
-    document.querySelectorAll('video,audio').forEach(media => media.pause());
-    if (gate) return;
-    gate = document.createElement('div'); gate.id = 'intent-shorts-gate'; gate.dataset.theme = IntentHome.theme();
-    const root = gate.attachShadow({mode: 'closed'});
-    const style = document.createElement('style');
-    style.textContent = ':host{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f0;color:#283a30;font:16px system-ui}main{max-width:420px;text-align:center;padding:40px}h1{font-size:36px;letter-spacing:-1.5px}p{line-height:1.7;color:#657064}a{display:inline-block;margin-top:22px;border-radius:10px;padding:13px 22px;background:#365e4b;color:white;text-decoration:none}' + (globalThis.IntentShortsTheme || '');
-    const main = document.createElement('main');
-    const title = document.createElement('h1'); title.textContent = 'Skip the rabbit hole.';
-    const p = document.createElement('p'); p.textContent = 'Shorts are hidden by Intent. Take a breath and choose something worth your time.';
-    const link = document.createElement('a'); link.href = 'https://www.youtube.com/'; link.textContent = 'Back to your home page →';
-    main.append(title, p, link); root.append(style, main); document.documentElement.append(gate);
+    const renderer = document.querySelector(SHORT_PLAYERS);
+    const mount = document.querySelector('ytd-page-manager,#page-manager') || renderer?.parentElement || document.querySelector('main,[role="main"]') || document.body;
+    if (!mount) return;
+    if (!gate) {
+      gate = document.createElement('section'); gate.id = 'intent-shorts-gate'; gate.dataset.theme = IntentHome.theme();
+      const root = gate.attachShadow({mode: 'open'});
+      const style = document.createElement('style');
+      // Literal surface colors remain opaque even if YouTube supplies transparent tokens.
+      style.textContent = (globalThis.IntentShortsTheme || '') + ':host{position:relative!important;inset:auto!important;z-index:auto!important;display:grid;place-items:center;box-sizing:border-box;width:100%;min-height:360px;min-height:min(560px,calc(100dvh - 80px));padding:24px 16px;background:#fff!important;color:#0f0f0f;font:16px Roboto,Arial,sans-serif;color-scheme:light}:host([data-theme=dark]){background:#0f0f0f!important;color:#f1f1f1;color-scheme:dark}main{box-sizing:border-box;width:100%;max-width:480px;padding:24px;text-align:center}h1{font-size:28px;font-weight:600;line-height:1.25;letter-spacing:0;margin:0 0 16px}p{font-size:14px;line-height:1.6;color:inherit;opacity:.8}a{display:inline-block;max-width:100%;box-sizing:border-box;margin-top:20px;padding:12px 20px;border-radius:24px;background:#0f0f0f;color:#fff;text-decoration:none;font-size:14px;font-weight:500}:host([data-theme=dark]) a{background:#f1f1f1;color:#0f0f0f}a:focus-visible{outline:3px solid var(--intent-accent,#365e4b);outline-offset:4px}@media(max-width:480px){main{padding:20px 8px}h1{font-size:24px}}';
+      const main = document.createElement('main');
+      const title = document.createElement('h1'); title.textContent = 'Shorts are hidden';
+      const p = document.createElement('p'); p.textContent = 'Hide Shorts is enabled. Return Home or choose another video.';
+      const link = document.createElement('a'); link.href = 'https://www.youtube.com/'; link.textContent = 'Back to Home';
+      main.append(title, p, link); root.append(style, main);
+    }
+    if (gate.parentElement !== mount) mount.append(gate);
   }
   function intentCoverage(home, watch) {
     if (tabPaused) return {state: 'paused', detail: 'Intent is paused on this tab. Filters and timer counting are off here. Your saved intent and other tabs are unchanged.'};
@@ -125,12 +186,14 @@
     observeTheme();
     const home = isHome(), watch = isWatch();
     if (tabPaused) {
+      clearHomePending(); restoreShortsGate();
       toolbar?.sync(settings, !location.hostname.startsWith('music.'), intentCoverage(home, watch));
       return;
     }
     for (const element of markedHiddenElements) if (!element.isConnected) {element.removeAttribute('data-intent-hidden'); markedHiddenElements.delete(element);}
     homeFeed?.sync(settings, home);
     watchFeed?.sync(settings, watch);
+    if (settings.mode === 'off' || home && homeFeed?.host?.isConnected) clearHomePending();
     toolbar?.sync(settings, !location.hostname.startsWith('music.'), intentCoverage(home, watch));
     document.documentElement.toggleAttribute('data-intent-shorts', settings.hideShorts);
     // Mode selection is handled by the filled feeds. Native shelves must not be
@@ -148,7 +211,7 @@
       setHidden(card, !result.visible);
     }
     filterShortsShelves();
-    for (const link of document.querySelectorAll('ytd-guide-entry-renderer a[href^="/shorts"],ytd-mini-guide-entry-renderer a[href^="/shorts"]')) setHidden(link.closest('ytd-guide-entry-renderer,ytd-mini-guide-entry-renderer'), settings.hideShorts);
+    filterShortsNavigation();
     shortsGate();
   }
   function schedule() { if (!pending) pending = setTimeout(scan, 120); }
@@ -160,7 +223,7 @@
       const state = await chrome.runtime.sendMessage({type: 'HEARTBEAT', playing, ...(window.top === window ? {appearance: IntentHome.theme()} : {})});
       if (state?.ok) {
         if (tabPaused !== (state.tabPaused === true)) {setTabPaused(state.tabPaused); schedule();}
-        if (JSON.stringify(settings) !== JSON.stringify(state.settings)) { settings = state.settings; schedule(); }
+        if (JSON.stringify(settings) !== JSON.stringify(state.settings)) { applySettings(state.settings); schedule(); }
         if (state.blocked) {
           document.querySelectorAll('video,audio').forEach(m => m.pause());
           location.replace(chrome.runtime.getURL('blocked.html'));
@@ -173,11 +236,40 @@
     if (message.type === 'SETTINGS') {
       if (message.reset) {homeFeed?.destroy(); watchFeed?.destroy();}
       setTabPaused(message.tabPaused);
-      settings = C.sanitize(message.settings); schedule();
+      applySettings(message.settings);
+      if (tabPaused || !settings.hideShorts) {filterShortsNavigation(); restoreShortsGate();}
+      schedule();
     }
   });
-  new MutationObserver(schedule).observe(document, {childList: true, subtree: true, characterData: true});
-  document.addEventListener('yt-navigate-finish', schedule);
+  new MutationObserver(() => {
+    if (settings && !tabPaused) {filterShortsNavigation(); if (isShortsPage()) shortsGate();}
+    schedule();
+  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href']});
+  function navigationDestination(event) {
+    const detail = event.detail || {};
+    const value = detail.url || detail.endpoint?.commandMetadata?.webCommandMetadata?.url || detail.navigationData?.endpoint?.commandMetadata?.webCommandMetadata?.url;
+    if (!value) return null;
+    try {return new URL(value, location.href);} catch {return null;}
+  }
+  document.addEventListener('click', event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.defaultPrevented) return;
+    const link = event.composedPath().find(node => node instanceof HTMLAnchorElement);
+    if (!link || link.target && link.target !== '_self' || link.hasAttribute('download')) return;
+    try { const url = new URL(link.href); if (url.origin === location.origin && url.pathname === '/') armHomePending(); } catch {}
+  }, true);
+  document.addEventListener('yt-navigate-start', event => {
+    const url = navigationDestination(event);
+    if (!url || url.origin === location.origin && url.pathname === '/') armHomePending();
+    else clearHomePending();
+  });
+  document.addEventListener('yt-navigate-finish', () => {
+    if (pending) {clearTimeout(pending); pending = null;}
+    scan();
+    // Navigation has settled: unsupported layouts keep their native content.
+    if (settings && (!isHome() || !homeFeed?.host?.isConnected)) clearHomePending();
+  });
+  window.addEventListener('popstate', () => {if (isHome()) armHomePending(); else clearHomePending(); schedule();});
+  if (isHome()) armHomePending(true);
   document.addEventListener('intent-feed-state-change', schedule);
   window.addEventListener('resize', schedule, {passive: true});
   // Theme changes do not require a reload or another network/model request.

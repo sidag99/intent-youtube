@@ -29,7 +29,18 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
       window.setTestSettings = (patch, reset = false) => {testSettings = IntentCore.sanitize({...testSettings, ...patch}); handlers.forEach(handler => handler({type: 'SETTINGS', settings: testSettings, tabPaused: testPaused, reset}));};
       window.setTestPaused = value => {testPaused = value; setTestSettings({});};
     });
+    await page.evaluate(() => document.body.insertAdjacentHTML('afterbegin', `<nav id="guide-test"><a id="logo" href="/">Home</a><ytd-guide-entry-renderer id="expanded-shorts"><a href="/shorts">Shorts</a></ytd-guide-entry-renderer><ytd-mini-guide-entry id="mini-shorts"><a href="/shorts/">Shorts</a></ytd-mini-guide-entry><yt-guide-entry-view-model id="modern-shorts"><a href="https://www.youtube.com/shorts/abcdefghijk">Shorts</a></yt-guide-entry-view-model><div role="link" href="/shorts" id="role-shorts">Shorts</div><ytd-guide-entry id="async-nav"><a href="/feed/history">History</a></ytd-guide-entry><a id="not-shorts" href="/shorts-history">History</a><a id="other-site" href="https://youtube.com.evil.example/shorts">External</a><a id="normal-nav" href="/feed/subscriptions">Subscriptions</a></nav>`));
     await page.addStyleTag({path: root + '/src/content.css'}); await page.addScriptTag({path: root + '/src/content.js'});
+    const hiddenNavigation = ['expanded-shorts', 'mini-shorts', 'modern-shorts', 'role-shorts'];
+    await page.waitForFunction(ids => ids.every(id => document.getElementById(id)?.hasAttribute('data-intent-short-nav')), hiddenNavigation);
+    for (const id of hiddenNavigation) assert.equal(await page.locator('#' + id).isVisible(), false, id);
+    for (const id of ['logo', 'async-nav', 'not-shorts', 'other-site', 'normal-nav']) assert.equal(await page.locator('#' + id).isVisible(), true, id);
+    await page.evaluate(() => document.querySelector('#async-nav a').setAttribute('href', 'https://youtube.com/shorts/abcdefghijk'));
+    await page.waitForFunction(() => document.querySelector('#async-nav').hasAttribute('data-intent-short-nav'));
+    assert.equal(await page.locator('#async-nav').isVisible(), false, 'async guide destinations are filtered without replacing their renderer');
+    await page.evaluate(() => document.querySelector('#async-nav a').setAttribute('href', '/feed/history'));
+    await page.waitForFunction(() => !document.querySelector('#async-nav').hasAttribute('data-intent-short-nav'));
+    assert.equal(await page.locator('#async-nav').isVisible(), true, 'a reused guide entry is restored when its endpoint changes');
     const hiddenShelves = ['modern', 'header-only', 'rich-wrapper', 'legacy'];
     await page.waitForFunction(ids => ids.every(id => document.getElementById(id)?.hasAttribute('data-intent-short-shelf')), hiddenShelves);
     for (const id of hiddenShelves) assert.equal(await page.locator('#' + id).isVisible(), false, id);
@@ -42,6 +53,7 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
 
     await page.evaluate(() => setTestSettings({hideShorts: false}));
     await page.waitForFunction(() => !document.querySelector('[data-intent-short-shelf]'));
+    for (const id of hiddenNavigation) assert.equal(await page.locator('#' + id).isVisible(), true, id);
     for (const id of [...hiddenShelves, 'clip-one', 'clip-nested', 'mixed-short', 'rich-more', 'rich-divider']) assert.equal(await page.locator('#' + id).isVisible(), true, id);
     assert.equal(await page.locator('#modern .show-more').isVisible(), true);
     assert.equal(await page.locator('#native-hidden').getAttribute('hidden'), '', 'restoration preserves YouTube’s original visibility attributes');
@@ -92,7 +104,8 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
     await page.locator('#modern[data-intent-short-shelf]').waitFor({state: 'attached'});
     await page.evaluate(() => setTestPaused(true));
     await page.waitForFunction(() => coverage.at(-1)?.state === 'paused');
-    assert.equal(await page.locator('[data-intent-hidden],[data-intent-short-shelf]').count(), 0);
+    assert.equal(await page.locator('[data-intent-hidden],[data-intent-short-shelf],[data-intent-short-nav]').count(), 0);
+    for (const id of hiddenNavigation) assert.equal(await page.locator('#' + id).isVisible(), true, id);
     assert.equal(await page.locator('#modern').isVisible(), true);
     assert.equal(await page.locator('#native-hidden').getAttribute('hidden'), '');
     assert.equal(await page.evaluate(() => controllers[0].host), null, 'pause removes the filled feed');
@@ -106,8 +119,46 @@ const fixture = `<!doctype html><html><meta charset="utf-8"><style>body{margin:0
     await page.evaluate(() => {history.pushState({}, '', '/results?search_query=programming'); setTestPaused(false);});
     await page.locator('#paused-short[data-intent-short-shelf]').waitFor({state: 'attached'});
     assert.equal(await page.evaluate(() => coverage.at(-1).settings.mode), 'work', 'resume keeps the saved intent');
+    // Capture a Home navigation while YouTube is still showing the watched URL.
+    // Incoming native cards must be hidden synchronously, including cards inserted
+    // after the normal coalesced scan has already run on the old route.
+    await page.evaluate(() => {
+      history.pushState({}, '', '/watch?v=abcdefghijk');
+      document.querySelector('#logo').addEventListener('click', event => event.preventDefault());
+      document.querySelector('#logo').dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, button: 0}));
+      document.body.insertAdjacentHTML('beforeend', '<ytd-browse page-subtype="home"><div id="primary"><div id="incoming-home">Native recommendation</div></div></ytd-browse>');
+    });
+    assert.equal(await page.locator('#incoming-home').isVisible(), false, 'captured Home click guards cards before the URL or page manager changes');
+    await page.waitForTimeout(180);
+    assert.equal(await page.locator('#incoming-home').isVisible(), false, 'an old-watch scan cannot drop a pending Home guard');
+    await page.evaluate(() => document.querySelector('#primary').insertAdjacentHTML('beforeend', '<div id="late-home">Late recommendation</div>'));
+    assert.equal(await page.locator('#late-home').isVisible(), false, 'CSS also covers native cards inserted after the scan');
+    await page.evaluate(() => setTestSettings({mode: 'off'}));
+    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'manual Off restores the pending native Home immediately');
+    await page.evaluate(() => {
+      setTestSettings({mode: 'work'});
+      document.dispatchEvent(new CustomEvent('yt-navigate-start', {detail: {endpoint: {commandMetadata: {webCommandMetadata: {url: '/'}}}}}));
+      setTestPaused(true);
+    });
+    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'pausing immediately clears a pending navigation guard');
+    await page.evaluate(() => {
+      setTestPaused(false);
+      document.dispatchEvent(new CustomEvent('yt-navigate-start', {detail: {url: '/'}}));
+      history.pushState({}, '', '/');
+      document.dispatchEvent(new Event('yt-navigate-finish'));
+    });
+    assert.equal(await page.locator('html').getAttribute('data-intent-home-pending'), null, 'unsupported Home layout fails open when navigation settles');
+    await page.clock.install();
+    await page.evaluate(() => {
+      history.pushState({}, '', '/watch?v=abcdefghijk');
+      document.dispatchEvent(new CustomEvent('yt-navigate-start', {detail: {url: '/'}}));
+    });
+    assert.notEqual(await page.locator('html').getAttribute('data-intent-home-pending'), null);
+    await page.clock.fastForward(15001);
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-intent-home-pending'));
+    assert.equal(await page.locator('#incoming-home').isVisible(), true, 'a cancelled transition has a bounded fail-open timeout');
     assert.deepEqual(errors, []);
-    console.log('PASS complete modern/legacy Shorts shelves, branded empty modules, Show more/dividers, safe adjacent/mixed results, toggle restoration, asynchronous/reused DOM, explicit reset and toolbar coverage states');
+    console.log('PASS complete modern/legacy Shorts shelves, branded empty modules, Show more/dividers, safe adjacent/mixed results, toggle restoration, asynchronous/reused DOM, explicit reset, toolbar coverage states, modern/legacy sidebar links and bounded no-flash Home transitions');
     await context.close();
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

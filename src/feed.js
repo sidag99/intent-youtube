@@ -171,7 +171,8 @@
         if (typeof options.isActive === 'function' && !options.isActive()) throw new Error('Intent is paused or this feed is no longer active.');
       };
       ensureActive();
-      const s = C.sanitize(settings), pool = queries(s, options.round);
+      const preview = options.preview === true;
+      const s = C.sanitize(preview ? {...settings, metadataLimit: 0} : settings), pool = queries(s, options.round);
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const selected = pool.slice(cursor, cursor + 2);
       const batches = await Promise.allSettled(selected.map(q => search(q, options.fresh === true)));
@@ -182,12 +183,25 @@
       const lists = batches.filter(b => b.status === 'fulfilled').map(b => b.value);
       for (let i = 0; i < Math.max(0, ...lists.map(l => l.length)); i++) for (const list of lists) {
         const video = list[i];
-        if (video && !seen.has(video.id) && C.classify(video, {...s, mode: 'off'}).visible) { seen.add(video.id); items.push(video); }
+        if (video && !seen.has(video.id) && (preview || C.classify(video, {...s, mode: 'off'}).visible)) { seen.add(video.id); items.push(video); }
       }
       const errors = batches.filter(b => b.status === 'rejected');
       if (selected.length && errors.length === selected.length) throw new Error(errors[0].reason?.message || 'YouTube search could not be reached.');
-      const candidates = items.slice(0, 100);
+      const candidates = items.slice(0, preview ? 24 : 100);
       let decisions = judge ? await judge(candidates, s) : candidates.map(v => ({accepted: C.classify(v, s).visible, uncertain: false}));
+      ensureActive();
+      if (preview) {
+        const inspected = candidates.map((video, i) => {
+          const policy = C.classify(video, {...s, mode: 'off'});
+          const accepted = policy.visible && decisions[i]?.accepted === true;
+          const channel = C.terms(s.channels[s.mode]).includes(C.normalize(video.channel));
+          return {video, accepted, reason: !policy.visible ? policy.reason : accepted ? channel ? 'Included channel' : 'Matches intent' : 'Outside intent'};
+        });
+        const previewItems = [...inspected.filter(item => item.accepted).slice(0, 8), ...inspected.filter(item => !item.accepted).slice(0, 4)];
+        const seenIds = new Set(previewItems.map(item => item.video.id));
+        for (const item of inspected) if (previewItems.length < 12 && !seenIds.has(item.video.id)) {previewItems.push(item); seenIds.add(item.video.id);}
+        return {key: key(s), previewItems, semantic: Boolean(judge), nextCursor: cursor + selected.length, hasMore: cursor + selected.length < pool.length, warning: errors.length ? 'Some searches were unavailable. You can retry the preview.' : ''};
+      }
       const uncertain = decisions.map((d, i) => d.uncertain ? i : -1).filter(i => i >= 0);
       const metadataStats = {limit: s.metadataLimit, uncertain: uncertain.length, checked: 0, requests: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: uncertain.length};
       const deadline = now() + 45000;

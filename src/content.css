@@ -31,3 +31,13 @@ html[data-intent-feed] ytd-browse[page-subtype="home"] #chips-wrapper:has(ytd-fe
   margin: 0 !important;
   padding: 0 !important;
 }
+
+/* Cover incoming native Home cards before YouTube's SPA transition paints them.
+   This guard is bounded in content.js and never affects the player or masthead. */
+html[data-intent-home-pending] ytd-browse[page-subtype="home"] #primary > :not(#intent-home-feed),
+html[data-intent-home-pending] ytd-browse[page-subtype="home"] ytd-feed-filter-chip-bar-renderer {
+  display: none !important;
+}
+html[data-intent-shorts] [data-intent-short-nav],
+[data-intent-shorts-player-hidden] { display: none !important; }
+#intent-shorts-gate { position: relative !important; inset: auto !important; z-index: auto !important; min-width: 0; }

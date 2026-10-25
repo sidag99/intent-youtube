@@ -253,3 +253,39 @@ test('pausing during fuller checks stops further groups and model calls without 
   assert.equal(resumed.metadataStats.cacheHits, 4, 'other active feeds can reuse completed shared checks');
   assert.equal(calls, 4);
 });
+
+test('real-video previews include rejected distractions, classify at most 24 candidates and never fetch fuller metadata', async () => {
+  const calls = [], judged = [];
+  const entries = Array.from({length: 30}, (_, n) => renderer('p' + String(n).padStart(10, '0'), n === 0 ? 'Make room for what matters' : n === 11 ? 'You won’t believe this workflow!!!' : n === 12 ? 'Spoilers from the studio' : n === 13 ? 'Football on Sunday' : `A quiet project ${n}`, n === 10 ? {navigationEndpoint: {commandMetadata: {webCommandMetadata: {url: '/shorts/p0000000010'}}}} : {}));
+  const settings = {...C.defaults(), metadataLimit: 40, blockedTerms: 'spoilers'};
+  const service = F.createService({fetcher: async (url, options) => {calls.push({url, options}); return {ok: true, url, text: async () => page(entries)};}, judge: async (videos, config) => {
+    assert.equal(config.metadataLimit, 0); judged.push(...videos);
+    return videos.map(video => ({accepted: Number(video.id.slice(1)) < 10, uncertain: true}));
+  }});
+  const result = await service.get(settings, {preview: true});
+  assert.equal(result.semantic, true); assert.equal(result.items, undefined); assert.equal(judged.length, 24);
+  assert.equal(result.previewItems.length, 12); assert.equal(result.previewItems.filter(item => item.accepted).length, 8);
+  assert.equal(result.previewItems.find(item => item.video.id === 'p0000000010').reason, 'shorts');
+  assert.equal(result.previewItems.find(item => item.video.id === 'p0000000011').reason, 'clickbait');
+  assert.equal(result.previewItems.find(item => item.video.id === 'p0000000012').reason, 'blocked term');
+  assert.equal(result.previewItems.find(item => item.video.id === 'p0000000013').reason, 'Outside intent');
+  assert.equal(result.previewItems[0].video.title, 'Make room for what matters'); assert.equal(result.previewItems[0].reason, 'Matches intent');
+  assert.equal(C.classify(result.previewItems[0].video, settings).visible, false, 'semantic acceptance does not depend on literal keywords');
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(call => new URL(call.url).origin === 'https://www.youtube.com' && new URL(call.url).pathname === '/results' && call.options.credentials === 'omit'));
+});
+test('preview selection fills available slots honestly when all candidates share one outcome and labels channel exceptions', async () => {
+  const videos = Array.from({length: 16}, (_, n) => renderer('q' + String(n).padStart(10, '0'), 'An ordinary afternoon ' + n));
+  for (const accepted of [true, false]) {
+    const service = F.createService({fetcher: async url => ({ok: true, url, text: async () => page(videos)}), judge: async entries => entries.map(() => ({accepted, uncertain: false}))});
+    const settings = C.sanitize({channels: {work: 'Studio North'}});
+    const preview = await service.get(settings, {preview: true});
+    assert.equal(preview.previewItems.length, 12); assert.equal(new Set(preview.previewItems.map(item => item.video.id)).size, 12);
+    assert.ok(preview.previewItems.every(item => item.accepted === accepted && item.reason === (accepted ? 'Included channel' : 'Outside intent')));
+  }
+});
+test('normal feeds keep distraction filtering and do not include preview-only rejected cards', async () => {
+  const service = F.createService({fetcher: async url => ({ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python programming'), shortRenderer('bbbbbbbbbbb', 'Python programming short'), renderer('ccccccccccc', 'You won’t believe this Python trick!!!')])}), judge: async videos => videos.map(() => ({accepted: true, uncertain: false}))});
+  const normal = await service.get(C.defaults());
+  assert.deepEqual(normal.items.map(video => video.id), ['abcdefghijk']); assert.equal(normal.previewItems, undefined);
+});

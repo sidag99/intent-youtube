@@ -10,10 +10,11 @@
 - **Independent tab memory:** a tab keeps its selected intent across reloads. Choose whether new tabs follow the last-used intent or always start in a particular intent. Changing one tab leaves other tabs alone.
 - **Pause individual tabs:** choose **Pause on this tab** in the toolbar menu or popup. YouTube's native content returns, all distraction filtering stops, and that tab adds no time or budget block. Other tabs remain active. Resume restores the tab's saved intent.
 - **Refresh and find more:** switching modes or editing topics rebuilds the feed. Refresh rotates its searches; Find more adds another batch. Duplicate videos are removed. The original YouTube recommendations and layout return when modes are off. Switching modes preserves the current video player.
-- **YouTube-style light and dark UI:** feeds follow YouTube's theme, including live theme switches. Popup, settings and break pages use the last theme detected on an active YouTube tab, with the system theme as the initial fallback.
+- **YouTube-style light and dark UI:** feeds follow YouTube's theme, including live theme switches. Extension accents use the logo's forest green in light mode and a lighter sage in dark mode. Popup, settings and break pages use the last theme detected on an active YouTube tab, with the system theme as the initial fallback.
 - **Bundled semantic AI:** a small, quantized MiniLM embedding model compares meaning, including titles without literal mode keywords. The model and CPU/WASM runtime ship inside the extension. No companion app, account, API key, model download or GPU setup is required.
 - **Descriptions and hashtags:** search snippets, channel names and hashtags inform classification. Choose 0–40 fuller checks per search batch (default 4). Each uncached check makes an extra public video-page request to read the fuller description, hashtags and tags. Higher limits may improve matching but use more network traffic and take longer. The feed reports extra video-page requests and cached checks.
 - **Fewer distractions:** hide Shorts and obvious title-based clickbait; turning Hide Shorts off allows matching Shorts through topic classification, using a horizontal shelf after the first video row, left/right scroll arrows, portrait thumbnails and Shorts links; customize included channels, extra topics and blocked phrases.
+- **Shorts protection without blocking navigation:** Hide Shorts also removes its sidebar entry. Direct Shorts links hide and pause the player, with a readable, opaque message inside the content area; YouTube's logo, header and remaining navigation stay usable.
 - **Daily budget:** set 1–1,440 minutes shared by the intents you choose to count. Music is excluded by default. Exempt intents add no time and stay accessible after the limit; counted intents are blocked until local midnight.
 
 ## Install
@@ -25,13 +26,15 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7 adds editable role presets, visible factory defaults, an optional intent library, custom icons and ordering, a smaller pause control, stable toolbar sizing and clearer active/off/paused states. No new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7.1 groups creation with the intent library, shares creation/edit controls, adds real-video model previews and in-selector drag ordering, simplifies Settings navigation, matches accents to the green logo, and restores Chrome indicator states automatically after reload. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
 The extension preserves YouTube's URLs and navigation, and replaces home and watch-page recommendations while a mode is active. On watch pages it replaces only the related-video area beside or below the player, excludes the video being watched, and refreshes on video navigation without restarting playback. Live chat and playlists stay in place. Autoplay and recommendations inside the player's end screen remain controlled by YouTube. It searches for the mode's subjects and your custom topics/channels, reads public search-page data without executing page scripts, applies distraction rules, and analyses candidate metadata with the bundled semantic model. It does not control or retrain YouTube's personalized recommendation algorithm.
 
 Two topic searches are fetched per batch. The initial feed can fetch one additional batch when fewer than twelve videos qualify. Find more explicitly requests further topics, with at most 120 displayed videos per feed. Refresh rotates the topic order and refreshes the first searches. No unrelated filler or empty card placeholders are inserted. Search failures and exhausted matches show an explanation and retry/search options; a complete feed cannot be guaranteed for every topic.
+
+When navigating back to Home, native recommendations are hidden before the SPA transition paints them, until the replacement feed is mounted. The guard affects only Home content, clears immediately for Off/Pause and settled unsupported navigation, and has a 15-second fallback for a failed or cancelled transition. The menu shows a short status line; longer explanations are available in tooltips. Manually choosing Off displays **Intent is off**, distinct from **Off here** on unsupported pages.
 
 Fuller metadata is checked in groups of at most four, until twelve confident matches are available, the configured cap is reached, or a 45-second enrichment deadline expires. Unchecked/failed candidates retain their initial metadata-based decision. Cached descriptions need no new video-page request; concurrent feeds share in-flight metadata requests. The cap applies to each search batch, so the initial two-batch feed may check up to twice the configured amount. Search-page and thumbnail requests are additional to the displayed fuller-check request count. Set the cap to zero for search metadata only.
 
@@ -43,13 +46,13 @@ The model runs in a dedicated worker hosted by an offscreen extension document. 
 
 Use the pencil button next to an intent, then **Intent description**, to define what each built-in intent means to you. Leave it blank to restore the built-in scope. A saved description drives the local semantic profile and replaces broad default search subjects; extra topics still expand it. Custom intents, including installed templates, require a name and description, can be edited or deleted, and have their own channel rules and timer switch. Deleted intents fall back safely to an available intent.
 
-Add extra topics, separated by commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
+Use the description as the main place for your purpose and subjects. **Advanced options → Additional discovery topics** is optional: these subjects add search queries and semantic examples while keeping the description intact. They expand the scope; leave the field empty if the description already covers what you want. Existing extra topics are preserved and automatically shown when present. Separate them with commas or newlines. Add full displayed channel names to include them in a particular mode; channel entries are exact matches ignoring case, rather than `@handles`. Channel exceptions still obey Shorts, clickbait and blocked-phrase rules.
 
 The semantic model is English-focused and has only a small regression evaluation so far. It does not watch videos or inspect thumbnails, and cannot recover a topic from missing or misleading metadata. Work and Study can overlap. Similarity scores are not calibrated probabilities. Incorrect inclusions and exclusions remain possible; this is not a guaranteed judgment of usefulness or factual quality.
 
 Descriptions and video tags are read when publicly available; consent screens, age restrictions, unavailable videos and changed page structures may prevent access. Hashtags are extracted from available title/description text and split where practical, such as `#MachineLearning` into `Machine Learning`. No transcript or full audiovisual analysis is included.
 
-Clickbait filtering remains a separate rule-based heuristic for common phrases, repeated punctuation and lengthy all-caps titles. YouTube changes its HTML and A/B tests layouts, so search parsers and selectors will need maintenance. The settings page's illustrative cards demonstrate keyword and distraction controls; they are not a semantic-model benchmark or the live feed.
+Clickbait filtering remains a separate rule-based heuristic for common phrases, repeated punctuation and lengthy all-caps titles. YouTube changes its HTML and A/B tests layouts, so search parsers and selectors will need maintenance. The settings page starts built-in intents with illustrative keyword/distraction examples. For custom intents, use **Preview my intent** to retrieve real YouTube candidates and evaluate their meaning with the bundled model. The embedding model does not generate video titles or invent examples.
 
 Mode filtering affects home and watch-page recommendations. Searches and intentional direct long-form video visits remain available, subject to distraction filters and the daily budget. YouTube Music participates in the same per-tab timer policy, but its music-specific home is not replaced by this feed. Exemption depends on the selected intent, rather than detecting whether a particular video contains music.
 
@@ -57,9 +60,17 @@ Mode filtering affects home and watch-page recommendations. Searches and intenti
 
 Role presets are starting points for Work and Study, rather than separate accounts or saved browsing profiles. Preview the two descriptions before applying a preset. Applying preserves intent names, extra topics, channel rules, Music/other intents, timer settings and tab selections. Extra topics and channel inclusions therefore remain capable of expanding the resulting scope. Editing a saved role preset does not change already-applied descriptions; apply it again when wanted. Editing an intent does not update the saved preset. Deleting a role preset leaves current intents in place. Up to 20 role presets can be saved; a blank preset description restores that intent’s standard built-in scope. Factory reset restores the six original presets.
 
-Intent templates add focused modes to your installed list. The library remains collapsed until opened and can be searched; no extra modes are installed automatically. Choose an icon in a custom intent’s pencil editor, and use **Arrange intents** to move installed modes up or down. The order persists across reloads. Delete installed templates through their intent editor; their factory template remains available to add again.
+**Create your own intent** sits beside the library and opens the same editor used for editing: name, icon, description, channel inclusions, daily-timer rule and optional Advanced discovery topics/shared blocked phrases. These preferences save together; Cancel discards the new draft. The popup provides one Settings link.
+
+Intent templates add focused modes to your installed list. The library remains collapsed until opened and can be searched; no extra modes are installed automatically. Choose an icon in a custom intent’s pencil editor, and reorder directly in the Settings intent selector using drag handles, move buttons, or arrow keys/Home/End on a focused handle. The order persists across reloads. Delete installed templates through their intent editor; their factory template remains available to add again.
 
 Optional templates are a useful way to limit clutter, but their topics can overlap and they are only starting scopes. News selects news-related metadata; it does not verify reporting accuracy or source quality. Customize any description to narrow the scope you want.
+
+## Real-video filter preview
+
+**Preview my intent** is an explicit action on the full settings page. It can make up to two public YouTube search-page requests; cached searches can be reused. It locally classifies up to 24 candidates and displays up to twelve matching/filtered examples with reasons. **Show filtered examples** reveals rejected candidates. Preview uses search metadata and makes no extra video-description requests, even if the live feed's fuller-check limit is higher. Thumbnails load from YouTube. Predictions are examples, not a usefulness or accuracy guarantee.
+
+Previews use saved intent definitions, preserve preferences/tab choices/daily usage, and respect the selected intent's timer exemption and exhausted budget. Old responses are discarded after settings changes or reset. Only the trusted settings page can request a preview; other sites and page scripts cannot trigger this API.
 
 ## Tab memory
 
@@ -67,7 +78,7 @@ The toolbar and popup change the current YouTube tab. Search results and other u
 
 Per-tab selections are kept in session storage across reloads and background-worker restarts. A full browser restart uses the saved new-tab policy; tab-specific choices are not promised across browser restarts. Preferences, custom definitions and the last-used intent persist in local storage.
 
-**Pause on this tab** is separate from the **Off** intent. Off removes topic filtering while retaining distraction rules and the mode's timer policy. Pause restores native content, stops all filters and new analysis requests, and excludes that tab from the daily timer and limit. Its toolbar explicitly shows **Paused** with a Resume control; the popup uses a compact action beside its heading. The browser action shows PAUSE while paused, OFF when only topic filtering is off, a mode initial while active, and END when a counted intent is blocked. Outside YouTube its icon is gray and its title says Off on this site. The pause survives reloads and worker restarts, stays local to that tab and clears when it closes or leaves YouTube. New tabs start active under your chosen new-tab intent policy. Requests already sent may finish for the shared cache; pausing prevents further model passes or fuller-check groups for that feed.
+**Pause on this tab** is separate from the **Off** intent. Off removes topic filtering while retaining distraction rules and the mode's timer policy. Pause restores native content, stops all filters and new analysis requests, and excludes that tab from the daily timer and limit. Its toolbar explicitly shows **Paused** with a Resume control; the popup uses a compact labelled action beside its heading. The Chrome extension-menu indicator uses a pause-bars icon with no text badge while paused, OFF when only topic filtering is off, a mode initial while active, and END when a counted intent is blocked. Indicator images, badges and titles repaint automatically during reloads, including temporary tab-query gaps. Outside YouTube its icon is gray and its title says Off on this site. The pause survives reloads and worker restarts, stays local to that tab and clears when it closes or leaves YouTube. New tabs start active under your chosen new-tab intent policy. Requests already sent may finish for the shared cache; pausing prevents further model passes or fuller-check groups for that feed.
 
 ## Reset settings
 
@@ -143,6 +154,7 @@ src/ai-host.js / ai.html   Offscreen worker host
 runtime/                  Built inference worker and required WASM
 models/                   Bundled quantized MiniLM model and tokenizer
 src/content.js            Native distraction filtering and playback reports
+src/preview.js            Opt-in real-video model previews and illustrative controls
 src/role-presets.js        Editable Work/Study role-preset library
 src/intent-library.js      Optional mode templates and intent ordering
 src/ui.js                  Popup/settings controls and transparent default editors

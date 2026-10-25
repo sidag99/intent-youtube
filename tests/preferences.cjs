@@ -15,6 +15,14 @@ async function openEditor(page, mode) {
   await page.locator(`[data-edit="${mode}"]`).click();
   await page.locator('#intent-editor[open]').waitFor();
 }
+async function openCreate(page) {
+  await page.locator('#new-intent').click();
+  await page.locator('#intent-editor[open]').waitFor();
+}
+async function advanced(page) {
+  const section = page.locator('#intent-editor .intent-advanced');
+  if (!await section.evaluate(element => element.open)) await section.locator('summary').click();
+}
 async function closeEditor(page) {
   await page.locator('#close-editor').click();
   await page.locator('#intent-editor').waitFor({state: 'detached'});
@@ -62,7 +70,11 @@ async function toggleCount(page, name, enabled) {
     assert.equal(await page.locator('.rules-panel').count(), 0, 'intent fields stay in an editor rather than a permanent page panel');
     assert.equal(await page.locator('#tab-pause').count(), 0, 'full settings never expose a tab-specific pause control');
     const demoPopup = await context.newPage(); await demoPopup.goto(file('popup.html')); await demoPopup.getByRole('heading', {name: 'Your daily budget'}).waitFor();
+    assert.equal(await demoPopup.locator('a[href^="settings.html"]').count(), 1, 'popup has one Settings link');
     assert.equal(await demoPopup.locator('#tab-pause').count(), 0, 'a demo popup cannot pause a tab'); await demoPopup.close();
+    assert.equal(await page.locator('#intent-library #new-intent').count(), 1, 'creation and library share one panel');
+    const roleSize = await page.locator('#role-preset-select').evaluate(element => ({font: parseFloat(getComputedStyle(element).fontSize), height: element.getBoundingClientRect().height}));
+    assert.ok(roleSize.font >= 16 && roleSize.height >= 48, 'role selector is readable');
     const initialMode = (await stored(page)).mode;
     await openEditor(page, 'study');
     await builtinReference(page, 'study'); await scopeStatus(page, 'Using built-in scope');
@@ -89,13 +101,19 @@ async function toggleCount(page, name, enabled) {
     await metadataLimit.fill('0'); await metadataLimit.press('Tab'); await idle(page);
     assert.equal((await stored(page)).metadataLimit, 0, 'zero disables fuller requests');
     await page.reload(); await metadataLimit.waitFor(); assert.equal(await metadataLimit.inputValue(), '0');
-    await page.getByLabel('Custom intent name', {exact: true}).fill('Unfinished intent draft');
-    await page.getByLabel('What should this intent show?', {exact: true}).fill('Keep this unsaved description while changing network preferences.');
+    await openCreate(page);
+    assert.equal(await page.locator('#intent-editor .intent-advanced').evaluate(element => element.open), false, 'extra discovery fields are optional Advanced options');
+    await page.locator('#intent-name').fill('Unfinished intent draft');
+    await page.locator('#intent-description').fill('Keep this description only if I save the new intent.');
+    await page.locator('#intent-icon').selectOption('plane');
+    await page.locator('#cancel-editor').click();
+    assert.deepEqual((await stored(page)).customIntents, {}, 'Cancel never creates an intent');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'new-intent');
+    await openCreate(page); assert.equal(await page.locator('#intent-name').inputValue(), '', 'cancelled create draft is discarded');
+    await page.locator('#close-editor').click();
     await metadataLimit.fill('12'); await metadataLimit.press('Tab'); await idle(page);
     assert.equal((await stored(page)).metadataLimit, 12);
-    assert.equal(await page.getByLabel('Custom intent name', {exact: true}).inputValue(), 'Unfinished intent draft');
-    assert.equal(await page.getByLabel('What should this intent show?', {exact: true}).inputValue(), 'Keep this unsaved description while changing network preferences.');
-    assert.deepEqual((await stored(page)).customIntents, {}, 'saving a network limit does not silently create an unsaved intent');
+    assert.deepEqual((await stored(page)).customIntents, {}, 'saving other preferences never creates an unsaved intent');
     for (const invalid of ['-1', '41', '12.5', '']) {
       await metadataLimit.fill(invalid); await metadataLimit.dispatchEvent('change'); await idle(page);
       assert.equal(await metadataLimit.evaluate(input => input.checkValidity()), false);
@@ -177,7 +195,7 @@ async function toggleCount(page, name, enabled) {
     await openEditor(page, 'custom-ai'); await page.locator('#intent-icon').selectOption('plane');
     await page.getByRole('button', {name: 'Save preferences', exact: true}).click(); await saved(page); await closeEditor(page);
     assert.equal((await stored(page)).customIntents['custom-ai'].icon, 'plane');
-    await page.locator('#intent-order > summary').click();
+    assert.equal(await page.locator('#intent-order').count(), 0, 'ordering lives in the selector rather than a separate dropdown');
     while ((await stored(page)).intentOrder[0] !== 'custom-ai') {
       await page.locator('[data-move-intent="custom-ai"][data-direction="-1"]').click(); await idle(page);
     }
@@ -205,17 +223,26 @@ async function toggleCount(page, name, enabled) {
     assert.equal(await page.getByRole('switch', {name: 'Count Music time', exact: true}).getAttribute('aria-checked'), 'true');
     assert.equal(await page.getByLabel('Intent for new YouTube tabs', {exact: true}).inputValue(), 'music');
 
-    await page.getByLabel('Custom intent name', {exact: true}).fill('Bicycle & repair');
-    await page.getByLabel('What should this intent show?', {exact: true}).fill('Bicycle maintenance, wheel truing and safe brake repairs');
+    await openCreate(page);
+    await page.locator('#intent-name').fill('Bicycle & repair');
+    await page.locator('#intent-description').fill('Bicycle maintenance, wheel truing and safe brake repairs');
+    await page.locator('#intent-icon').selectOption('tools');
+    await page.locator('#channels').fill('Initial Workshop');
+    await page.locator('#intent-count-time').uncheck();
+    await advanced(page); await page.locator('#topics').fill('initial repairs');
     await page.getByRole('button', {name: 'Create intent', exact: true}).click(); await idle(page);
     const customId = (await stored(page)).mode; assert.match(customId, /^custom-[a-z0-9-]+$/);
     assert.equal(await page.locator('#intent-editor').count(), 0, 'creation does not leave an unexpected modal over the page');
-    assert.equal(await page.getByRole('switch', {name: 'Count Bicycle & repair time', exact: true}).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.getByRole('switch', {name: 'Count Bicycle & repair time', exact: true}).getAttribute('aria-checked'), 'false');
+    assert.equal((await stored(page)).customIntents[customId].icon, 'tools');
+    assert.equal((await stored(page)).channels[customId], 'Initial Workshop');
+    assert.equal((await stored(page)).customTopics[customId], 'initial repairs');
     await openEditor(page, customId);
     assert.equal(await page.locator('#builtin-defaults').count(), 0, 'custom intents do not claim to have built-in defaults');
     assert.equal(await page.getByLabel('Intent name', {exact: true}).inputValue(), 'Bicycle & repair');
     await page.getByLabel('Intent name', {exact: true}).fill('Bike workshop');
     await page.locator('#intent-description').fill('Restoring steel bicycles, adjusting derailleurs and rebuilding wheels');
+    await advanced(page); await page.locator('#intent-count-time').check();
     await page.locator('#topics').fill('wheelbuilding, touring bikes'); await page.locator('#channels').fill('Workshop North');
     await page.getByRole('button', {name: 'Save preferences'}).click(); await saved(page);
     assert.equal(await page.getByLabel('Intent description for bike workshop', {exact: true}).inputValue(), 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels');
@@ -226,7 +253,7 @@ async function toggleCount(page, name, enabled) {
     await policy.selectOption(customId); await idle(page);
     await page.reload(); await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
     const withCustom = await stored(page);
-    assert.deepEqual(withCustom.customIntents[customId], {name: 'Bike workshop', description: 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels', icon: 'compass'});
+    assert.deepEqual(withCustom.customIntents[customId], {name: 'Bike workshop', description: 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels', icon: 'tools'});
     assert.equal(withCustom.countModes[customId], false); assert.equal(withCustom.newTabMode, customId);
     assert.equal(withCustom.customTopics[customId], 'wheelbuilding, touring bikes'); assert.equal(withCustom.channels[customId], 'Workshop North');
     assert.equal(withCustom.metadataLimit, 12);
@@ -243,8 +270,9 @@ async function toggleCount(page, name, enabled) {
     assert.equal(removed.mode, 'work'); assert.equal(removed.newTabMode, 'last'); assert.equal(removed.customIntents[customId], undefined);
     for (const key of ['customTopics', 'channels', 'countModes']) assert.equal(removed[key][customId], undefined);
     assert.equal(await page.locator(`#new-tab-mode option[value="${customId}"]`).count(), 0);
-    await page.getByLabel('Custom intent name', {exact: true}).fill('Remove on reset');
-    await page.getByLabel('What should this intent show?', {exact: true}).fill('A temporary custom intent for verifying factory reset.');
+    await openCreate(page);
+    await page.locator('#intent-name').fill('Remove on reset');
+    await page.locator('#intent-description').fill('A temporary custom intent for verifying factory reset.');
     await page.getByRole('button', {name: 'Create intent', exact: true}).click(); await idle(page);
     const beforeReset = await stored(page);
     await page.locator('#reset-settings').click(); await page.locator('#reset-dialog[open]').waitFor();
@@ -322,7 +350,11 @@ async function toggleCount(page, name, enabled) {
       await popup.getByRole('heading', {name: 'Your daily budget'}).waitFor();
       assert.equal(await popup.evaluate(() => mockQueries.length), 1, 'active tab is resolved exactly once');
       assert.deepEqual(await popup.evaluate(() => mockQueries[0]), {active: true, currentWindow: true});
-      assert.equal(await popup.getByRole('link', {name: 'Topic analysis settings', exact: false}).count(), 1);
+      assert.equal(await popup.locator('a[href^="settings.html"]').count(), 1);
+      assert.equal(await popup.getByRole('link', {name: 'Settings', exact: false}).count(), 1);
+      const off = popup.locator('.mode-off-button');
+      assert.equal(await off.count(), 1); assert.equal(await off.getAttribute('aria-describedby'), 'intent-off-help');
+      assert.match(await popup.locator('#intent-off-help').textContent(), /Intent off stops topic filtering.*timer rule still apply.*Pause stops all filters and timer counting/);
       assert.equal(await popup.getByRole('heading', {name: 'Fuller video checks', exact: true}).count(), 0, 'detailed network controls stay on the settings page');
       if(activeURL.includes('/results?'))assert.match(await popup.locator('.scope-notice').textContent(),/filtering is off on search results/);
       const first = await popup.evaluate(() => mockRequests[0]);
@@ -339,6 +371,9 @@ async function toggleCount(page, name, enabled) {
       await popup.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
       await popup.getByRole('button', {name: 'Resume on this tab', exact: true}).waitFor(); await idle(popup);
       assert.equal(await popup.locator('.tab-pause-state').textContent(), 'Paused');
+      assert.equal((await popup.locator('#tab-pause').textContent()).trim(), 'Resume', 'popup retains its compact labelled control');
+      assert.equal(await popup.locator('#tab-pause svg').count(), 1);
+      assert.match(await popup.locator('#tab-pause').getAttribute('title'), /Resume on this tab/);
       assert.match(await popup.locator('#tab-pause-detail').textContent(), /Filters and the timer are paused here.*Other tabs remain active/);
       assert.match(await popup.locator('#budget-note').textContent(), /timer is paused on this tab/);
       assert.equal(await popup.locator('.scope-notice').count(), 0, 'paused status replaces any conflicting timer-still-applies notice');

@@ -39,7 +39,7 @@ function actionIconImages() {
     if (!response.ok) throw new Error('The bundled action icon could not load.');
     const bitmap = await createImageBitmap(await response.blob());
     try {
-      const active = {}, inactive = {};
+      const active = {}, inactive = {}, paused = {};
       for (const size of [16, 32]) {
         const canvas = new OffscreenCanvas(size, size), drawing = canvas.getContext('2d', {willReadFrequently: true});
         drawing.drawImage(bitmap, 0, 0, size, size);
@@ -50,15 +50,24 @@ function actionIconImages() {
           gray.data[i] = gray.data[i + 1] = gray.data[i + 2] = value;
         }
         inactive[size] = gray;
+        const pause = drawing.getImageData(0, 0, size, size);
+        pause.data.set(gray.data);
+        for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+          const nx = (x + .5) / size, ny = (y + .5) / size;
+          if ((nx - .5) ** 2 + (ny - .5) ** 2 > .45 ** 2) continue;
+          const bar = ny >= .27 && ny <= .73 && (nx >= .30 && nx <= .43 || nx >= .57 && nx <= .70);
+          pause.data.set(bar ? [255, 255, 255, 255] : [72, 72, 72, 255], (y * size + x) * 4);
+        }
+        paused[size] = pause;
       }
-      return {active, inactive};
+      return {active, inactive, paused};
     } finally { bitmap.close?.(); }
   })().catch(error => {actionImages = undefined; throw error;});
   return actionImages;
 }
-async function paintAction(tabId, {text = '', title = OFF_SITE_TITLE, active = false, color = '#606060'} = {}) {
+async function paintAction(tabId, {text = '', title = OFF_SITE_TITLE, active = false, icon = active ? 'active' : 'inactive', color = '#606060'} = {}) {
   const key = Number.isInteger(tabId) ? tabId : 'default';
-  const signature = JSON.stringify([text, title, active, color]);
+  const signature = JSON.stringify([text, title, icon, color]);
   if (actionStates.get(key) === signature) return;
   const scope = Number.isInteger(tabId) ? {tabId} : {};
   const images = await actionIconImages();
@@ -66,13 +75,13 @@ async function paintAction(tabId, {text = '', title = OFF_SITE_TITLE, active = f
     chrome.action.setBadgeText({...scope, text}),
     chrome.action.setBadgeBackgroundColor({...scope, color}),
     chrome.action.setTitle({...scope, title}),
-    chrome.action.setIcon({...scope, imageData: active ? images.active : images.inactive})
+    chrome.action.setIcon({...scope, imageData: images[icon]})
   ]);
   actionStates.set(key, signature);
 }
 function tabAction(tab, exhausted) {
   const mode = ensureMode(tab.id), paused = pausedTabs[tab.id] === true;
-  if (paused) return {text: 'PAUSE', title: 'Intent — Paused on this tab; filters and timer are off'};
+  if (paused) return {icon: 'paused', title: 'Intent — Paused on this tab; filters and timer are off'};
   const counted = countsMode(mode), blocked = exhausted && counted;
   const timer = counted ? 'timer counts toward your daily limit' : 'timer is exempt from your daily limit';
   if (blocked) return {text: 'END', title: `Intent — Daily limit reached on this tab; ${mode === 'off' ? 'topic filtering is off' : 'YouTube access is blocked'}`, color: '#9b4135'};
@@ -231,6 +240,9 @@ async function tick(message = {}, sender = {}) {
   return state;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'GET_PREVIEW') {
+    previewRequest(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
+  }
   if (message?.type === 'GET_FEED') {
     feedRequest(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
   }
@@ -252,7 +264,7 @@ async function feedRequest(message, sender) {
   const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id));
   const exclude = currentVideo ? [currentVideo, ...(Array.isArray(message.exclude) ? message.exclude : [])] : message.exclude;
   let result;
-  try { result = await feedService.get(state.settings, {...message, exclude, isActive}); }
+  try { result = await feedService.get(state.settings, {...message, exclude, isActive, preview: false}); }
   catch (error) {
     if (pausedTabs[sender.tab.id]) return {ok: true, paused: true, tabPaused: true};
     if (!isActive()) return {ok: true, stale: true};
@@ -264,6 +276,32 @@ async function feedRequest(message, sender) {
   if (current.blocked) return {ok: true, blocked: true};
   if (!isActive() || result.key !== IntentFeed.key(current.settings)) return {ok: true, stale: true};
   return {ok: true, ...result};
+}
+async function previewRequest(message, sender) {
+  if (!extensionSender(sender) || (sender.frameId || 0) !== 0 || new URL(sender.url).pathname !== '/settings.html') throw new Error('Intent previews are only available from the settings page.');
+  if (Object.keys(message).some(field => !['type', 'mode', 'key'].includes(field))) throw new Error('Preview requests can only select a saved intent.');
+  const prepared = await serial(async () => {
+    await initialize();
+    if (typeof message.mode !== 'string' || !Object.hasOwn(C.modes(settings), message.mode)) throw new Error('Choose a saved intent to preview.');
+    const config = C.sanitize({...settings, mode: message.mode});
+    const key = IntentFeed.key(config);
+    return {config, key, revision: feedRevision};
+  });
+  if (message.key !== prepared.key) return {ok: true, stale: true};
+  const budgetBlocked = () => C.countsMode(settings, message.mode) && C.snapshot(settings, C.advanceUsage(days, tracker.lastAt, Date.now(), tracker.counting)).blocked;
+  const isCurrent = () => prepared.revision === feedRevision && Object.hasOwn(C.modes(settings), message.mode) && prepared.key === IntentFeed.key({...settings, mode: message.mode});
+  if (budgetBlocked()) return {ok: true, key: prepared.key, blocked: true};
+  let result;
+  try {
+    result = await feedService.get({...prepared.config, metadataLimit: 0}, {preview: true, cursor: 0, round: 0, isActive: () => isCurrent() && !budgetBlocked()});
+  } catch (error) {
+    if (!isCurrent()) return {ok: true, stale: true};
+    if (budgetBlocked()) return {ok: true, key: prepared.key, blocked: true};
+    throw error;
+  }
+  if (!isCurrent()) return {ok: true, stale: true};
+  if (budgetBlocked()) return {ok: true, key: prepared.key, blocked: true};
+  return {ok: true, key: prepared.key, previewItems: result.previewItems, semantic: result.semantic, searchLimit: 2, ...(result.warning ? {warning: result.warning} : {})};
 }
 const refresh = () => { serial(() => tick()).catch(() => {}); };
 chrome.alarms.onAlarm.addListener(refresh);
@@ -281,22 +319,37 @@ chrome.tabs.onRemoved.addListener(id => {
     await tick();
   }).catch(() => {});
 });
-chrome.tabs.onUpdated.addListener((id, info) => {
+chrome.tabs.onUpdated.addListener((id, info, tab = {}) => {
   if (info.url) {
     if (!C.isYouTube(info.url) && !info.url.startsWith(blockedURL())) {
       serial(async () => {
         await initialize();
         if (!associatedTab(id)) return;
         reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1);
+        actionStates.delete(id);
         await paintAction(id);
         actionStates.delete(id);
         await tick();
       }).catch(() => {});
       return;
     }
-    reports.delete(id);
   }
-  if (info.url || Object.hasOwn(tabModes || {}, id) && (info.status === 'complete' || info.audible !== undefined)) refresh();
+  const navigation = Boolean(info.url), status = info.status === 'loading' || info.status === 'complete';
+  const supported = Object.hasOwn(tabModes || {}, id) || isYouTubeTab(tab);
+  if (!navigation && !(supported && (status || info.audible !== undefined))) return;
+  serial(async () => {
+    await initialize();
+    if (navigation) reports.delete(id);
+    if (navigation || isYouTubeTab(tab)) ensureMode(id);
+    // Chrome can clear tab-specific action appearance during navigation even
+    // though the saved mode is unchanged. Invalidate inside the queue so an
+    // earlier paint cannot restore the stale cache before this refresh.
+    if (navigation || status) actionStates.delete(id);
+    const state = await tick();
+    // A scoped query can briefly omit a reloading tab. Its saved mode and pause
+    // flag still determine the indicator while its YouTube URL is in transit.
+    if ((navigation || status) && Object.hasOwn(tabModes, id)) await paintAction(id, tabAction({id}, state.budgetExhausted));
+  }).catch(() => {});
 });
 chrome.windows.onFocusChanged.addListener(refresh);
 chrome.idle.onStateChanged.addListener(refresh);
