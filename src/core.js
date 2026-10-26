@@ -822,7 +822,10 @@
       const name = typeof settings.intentNames?.[id] === 'string' ? settings.intentNames[id].trim().slice(0, 48) : '';
       return [id, {...mode, name: name || mode.name, description: description || mode.description, topics: description ? descriptionTerms(description) : [...mode.topics]}];
     }));
-    const custom = Object.fromEntries(Object.entries(customRecords(settings.customIntents)).map(([id, record]) => [id, {...record, symbol: INTENT_ICONS[record.icon], topics: defaultTemplate(settings, id) ? [...defaultTemplate(settings, id).topics] : descriptionTerms(record.description)}]));
+    const custom = Object.fromEntries(Object.entries(customRecords(settings.customIntents)).map(([id, record]) => {
+      const template = defaultTemplate(settings, id);
+      return [id, {...record, symbol: INTENT_ICONS[record.icon], topics: template ? [...template.topics] : descriptionTerms(record.description)}];
+    }));
     const definitions = {...builtins, ...custom};
     return Object.fromEntries(orderIds(Object.keys(definitions), settings.intentOrder).map(id => [id, definitions[id]]));
   }

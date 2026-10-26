@@ -1,6 +1,9 @@
 /* Filled intent feeds for Home and the recommendations beside a watched video. */
 (() => {
   const C = IntentCore, F = IntentFeed;
+  const place = (parent, nodes) => {
+    if (parent.children.length !== nodes.length || nodes.some((node, i) => parent.children[i] !== node)) parent.replaceChildren(...nodes);
+  };
   class Home {
     constructor(runtime = chrome.runtime, surface = 'home') {
       this.runtime = runtime; this.surface = surface === 'watch' ? 'watch' : 'home';
@@ -34,6 +37,7 @@
         : renderer?.querySelector('#primary');
       if (!primary) { this.destroy(); return; }
       if (!this.host) this.create();
+      if (!this.nativeCards && globalThis.IntentNativeCards) this.nativeCards = new IntentNativeCards(this.host, this.surface);
       this.primary = primary; this.renderer = renderer;
       if (this.host.parentElement !== primary) {
         // YouTube moves or replaces the related container at responsive breakpoints.
@@ -63,10 +67,11 @@
       const locale = this.locale;
       const signature = F.key(settings, locale);
       const videoId = this.surface === 'watch' ? new URL(location.href).searchParams.get('v') || '' : '';
-      if (signature !== this.signature || videoId !== this.videoId) {
+      const restarted = signature !== this.signature || videoId !== this.videoId;
+      if (restarted) {
         this.signature = signature; this.locale = locale; this.videoId = videoId; this.round = 0; this.restart(false);
       }
-      this.layoutHome(); this.syncRecommendations();
+      this.layoutHome(); if (!restarted) this.syncRecommendations();
     }
     syncNative(primary) {
       for (const child of this.nativeElements) if (child.parentElement !== primary) {
@@ -105,7 +110,6 @@
     create() {
       this.host = document.createElement('section'); this.host.id = `intent-${this.surface}-feed`; this.host.dataset.surface = this.surface;
       const root = this.host.attachShadow({mode: 'open'});
-      if(globalThis.IntentNativeCards)this.nativeCards=new IntentNativeCards(this.host,this.surface);
       const style = document.createElement('style'); style.textContent = globalThis.IntentFeedTheme || '';
       this.title = document.createElement('h1'); this.title.className = 'sr-only';
       this.title.id = 'feed-heading';
@@ -222,8 +226,9 @@
       this.generation++; this.items = []; this.cursor = 0; this.pageCursor = null; this.hasMore = true; this.busy = false; this.autoBatches = 0; this.loadFailed = false; this.restartRequired = false; this.endReason = '';
       this.endState.hidden = true; this.more.textContent = 'Find more videos';
       this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
-      this.title.textContent = this.surface === 'watch' ? `${C.modes(this.settings)[this.settings.mode].name} recommendations` : `◒ ${C.modes(this.settings)[this.settings.mode].name}, with intent.`;
-      this.host.setAttribute('aria-label', `${C.modes(this.settings)[this.settings.mode].name} videos`);
+      const name = C.modes(this.settings)[this.settings.mode].name;
+      this.title.textContent = this.surface === 'watch' ? `${name} recommendations` : `◒ ${name}, with intent.`;
+      this.host.setAttribute('aria-label', `${name} videos`);
       this.regularCards = []; this.grid.hidden = false; this.grid.replaceChildren(); this.restGrid.replaceChildren(); this.restGrid.hidden = true; this.shortGrid.replaceChildren(); this.shortShelf.hidden = true; this.more.hidden = true;
       this.syncRecommendations(); return this.load(fresh, true);
     }
@@ -307,16 +312,17 @@
       this.recommendedMore.hidden = false;
       const declared = this.renderer?.getAttribute('video-id');
       if (this.surface === 'watch' && declared && declared !== this.videoId) return Promise.resolve();
-      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, exclude: this.nativeChecked, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) if (this.nativePool.size < 240 || this.nativePool.has(video.id)) this.nativePool.set(video.id, video);
+      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, exclude: this.nativeChecked, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) this.nativePool.set(video.id, video);
       if (this.nativeJob || Date.now() < this.nativeRetryAt) return this.nativeJob || Promise.resolve();
       const generation = this.generation, signature = this.signature;
       const current = () => generation === this.generation && signature === this.signature && this.host?.isConnected;
       const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeTotalChecked));
-      if (!pending().length) return Promise.resolve();
+      const firstBatch = pending().slice(0, 48);
+      if (!firstBatch.length) return Promise.resolve();
       if (!this.recommendedItems.length) this.recommendedMessage.textContent = 'Checking your YouTube recommendations…';
       const job = (async () => {
-        while (current()) {
-          const videos = pending().slice(0, 48); if (!videos.length) break;
+        let videos = firstBatch;
+        while (current() && videos.length) {
           const result = await this.runtime.sendMessage({type: 'FILTER_RECOMMENDATIONS', key: signature, locale: this.locale, videos});
           if (!current() || result?.stale || result?.paused || result?.tabPaused) return;
           if (result?.blocked) { location.replace(this.runtime.getURL('blocked.html')); return; }
@@ -331,6 +337,7 @@
           }
           while (this.nativeChecked.size > 2048) {const id=[...this.nativeChecked.keys()].find(id=>!this.nativePool.has(id));if(!id)break;this.nativeChecked.delete(id);}
           this.renderRecommendations();
+          videos = pending().slice(0, 48);
         }
       })().catch(error => { if (current()) { if (/context invalidated/i.test(error.message || '')) {document.dispatchEvent(new Event('intent-context-lost')); return;} this.nativeRetryAt = Date.now() + 30000; this.recommendedMore.title = error.message; this.recommendedMessage.textContent = 'Recommendations could not be checked. Try again later.'; } }).finally(() => {if (this.nativeJob === job) this.nativeJob = null;});
       this.nativeJob = job; return job;
@@ -339,8 +346,8 @@
       this.recommendedItems = [...this.nativePool.keys()].map(id => this.nativeChecked.get(id)?.item).filter(Boolean).slice(0, 120);
       const nativeIds = new Set(this.recommendedItems.map(v => v.id));
       const focused = this.host.shadowRoot.activeElement, focusedVideo = focused?.closest('.card')?.dataset.videoId, focusedClass = focused?.className;
-      this.recommendedGrid.replaceChildren(...this.recommendedItems.filter(v => this.surface === 'watch' || !v.shorts).map(v => this.card(v)));
-      this.recommendedShortGrid.replaceChildren(...this.recommendedItems.filter(v => this.surface === 'home' && v.shorts).map(v => this.card(v)));
+      place(this.recommendedGrid, this.recommendedItems.filter(v => this.surface === 'watch' || !v.shorts).map(v => this.card(v)));
+      place(this.recommendedShortGrid, this.recommendedItems.filter(v => this.surface === 'home' && v.shorts).map(v => this.card(v)));
       this.recommendedShorts.hidden = !this.recommendedShortGrid.childElementCount;
       if (focusedVideo) [...this.recommendedSection.querySelectorAll('.card')].find(node => node.dataset.videoId === focusedVideo)?.querySelector(focusedClass === 'cover' ? '.cover' : '.title')?.focus({preventScroll: true});
       this.recommendedSection.hidden = !this.recommendedItems.length;
@@ -396,9 +403,6 @@
       const firstCount = hasShorts ? columns : this.regularCards.length;
       const first = this.regularCards.slice(0, firstCount), rest = this.regularCards.slice(firstCount);
       const active = this.host.shadowRoot.activeElement;
-      const place = (parent, nodes) => {
-        if (parent.children.length !== nodes.length || nodes.some((node, i) => parent.children[i] !== node)) parent.replaceChildren(...nodes);
-      };
       // Only move the existing cards; resize and loading more never duplicate them.
       if (this.regularCards.length) place(this.grid, first);
       place(this.restGrid, rest);

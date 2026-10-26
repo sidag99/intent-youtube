@@ -61,9 +61,12 @@ const root = path.resolve(__dirname, '..');
       };
       customElements.define('ytd-rich-item-renderer', nativeClass());
       customElements.define('ytd-compact-video-renderer', nativeClass());
+      window.componentsReadyCount = 0;
+      document.addEventListener('intent-native-components-ready', () => componentsReadyCount++);
     });
     await page.addScriptTag({path: path.join(root, 'src/native-renderer.js')});
     await page.waitForFunction(() => initialCard.hasAttribute('data-native-card-ready'));
+    assert.equal(await page.evaluate(() => componentsReadyCount), 1, 'already registered native components publish one initial readiness event; resolved whenDefined promises do not duplicate it');
     const generated = await page.evaluate(() => {
       const entry = homeCards.entries.get(video.id), native = entry.node.firstElementChild;
       return {tag: native.localName, data: native.receivedData, writes: native.dataWrites, fallbackHidden: [...initialCard.children].filter(child => child !== entry.slot).every(child => child.hidden), assigned: entry.slot.assignedElements()[0] === entry.node, rendered: entry.node.hasAttribute('data-intent-native-rendered'), requestRemoved: !entry.node.hasAttribute('data-intent-native-request')};
@@ -249,6 +252,82 @@ const root = path.resolve(__dirname, '..');
     assert.equal(await frame.evaluate(() => document.documentElement.hasAttribute('data-intent-native-components')), false, 'same-origin nested frames cannot initialize the top-level bridge');
     assert.deepEqual(await page.evaluate(() => forbiddenReads), []); assert.deepEqual(await page.evaluate(() => networkCalls), []); assert.deepEqual(requests, []); assert.deepEqual(errors, []);
     console.log('PASS page bridge validates scope, IDs, lengths and image origins; ignores supplied endpoints; no account, extension API or network access');
+
+    // Use the real feed lifecycle, rather than constructing NativeCards directly:
+    // Home retains its detached host after Off/Pause and must recreate its manager.
+    const lifecycle = await context.newPage(), lifecycleErrors = [];
+    lifecycle.setDefaultTimeout(5000); lifecycle.on('pageerror', error => lifecycleErrors.push(error.message));
+    await lifecycle.route('**/*', route => route.fulfill(route.request().resourceType() === 'image'
+      ? {contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"/>'}
+      : {contentType: 'text/html', body: '<!doctype html><html lang="en"><meta charset="utf-8"><style>body{margin:0}ytd-masthead{display:block;height:56px}ytd-browse,ytd-watch-flexy,ytd-rich-grid-renderer,ytd-watch-next-secondary-results-renderer{display:block}#primary{width:1000px}#related{width:400px}</style><ytd-masthead></ytd-masthead><ytd-browse page-subtype="home"><main id="primary"><ytd-rich-grid-renderer id="home-native-owner" style="--ytd-rich-grid-items-per-row:3"><span id="home-before"></span><span id="home-after"></span></ytd-rich-grid-renderer></main></ytd-browse><ytd-watch-flexy><div id="secondary"><main id="related"><ytd-watch-next-secondary-results-renderer id="watch-native-owner"><span id="watch-before"></span><span id="watch-after"></span></ytd-watch-next-secondary-results-renderer></main></div></ytd-watch-flexy>'}));
+    await lifecycle.goto('https://www.youtube.com/');
+    await lifecycle.evaluate(() => {
+      const nativeClass = () => class extends HTMLElement {
+        constructor() {super(); this.controller = {clicks: 0}; this.dataWrites = 0;}
+        set data(payload) {
+          this.dataWrites++; this.receivedData = payload;
+          const video = payload.content?.videoRenderer || payload, title = document.createElement('h3'), link = document.createElement('a');
+          link.href = '/watch?v=' + video.videoId; link.id = 'video-title'; link.textContent = video.title.simpleText; title.append(link); this.replaceChildren(title);
+        }
+      };
+      customElements.define('ytd-rich-item-renderer', nativeClass()); customElements.define('ytd-compact-video-renderer', nativeClass());
+      window.originalSources = {}; window.originalControllers = {}; window.originalStyles = {};
+      window.captureStyle = node => Object.fromEntries([...node.style].sort().map(key => [key, [node.style.getPropertyValue(key), node.style.getPropertyPriority(key)]]));
+      for (const [surface, tag, id] of [['home', 'ytd-rich-item-renderer', 'H0000000020'], ['watch', 'ytd-compact-video-renderer', 'W0000000021']]) {
+        const node = document.createElement(tag); node.id = surface + '-original';
+        node.style.cssText = 'display:inline-block!important;width:85%;margin:3px;min-width:21px;max-width:700px!important';
+        node.innerHTML = `<a href="/watch?v=${id}"><h3 id="video-title">Python programming workshop</h3></a><div id="channel-name">Workshop North</div>`;
+        node.addEventListener('click', () => node.controller.clicks++);
+        document.querySelector('#' + surface + '-native-owner').insertBefore(node, document.querySelector('#' + surface + '-after'));
+        originalSources[surface] = node; originalControllers[surface] = node.controller; originalStyles[surface] = captureStyle(node);
+      }
+    });
+    for (const name of ['core.js', 'feed.js', 'feed-theme.js', 'recommendations.js', 'native-cards.js', 'native-renderer.js', 'home.js']) await lifecycle.addScriptTag({path: path.join(root, 'src', name)});
+    await lifecycle.evaluate(() => {
+      window.settings = IntentCore.sanitize({metadataLimit: 0}); window.feedInstances = {}; window.oldHosts = {}; window.oldManagers = {};
+      for (const [surface, discoveryId] of [['home', 'D0000000022'], ['watch', 'D0000000023']]) {
+        feedInstances[surface] = new IntentHome({sendMessage: async message => {
+          if (message.type === 'FILTER_RECOMMENDATIONS') return {ok: true, key: message.key, items: message.videos};
+          if (message.type === 'GET_FEED') return {ok: true, key: message.key, semantic: true, items: [{id: discoveryId, title: 'Python programming discovery lesson', channel: 'Discovery Studio', duration: '12:30', thumbnail: 'https://i.ytimg.com/vi/' + discoveryId + '/hqdefault.jpg', shorts: false}], hasMore: false, nextCursor: 1};
+          return {ok: true};
+        }}, surface);
+      }
+    });
+    for (const surface of ['home', 'watch']) {
+      await lifecycle.evaluate(surface => history.replaceState({}, '', surface === 'home' ? '/' : '/watch?v=C0000000024'), surface);
+      for (const reason of ['off', 'pause', 'pause', 'off']) {
+        const identities = await lifecycle.evaluate(surface => {
+          const feed = feedInstances[surface], previousHost = oldHosts[surface], previousManager = oldManagers[surface];
+          feed.sync(settings, true);
+          oldHosts[surface] = feed.host; oldManagers[surface] = feed.nativeCards;
+          return {hostReused: !previousHost || previousHost === feed.host, managerRecreated: !previousManager || previousManager !== feed.nativeCards, managerExists: !!feed.nativeCards};
+        }, surface);
+        assert.deepEqual(identities, {hostReused: true, managerRecreated: true, managerExists: true}, `${surface} ${reason}: a reused host gets a fresh native-card manager`);
+        await lifecycle.waitForFunction(surface => {
+          const feed = feedInstances[surface];
+          return !feed.busy && feed.recommendedItems.length === 1 && feed.items.length === 1 && feed.nativeCards.entries.size === 2 && [...feed.nativeCards.entries.values()].every(entry => entry.card.hasAttribute('data-native-card-ready'));
+        }, surface);
+        const on = await lifecycle.evaluate(surface => {
+          const feed = feedInstances[surface], source = originalSources[surface];
+          source.click();
+          const originalEntry = [...feed.nativeCards.entries.values()].find(entry => entry.original?.node === source);
+          const generatedEntry = [...feed.nativeCards.entries.values()].find(entry => !entry.original);
+          return {connected: feed.host.isConnected, originalMoved: originalEntry?.node.firstElementChild === source, sameController: source.controller === originalControllers[surface], originalDataWrites: source.dataWrites, generatedTag: generatedEntry.node.firstElementChild.localName, nativeReadyCount: feed.host.shadowRoot.querySelectorAll('.card[data-native-card-ready]').length, noStages: !document.querySelector('[data-intent-native-staging]')};
+        }, surface);
+        assert.deepEqual(on, {connected: true, originalMoved: true, sameController: true, originalDataWrites: 0, generatedTag: surface === 'home' ? 'ytd-rich-item-renderer' : 'ytd-compact-video-renderer', nativeReadyCount: 2, noStages: true}, `${surface} ${reason}: original and discovery native cards render after activation`);
+        const off = await lifecycle.evaluate(({surface, reason}) => {
+          const feed = feedInstances[surface];
+          if (reason === 'off') feed.sync({...settings, mode: 'off'}, true); else feed.sync(settings, false);
+          const source = originalSources[surface];
+          return {hostDetached: !feed.host.isConnected, managerRemoved: feed.nativeCards === null, restored: source.parentElement.id === surface + '-native-owner', sameController: source.controller === originalControllers[surface], style: captureStyle(source), expectedStyle: originalStyles[surface], order: [...source.parentElement.children].map(node => node.id), noWrappers: !feed.host.querySelector('[data-intent-native-card]'), noStages: !document.querySelector('[data-intent-native-staging]')};
+        }, {surface, reason});
+        assert.equal(off.hostDetached, true); assert.equal(off.managerRemoved, true); assert.equal(off.restored, true); assert.equal(off.sameController, true); assert.deepEqual(off.style, off.expectedStyle);
+        assert.deepEqual(off.order, [surface + '-before', surface + '-original', surface + '-after']); assert.equal(off.noWrappers, true); assert.equal(off.noStages, true);
+      }
+      assert.equal(await lifecycle.evaluate(surface => originalControllers[surface].clicks, surface), 4, 'native click handlers survive every activation and restore');
+    }
+    assert.deepEqual(lifecycleErrors, []); await lifecycle.close();
+    console.log('PASS real Home/watch sync lifecycle recreates native managers after Off and repeated Pause, reuses hosts and restores original controllers/styles/order');
     await context.close();
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

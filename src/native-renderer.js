@@ -2,11 +2,9 @@
 (() => {
   if (window.top !== window || !['www.youtube.com','youtube.com','m.youtube.com'].includes(location.hostname)) return;
   document.dispatchEvent(new Event('intent-native-renderer-dispose'));
-  let disposed=false; const active=new WeakSet(),cleanups=new Set();
+  let disposed=false,published; const active=new WeakSet(),cleanups=new Set();
   const tags=['ytd-rich-item-renderer','ytd-compact-video-renderer','yt-lockup-view-model','ytd-rich-grid-media','ytd-video-renderer'];
-  const signal=()=>{if(disposed||!document.documentElement)return;document.documentElement.setAttribute('data-intent-native-components',tags.filter(tag=>customElements.get(tag)).join(','));document.dispatchEvent(new Event('intent-native-components-ready'));};
-  for(const tag of tags)customElements.whenDefined(tag).then(signal);
-  signal(); if(!document.documentElement)document.addEventListener('DOMContentLoaded',signal,{once:true});
+  const signal=()=>{if(disposed||!document.documentElement)return;const available=tags.filter(tag=>customElements.get(tag)).join(',');if(available===published)return;published=available;document.documentElement.setAttribute('data-intent-native-components',available);document.dispatchEvent(new Event('intent-native-components-ready'));};
   const text=(value,n)=>typeof value==='string'?value.slice(0,n):'';
   function thumbnail(value,id){try{const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&(u.hostname==='ytimg.com'||u.hostname.endsWith('.ytimg.com')))return u.href;}catch{}return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;}
   function render(event){
@@ -44,4 +42,6 @@
   }
   function dispose(){disposed=true;for(const cleanup of [...cleanups])cleanup();document.removeEventListener('intent-render-native-card',render);document.removeEventListener('intent-native-renderer-dispose',dispose);document.removeEventListener('DOMContentLoaded',signal);}
   document.addEventListener('intent-render-native-card',render);document.addEventListener('intent-native-renderer-dispose',dispose);
+  for(const tag of tags)customElements.whenDefined(tag).then(signal);
+  signal(); if(!document.documentElement)document.addEventListener('DOMContentLoaded',signal,{once:true});
 })();

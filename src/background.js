@@ -22,10 +22,10 @@ const nativeRecommendationCache = new Map(), nativeRecommendationJobs = new Map(
 let queue = Promise.resolve();
 const reports = new Map(), timerURLs = new Map(), timerReviews = new Map(), timerTopicCache = new Map(), timerTopicJobs = new Map();
 const URLS = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
-const validMode = (mode, config = settings) => C.validMode ? C.validMode(mode, config) : Object.hasOwn(C.MODES, mode) || mode === 'off';
-const initialMode = () => C.initialMode ? C.initialMode(settings) : settings.mode;
-const countsMode = mode => C.countsMode ? C.countsMode(settings, mode) : settings.countModes?.[mode] !== false;
-const badgeMode = mode => mode === 'off' ? '' : ((C.modes ? C.modes(settings)[mode]?.name : C.MODES[mode]?.name) || mode).slice(0, 1).toUpperCase();
+const validMode = (mode, config = settings) => C.validMode(mode, config);
+const initialMode = () => C.initialMode(settings);
+const countsMode = mode => C.countsMode(settings, mode);
+const badgeMode = mode => mode === 'off' ? '' : (C.modes(settings)[mode]?.name || mode).slice(0, 1).toUpperCase();
 const extensionSender = sender => sender.url?.startsWith(chrome.runtime.getURL('')) && !(sender.tab && C.isYouTube(sender.tab.url));
 const blockedURL = () => chrome.runtime.getURL('blocked.html');
 const hasYouTubeURL = tab => C.isYouTube(tab.url) || C.isYouTube(tab.pendingUrl);
@@ -88,7 +88,7 @@ function tabAction(tab, exhausted) {
   const timer = counted ? 'timer counts toward your daily limit' : 'timer is exempt from your daily limit';
   if (blocked) return {text: 'END', title: `Intent — Daily limit reached on this tab; ${mode === 'off' ? 'topic filtering is off' : 'YouTube access is blocked'}`, color: '#9b4135'};
   if (mode === 'off') return {text: 'OFF', title: `Intent — Off on this tab; topic filtering is off; ${timer}`};
-  const name = (C.modes ? C.modes(settings)[mode]?.name : C.MODES[mode]?.name) || mode;
+  const name = C.modes(settings)[mode]?.name || mode;
   return {text: badgeMode(mode), title: `Intent — ${name} intent on this tab; ${timer}`, active: true, color: '#365e4b'};
 }
 
@@ -332,7 +332,7 @@ async function checkTimerVideo(message, sender) {
     return {ok: true, ...await tick({}, sender)};
   });
 }
-function recommendationPage(value) {
+function feedPage(value) {
   try {
     const url = new URL(value);
     const videoId = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
@@ -359,12 +359,12 @@ function recommendationVideos(input, currentVideo) {
   return videos;
 }
 async function filterRecommendations(message, sender) {
-  const page = recommendationPage(sender.url);
+  const page = feedPage(sender.url);
   if (!page || !Number.isInteger(sender.tab?.id) || (sender.frameId || 0) !== 0) throw new Error('Recommendations can only be checked on the current top-level YouTube Home or video page.');
   const locale = IntentFeed.normalizeLocale(message.locale);
   const prepared = await serial(async () => {
     const state = await tick({}, sender);
-    if (state.tabId !== sender.tab.id || recommendationPage(timerURLs.get(sender.tab.id))?.url !== page.url) return {skip: {ok: true, stale: true}};
+    if (state.tabId !== sender.tab.id || feedPage(timerURLs.get(sender.tab.id))?.url !== page.url) return {skip: {ok: true, stale: true}};
     if (state.tabPaused) return {skip: {ok: true, paused: true, tabPaused: true}};
     if (state.blocked) return {skip: {ok: true, blocked: true}};
     if (state.settings.mode === 'off') return {skip: {ok: true, off: true, key: IntentFeed.key(state.settings, locale), items: [], semantic: true}};
@@ -373,7 +373,7 @@ async function filterRecommendations(message, sender) {
     return {settings: state.settings, videos, revision: feedRevision, tabRevision: tabFeedRevisions.get(sender.tab.id) || 0, key: message.key};
   });
   if (prepared.skip) return prepared.skip;
-  const active = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && prepared.revision === feedRevision && prepared.tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && prepared.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale) && recommendationPage(timerURLs.get(sender.tab.id))?.url === page.url;
+  const active = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && prepared.revision === feedRevision && prepared.tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && prepared.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale) && feedPage(timerURLs.get(sender.tab.id))?.url === page.url;
   const cacheKey = JSON.stringify([prepared.key, prepared.videos]), now = Date.now();
   for (const [key, entry] of nativeRecommendationCache) if (now - entry.at >= 600000) nativeRecommendationCache.delete(key);
   let items, failure;
@@ -405,9 +405,9 @@ async function filterRecommendations(message, sender) {
   });
 }
 async function feedRequest(message, sender) {
-  const url = new URL(sender.url || 'https://invalid.test/');
-  const currentVideo = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
-  if (!sender.tab || (sender.frameId || 0) !== 0 || !C.isYouTube(url.href) || !(url.pathname === '/' || currentVideo) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
+  const page = feedPage(sender.url);
+  if (!sender.tab || (sender.frameId || 0) !== 0 || !page) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
+  const currentVideo = page.videoId;
   const locale = IntentFeed.normalizeLocale(message.locale);
   const state = await serial(() => tick({}, sender));
   if (!Number.isInteger(state.tabId)) return {ok: true, stale: true};

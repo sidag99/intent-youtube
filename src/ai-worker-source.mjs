@@ -35,10 +35,12 @@ async function classify(videos, inputSettings) {
   const encoded = await embed([...all, ...videos.map(S.text)]);
   let offset = 0;
   const refs = Object.fromEntries(names.map(k => {const value = encoded.slice(offset, offset + descriptions[k].length); offset += descriptions[k].length; return [k, value];}));
+  const visibleSettings = {...settings, mode: 'off'};
+  const channels = C.terms(settings.channels[settings.mode]);
+  const customized = Boolean(settings.intentDescriptions?.[settings.mode]?.trim() || settings.customIntents?.[settings.mode]);
   return videos.map((video, i) => {
-    if (!C.classify(video, {...settings, mode: 'off'}).visible) return {accepted: false, uncertain: false};
-    if (C.terms(settings.channels[settings.mode]).includes(C.normalize(video.channel))) return {accepted: true, uncertain: false};
-    const customized = Boolean(settings.intentDescriptions?.[settings.mode]?.trim() || settings.customIntents?.[settings.mode]);
+    if (!C.classify(video, visibleSettings).visible) return {accepted: false, uncertain: false};
+    if (channels.includes(C.normalize(video.channel))) return {accepted: true, uncertain: false};
     return S.decide(encoded[all.length + i], refs, settings.mode, customized, video);
   });
 }
