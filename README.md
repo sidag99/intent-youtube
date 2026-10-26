@@ -27,7 +27,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.9.0 adds real YouTube search pagination for narrow intents, explicit topic-discovery sources, a shared outline icon picker, and one clear time-counting choice per intent. The header control aligns with the video content when room permits, and its hover background follows the pill. No new permissions are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.9.1 gives Reset settings, New preset and Show filtered examples visible rounded button surfaces, including theme, selected and disabled states. Version 1.9.0 added real YouTube search pagination for narrow intents, explicit topic-discovery sources, a shared outline icon picker, and one clear time-counting choice per intent. The header control aligns with the video content when room permits, and its hover background follows the pill. No new permissions are required.
 
 ## How the feed works
 

@@ -1,6 +1,8 @@
-# Validation — 26 October 2026, version 1.9.0
+# Validation — 26 October 2026, version 1.9.1
 
 ## Verified
+
+- Version 1.9.1: Reset settings, New preset and Show/Hide filtered examples use visible rounded secondary buttons. Existing preferences and preview suites pass; direct browser inspection checks filled surfaces, borders, 40px minimum height, pressed-state behavior and no overflow at 390px in light/dark themes.
 
 - Time counting uses one mutually exclusive choice per intent: Count all, Off-topic only or Don’t count; Modes off has no topic-dependent option. Panel and editor persist the same underlying policy. Browser checks cover all three storage combinations, existing defaults, save/cancel, creation, rename, deletion, reload and reset, plus readable light/dark layouts at 390px.
 - Custom icon selection uses 20 named shared outline SVGs with keyboard arrows/Home/End, a single Tab stop, selection preview and clear selected state. Palette, settings tiles, library and toolbar use the same trusted definitions. Light/dark and narrow layouts are visually checked.
