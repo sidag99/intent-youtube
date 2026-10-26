@@ -1,6 +1,8 @@
-# Validation — 26 October 2026, version 1.9.2
+# Validation — 26 October 2026, version 1.9.3
 
 ## Verified
+
+- Version 1.9.3: actual Chrome action popup tests call chrome.action.openPopup in a fresh isolated extension profile, inspect its native target and capture its rendered viewport outside YouTube and on YouTube. Both retain a 400px content width without horizontal overflow. The previous 390px popup check used a normal tab and missed Chrome’s intrinsic sizing negotiation; popup viewport-unit clamps have been removed. Reset settings now has a red outlined entry and red filled confirmation.
 
 - Version 1.9.2: button audit checks final rendered text/background contrast (at least 4.5:1 for enabled text actions), purpose-specific filled/outlined/destructive hierarchy, explicit font metrics, neutral Cancel states, disabled hover behavior, selected states, keyboard focus, coarse-pointer target sizes and no narrow-page overflow. Real settings, popup, dialogs, Home/watch and toolbar components run in light/dark Chromium fixtures. The source label now reads “YouTube search · Filtered locally”, with a short, neutral tooltip explaining its source and local matching. The popup uses adaptive intent columns and clamps long labels without losing their accessible names. See [BUTTON_AUDIT.md](BUTTON_AUDIT.md).
 

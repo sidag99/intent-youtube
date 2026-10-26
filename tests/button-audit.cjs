@@ -31,7 +31,7 @@ function assertActions(rows){for(const row of rows){if(row.disabled)continue;if(
   await page.locator('#new-role-preset').click();assertActions(await inspect(page));await page.locator('[data-close]').click();
   await page.locator('[data-edit=work]').click();assertActions(await inspect(page));await page.keyboard.press('Tab');await page.locator('#cancel-editor').focus();assert.equal(await page.locator('#cancel-editor').evaluate(el=>getComputedStyle(el).outlineStyle),'solid');
   await page.locator('#cancel-editor').click();
-  await page.locator('#reset-settings').click();const destructive=page.locator('#confirm-reset');assert.ok((await destructive.getAttribute('class')).includes('danger'));
+  assert.ok((await page.locator('#reset-settings').getAttribute('class')).includes('danger-button'));await page.locator('#reset-settings').click();const destructive=page.locator('#confirm-reset');assert.ok((await destructive.getAttribute('class')).includes('danger'));
   assertActions(await inspect(page));await destructive.hover();assertActions(await inspect(page));
   await page.screenshot({path:path.join(shots,`intent-button-reset-${theme}-${width}.png`)});await page.locator('#cancel-reset').click();
   await page.locator('#delete-role-preset').click();assert.ok((await page.locator('#confirm-delete-role-preset').getAttribute('class')).includes('danger'));assertActions(await inspect(page));await page.locator('#delete-role-preset-dialog [data-close]').click();
@@ -40,7 +40,7 @@ function assertActions(rows){for(const row of rows){if(row.disabled)continue;if(
   await page.locator('[data-edit=custom-ai]').click();assert.ok((await page.locator('#delete-intent').getAttribute('class')).includes('danger-button'));assertActions(await inspect(page));await page.locator('#close-editor').click();
   await page.locator('#role-presets').screenshot({path:path.join(shots,`intent-button-presets-${theme}-${width}.png`)});
   await page.locator('#intent-preview').screenshot({path:path.join(shots,`intent-button-preview-${theme}-${width}.png`)});
-  await page.goto('file://'+root+'/popup.html');await page.locator('.mode-off-button').waitFor();assertActions(await inspect(page));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'popup overflow');
+  await page.setViewportSize({width:400,height:1100});await page.goto('file://'+root+'/popup.html');await page.locator('.mode-off-button').waitFor();assertActions(await inspect(page));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'popup overflow');
   await page.screenshot({path:path.join(shots,`intent-button-popup-${theme}-${width}.png`)});await context.close();
  }
  for(const theme of ['light','dark']){

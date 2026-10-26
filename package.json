@@ -1,12 +1,12 @@
 {
   "name": "intent-youtube",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "private": true,
   "description": "A local-first YouTube focus extension",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "check": "node --check src/core.js && node --check src/feed.js && node --check src/feed-theme.js && node --check src/home.js && node --check src/toolbar.js && node --check src/timer-topic.js && node --check src/background.js && node --check src/content.js && node --check src/ui.js && node --check src/preview.js && node --check src/role-presets.js && node --check src/intent-library.js && node --check src/blocked.js && node --check src/semantic.js && node --check src/ai-host.js && node --check src/ai-worker-source.mjs",
-    "test:browser": "node tests/browser.cjs && node tests/feed-pagination.cjs && node tests/preferences.cjs && node tests/button-audit.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs && node tests/video-topic.cjs && node tests/home-spacing.cjs && node tests/preview.cjs",
+    "test:browser": "node tests/browser.cjs && node tests/feed-pagination.cjs && node tests/preferences.cjs && node tests/button-audit.cjs && node tests/popup-window.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs && node tests/video-topic.cjs && node tests/home-spacing.cjs && node tests/preview.cjs",
     "build": "node scripts/build.mjs",
     "test:model": "node tests/model-browser.cjs",
     "test:extension": "node tests/extension.cjs"
