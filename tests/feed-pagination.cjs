@@ -50,8 +50,8 @@ const root = path.resolve(__dirname, '..');
     for (const mode of ['work', 'study', 'music', 'custom-cabinet']) {
       if (mode !== 'work') await page.evaluate(value => activate(value), mode);
       await page.waitForFunction(() => document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('article.card').length === 2 && !home.busy);
-      assert.equal(await feed.locator('.discovery').textContent(), 'Real YouTube videos · Topic discovery');
-      assert.match(await feed.locator('.discovery').getAttribute('title'), /real YouTube video.*AI does not invent.*not your personalized/);
+      assert.equal(await feed.locator('.discovery').textContent(), 'YouTube search · Filtered locally');
+      assert.match(await feed.locator('.discovery').getAttribute('title'), /public YouTube searches.*filtered on your device.*selected intent/);
       assert.equal(await feed.getByRole('button', {name: 'Find more videos', exact: true}).isVisible(), true, mode + ' retains its continuation control after a single-query first page');
       assert.ok(await page.evaluate(() => feedRequests.at(-1).pageCursor), 'Home passes the opaque continuation cursor through runtime messages');
       await feed.getByRole('button', {name: 'Find more videos', exact: true}).click();

@@ -518,7 +518,7 @@ async function chooseMode(toolbar, mode, customName) {
   await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.status')?.textContent.startsWith('12 videos for build apps paging check'),null,{timeout:60000});
   await pagingFeed.locator('.more').waitFor({state:'visible',timeout:60000});
   assert.equal(await pagingFeed.locator('.card').count(),12);
-  assert.equal(await pagingFeed.locator('.discovery').textContent(),'Real YouTube videos · Topic discovery');
+  assert.equal(await pagingFeed.locator('.discovery').textContent(),'YouTube search · Filtered locally');
   const continuationBefore=networkCounts.continuations;
   await pagingFeed.getByRole('button',{name:'Find more videos',exact:true}).click();
   await pagingFeed.locator('[data-video-id="N0000000000"]').waitFor({timeout:60000});

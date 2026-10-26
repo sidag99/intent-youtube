@@ -78,8 +78,8 @@
       const style = document.createElement('style'); style.textContent = globalThis.IntentFeedTheme || '';
       this.title = document.createElement('h1'); this.title.className = 'sr-only';
       this.title.id = 'feed-heading';
-      const discovery = document.createElement('p'); discovery.className = 'discovery'; discovery.textContent = 'Real YouTube videos · Topic discovery';
-      discovery.title = 'Every card links to a real YouTube video found in public topic searches. Intent filters these results locally; AI does not invent videos. This is topic discovery, not your personalized YouTube feed.';
+      const discovery = document.createElement('p'); discovery.className = 'discovery'; discovery.textContent = 'YouTube search · Filtered locally';
+      discovery.title = 'Videos found through public YouTube searches, filtered on your device to match your selected intent.';
       discovery.style.cssText = 'margin:0 0 2px;font-size:11px;line-height:16px;color:var(--yt-spec-text-secondary,var(--intent-muted))';
       this.status = document.createElement('div'); this.status.className = 'status'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
       this.grid = document.createElement('div'); this.grid.className = 'grid first-grid'; this.grid.setAttribute('aria-label', 'Videos for your intent');

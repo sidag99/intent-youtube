@@ -1,6 +1,8 @@
-# Validation — 26 October 2026, version 1.9.1
+# Validation — 26 October 2026, version 1.9.2
 
 ## Verified
+
+- Version 1.9.2: button audit checks final rendered text/background contrast (at least 4.5:1 for enabled text actions), purpose-specific filled/outlined/destructive hierarchy, explicit font metrics, neutral Cancel states, disabled hover behavior, selected states, keyboard focus, coarse-pointer target sizes and no narrow-page overflow. Real settings, popup, dialogs, Home/watch and toolbar components run in light/dark Chromium fixtures. The source label now reads “YouTube search · Filtered locally”, with a short, neutral tooltip explaining its source and local matching. The popup uses adaptive intent columns and clamps long labels without losing their accessible names. See [BUTTON_AUDIT.md](BUTTON_AUDIT.md).
 
 - Version 1.9.1: Reset settings, New preset and Show/Hide filtered examples use visible rounded secondary buttons. Existing preferences and preview suites pass; direct browser inspection checks filled surfaces, borders, 40px minimum height, pressed-state behavior and no overflow at 390px in light/dark themes.
 
