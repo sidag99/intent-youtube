@@ -445,3 +445,11 @@ test('stale continuation work does not classify or return items after its feed i
   await new Promise(resolve => setImmediate(resolve)); active = false; release(); await assert.rejects(pending, /no longer active/);
   assert.equal(calls, 2); assert.equal(judged, 1, 'the cancelled continuation never reaches the local model');
 });
+
+test('library defaults use focused discovery queries without leaking into an edited scope',()=>{
+  const template=C.INTENT_TEMPLATES.gaming,id='custom-gaming';
+  const s=C.sanitize({mode:id,customIntents:{[id]:{name:template.name,description:template.description,templateId:'gaming'}}});
+  assert.deepEqual(F.queries(s),template.searches);
+  const edited=C.sanitize({...s,customIntents:{[id]:{...s.customIntents[id],description:'Chess tournament analysis'}}});
+  assert.deepEqual(F.queries(edited),['Chess tournament analysis']);
+});

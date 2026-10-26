@@ -35,7 +35,7 @@ function assertActions(rows){for(const row of rows){if(row.disabled)continue;if(
   assertActions(await inspect(page));await destructive.hover();assertActions(await inspect(page));
   await page.screenshot({path:path.join(shots,`intent-button-reset-${theme}-${width}.png`)});await page.locator('#cancel-reset').click();
   await page.locator('#delete-role-preset').click();assert.ok((await page.locator('#confirm-delete-role-preset').getAttribute('class')).includes('danger'));assertActions(await inspect(page));await page.locator('#delete-role-preset-dialog [data-close]').click();
-  await page.locator('#intent-catalogue summary').click();assertActions(await inspect(page));
+  await page.locator('#intent-catalogue > summary').click();assertActions(await inspect(page));
   await page.locator('[data-add-template=ai]').click();await page.locator('[data-edit=custom-ai]').waitFor();
   await page.locator('[data-edit=custom-ai]').click();assert.ok((await page.locator('#delete-intent').getAttribute('class')).includes('danger-button'));assertActions(await inspect(page));await page.locator('#close-editor').click();
   await page.locator('#role-presets').screenshot({path:path.join(shots,`intent-button-presets-${theme}-${width}.png`)});

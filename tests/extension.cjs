@@ -451,7 +451,7 @@ async function chooseMode(toolbar, mode, customName) {
   console.log('PASS per-tab pause restores native content, survives reload, leaves other tabs active and resumes its saved intent from the popup');
   // Optional templates add a mode without changing existing intent choices.
   const beforeAdd=await settings.evaluate(()=>chrome.runtime.sendMessage({type:'GET_STATE'}));
-  await settings.locator('#intent-catalogue summary').click();
+  await settings.locator('#intent-catalogue > summary').click();
   await settings.locator('[data-add-template="ai"]').click();
   await settings.locator('[data-edit="custom-ai"]').waitFor();
   const afterAdd=await settings.evaluate(()=>chrome.runtime.sendMessage({type:'GET_STATE'}));

@@ -2,9 +2,9 @@
 (() => {
   const C = IntentCore;
   const SEEDS = {
-    work: ['software engineering tutorial', 'design workflow', 'productivity workflow', 'business strategy', 'python programming', 'web development', 'career skills', 'data science'],
-    study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained'],
-    music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music'],
+    work: ['software engineering tutorial', 'design workflow', 'productivity workflow', 'business strategy', 'python programming', 'web development', 'career skills', 'data science', 'accounting spreadsheet workflow', 'project management leadership', 'professional communication skills', 'business operations sales'],
+    study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained', 'computer science algorithms lesson', 'economics psychology explained', 'geography earth science lesson', 'worked problems proof explanation'],
+    music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music', 'rock indie music live', 'hip hop soul music', 'electronic dance music mix', 'singing covers music production'],
   };
   function normalizeLocale(input) {
     let hl = 'en';
@@ -23,7 +23,8 @@
     const s = C.sanitize(settings);
     if (s.mode === 'off') return [];
     const description = s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description;
-    const seeds = description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
+    const template = C.defaultTemplate(s, s.mode);
+    const seeds = template ? template.searches : description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
     const all = [...new Set([...C.terms(s.customTopics[s.mode]), ...C.terms(s.channels[s.mode]), ...seeds].map(q => q.slice(0, 160)))].slice(0, 24);
     const start = (Math.max(0, Math.trunc(Number(round) || 0)) * 2) % all.length;
     return [...all.slice(start), ...all.slice(0, start)];
