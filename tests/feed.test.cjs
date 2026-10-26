@@ -349,3 +349,99 @@ test('simultaneous searches share requests within a locale and do not share resu
   release(); const [gb, duplicate, india] = await Promise.all(pending);
   assert.equal(gb.items[0].metadata, '26M views'); assert.deepEqual(duplicate.items, gb.items); assert.equal(india.items[0].metadata, '2.6 crore views');
 });
+
+
+const publicClient = {INNERTUBE_CONTEXT_CLIENT_NAME: 1, INNERTUBE_CONTEXT_CLIENT_VERSION: '2.20261023.01.00', INNERTUBE_API_KEY: 'PublicBootstrapKey_1234567890', INNERTUBE_CONTEXT: {client: {clientName: 'WEB', clientVersion: '2.20261023.01.00', visitorData: 'do-not-forward'}, user: {account: 'do-not-forward'}}, VISITOR_DATA: 'do-not-forward'};
+const continuationItem = token => ({continuationItemRenderer: {continuationEndpoint: {commandMetadata: {webCommandMetadata: {sendPost: true, apiUrl: '/youtubei/v1/search'}}, continuationCommand: {token, request: 'CONTINUATION_REQUEST_TYPE_SEARCH'}}}});
+const discoverPage = (entries, token, config = publicClient) => page([...entries, ...(token ? [continuationItem(token)] : [])]) + '<script>ytcfg.set(' + JSON.stringify(config) + ');</script>';
+const continuedPage = (entries, token) => JSON.stringify({onResponseReceivedCommands: [{appendContinuationItemsAction: {continuationItems: [{itemSectionRenderer: {contents: entries}}, ...(token ? [continuationItem(token)] : [])]}}]});
+const oneTopic = () => C.sanitize({intentDescriptions: {work: 'woodworking joinery'}, metadataLimit: 0});
+test('a single public topic keeps loading actual continuation pages with filters, regional context and no duplicate videos', async () => {
+  const calls = [], locale = {hl: 'en-GB', gl: 'GB'}, settings = oneTopic();
+  const service = F.createService({fetcher: async (url, options) => {
+    calls.push({url, options}); const token = options.method === 'POST' ? JSON.parse(options.body).continuation : '';
+    const text = !token ? discoverPage([renderer('aaaaaaaaaaa', 'Woodworking joinery first lesson')], 'next-one') : token === 'next-one' ? continuedPage([
+      renderer('aaaaaaaaaaa', 'Woodworking joinery duplicate'), renderer('bbbbbbbbbbb', 'Woodworking joinery second lesson'), renderer('ccccccccccc', 'Jazz concert'), shortRenderer('ddddddddddd', 'Woodworking joinery short')
+    ], 'next-two') : continuedPage([renderer('eeeeeeeeeee', 'Woodworking joinery third lesson')]);
+    return {ok: true, url, text: async () => text};
+  }});
+  const first = await service.get(settings, {locale});
+  assert.deepEqual(first.items.map(video => video.id), ['aaaaaaaaaaa']); assert.equal(first.hasMore, true); assert.equal(typeof first.pageCursor, 'string'); assert.equal(calls.length, 1);
+  const options = {locale, cursor: first.nextCursor, pageCursor: first.pageCursor, exclude: first.items.map(video => video.id)};
+  const second = await service.get(settings, options);
+  assert.deepEqual(second.items.map(video => video.id), ['bbbbbbbbbbb']); assert.equal(second.hasMore, true); assert.equal(calls.length, 2);
+  assert.deepEqual((await service.get(settings, options)).items, second.items); assert.equal(calls.length, 2, 'the same opaque cursor is idempotent and reuses its fetched page');
+  const third = await service.get(settings, {locale, cursor: second.nextCursor, pageCursor: second.pageCursor, exclude: ['aaaaaaaaaaa', 'bbbbbbbbbbb']});
+  assert.deepEqual(third.items.map(video => video.id), ['eeeeeeeeeee']); assert.equal(third.hasMore, false); assert.equal(third.pageCursor, null); assert.equal(calls.length, 3);
+  for (const call of calls.slice(1)) {
+    const url = new URL(call.url), body = JSON.parse(call.options.body);
+    assert.equal(url.origin + url.pathname, 'https://www.youtube.com/youtubei/v1/search'); assert.equal(url.searchParams.get('key'), publicClient.INNERTUBE_API_KEY);
+    assert.equal(call.options.credentials, 'omit'); assert.equal(call.options.method, 'POST');
+    assert.deepEqual(body.context, {client: {clientName: 'WEB', clientVersion: '2.20261023.01.00', hl: 'en-GB', gl: 'GB'}});
+    assert.deepEqual(Object.keys(body).sort(), ['context', 'continuation']); assert.ok(!JSON.stringify(call).includes('do-not-forward'));
+    assert.equal(call.options.headers.Authorization, undefined); assert.equal(call.options.headers.Cookie, undefined);
+  }
+});
+test('discovery cursors are server-owned, expire, and cannot be reused with another intent, locale or refresh round', async () => {
+  let time = 0, calls = 0;
+  const service = F.createService({now: () => time, fetcher: async url => {calls++; return {ok: true, url, text: async () => discoverPage([renderer('abcdefghijk', 'Woodworking joinery')], 'next-page')};}});
+  const settings = oneTopic(), first = await service.get(settings);
+  for (const options of [{pageCursor: 'caller-token', url: 'https://evil.example/'}, {pageCursor: {token: 'next-page'}}, {pageCursor: first.pageCursor, locale: {hl: 'de', gl: 'DE'}}, {pageCursor: first.pageCursor, round: 1}]) await assert.rejects(service.get(settings, options), /continuation expired or changed/);
+  await assert.rejects(service.get({...settings, mode: 'study'}, {pageCursor: first.pageCursor}), /continuation expired or changed/);
+  assert.equal(calls, 1, 'invalid context never starts a request');
+  time = 600001; await assert.rejects(service.get(settings, {pageCursor: first.pageCursor}), /continuation expired/); assert.equal(calls, 1);
+});
+test('partial continuation failures remain retryable and never spend more than two search-page requests per batch', async () => {
+  const calls = []; let fail = true;
+  const settings = C.sanitize({intentDescriptions: {work: 'woodworking, joinery'}, metadataLimit: 0});
+  const service = F.createService({fetcher: async (url, options) => {
+    const token = options.method === 'POST' ? JSON.parse(options.body).continuation : '';
+    calls.push(token || new URL(url).searchParams.get('search_query'));
+    if (token === 'wood-next' && fail) throw new Error('Temporary continuation failure');
+    return {ok: true, url, text: async () => token ? continuedPage([renderer(token === 'wood-next' ? 'ccccccccccc' : 'ddddddddddd', 'Woodworking joinery next lesson')]) : discoverPage([renderer(new URL(url).searchParams.get('search_query') === 'woodworking' ? 'aaaaaaaaaaa' : 'bbbbbbbbbbb', 'Woodworking joinery lesson')], new URL(url).searchParams.get('search_query') === 'woodworking' ? 'wood-next' : 'join-next')};
+  }});
+  const first = await service.get(settings); assert.equal(calls.length, 2);
+  const second = await service.get(settings, {cursor: first.nextCursor, pageCursor: first.pageCursor});
+  assert.equal(calls.length, 4); assert.equal(second.hasMore, true); assert.match(second.warning, /Some searches/); assert.deepEqual(second.items.map(video => video.id), ['ddddddddddd']);
+  fail = false;
+  const retry = await service.get(settings, {cursor: second.nextCursor, pageCursor: second.pageCursor});
+  assert.equal(calls.length, 5); assert.deepEqual(retry.items.map(video => video.id), ['ccccccccccc']); assert.equal(retry.hasMore, false);
+});
+test('failed continuation requests preserve the same cursor for retry and shared callers deduplicate in-flight pages', async () => {
+  let calls = 0, fail = true, release;
+  const gate = new Promise(resolve => {release = resolve;});
+  const service = F.createService({fetcher: async (url, options) => {
+    calls++; if (!options.method) return {ok: true, url, text: async () => discoverPage([renderer('aaaaaaaaaaa', 'Woodworking joinery')], 'next')};
+    if (fail) throw new Error('Temporary failure'); await gate;
+    return {ok: true, url, text: async () => continuedPage([renderer('bbbbbbbbbbb', 'Woodworking joinery next')])};
+  }});
+  const settings = oneTopic(), first = await service.get(settings), options = {cursor: first.nextCursor, pageCursor: first.pageCursor};
+  await assert.rejects(service.get(settings, options), /Temporary failure/); assert.equal(calls, 2);
+  fail = false; const pending = [service.get(settings, options), service.get(settings, options)];
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(calls, 3, 'two retries share one continuation request'); release();
+  const [a, b] = await Promise.all(pending); assert.deepEqual(a.items, b.items); assert.equal(a.hasMore, false);
+});
+test('continuation parsing uses only search actions, bounds tokens and stops repeated continuation loops honestly', async () => {
+  for (const scenario of ['loop', 'oversized', 'missing-client', 'unrelated-actions']) {
+    let calls = 0;
+    const service = F.createService({fetcher: async (url, options) => {
+      calls++;
+      const token = scenario === 'oversized' ? 'x'.repeat(4097) : 'loop-next';
+      const text = !options.method ? discoverPage([renderer('aaaaaaaaaaa', 'Woodworking joinery')], token, scenario === 'missing-client' ? {} : publicClient) : scenario === 'unrelated-actions' ? JSON.stringify({unrelated: {appendContinuationItemsAction: {continuationItems: [renderer('bbbbbbbbbbb', 'Woodworking joinery unrelated response')]}}}) : continuedPage([renderer('bbbbbbbbbbb', 'Woodworking joinery next')], 'loop-next');
+      return {ok: true, url, text: async () => text};
+    }});
+    const settings = oneTopic(), first = await service.get(settings);
+    if (scenario === 'oversized' || scenario === 'missing-client') {assert.equal(first.hasMore, false); assert.match(first.endReason, /unavailable/); assert.equal(calls, 1);}
+    else if (scenario === 'unrelated-actions') await assert.rejects(service.get(settings, {pageCursor: first.pageCursor}), /search layout/);
+    else {const second = await service.get(settings, {pageCursor: first.pageCursor}); assert.equal(second.hasMore, false); assert.match(second.endReason, /discovery limit/); assert.equal(calls, 2);}
+  }
+});
+test('stale continuation work does not classify or return items after its feed is cancelled', async () => {
+  let active = true, calls = 0, judged = 0, release;
+  const gate = new Promise(resolve => {release = resolve;});
+  const service = F.createService({fetcher: async (url, options) => {calls++; if (options.method) await gate; return {ok: true, url, text: async () => options.method ? continuedPage([renderer('bbbbbbbbbbb', 'Woodworking joinery next')]) : discoverPage([renderer('aaaaaaaaaaa', 'Woodworking joinery')], 'next')};}, judge: async videos => {judged++; return videos.map(() => ({accepted: true, uncertain: false}));}});
+  const settings = oneTopic(), first = await service.get(settings);
+  const pending = service.get(settings, {pageCursor: first.pageCursor, isActive: () => active});
+  await new Promise(resolve => setImmediate(resolve)); active = false; release(); await assert.rejects(pending, /no longer active/);
+  assert.equal(calls, 2); assert.equal(judged, 1, 'the cancelled continuation never reaches the local model');
+});

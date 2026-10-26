@@ -45,6 +45,15 @@ async function removeGlassFixture(page) {
  await page.evaluate(()=>{document.querySelector('#glass-regression-app').remove();document.querySelector('#glass-regression-style').remove();});
 }
 
+async function settleHorizontalScroll(scroller) {
+ await scroller.evaluate(el=>new Promise((resolve,reject)=>{
+  let previous=el.scrollLeft,stableFrames=0;
+  const timeout=setTimeout(()=>reject(new Error('The Shorts scroller did not settle before the responsive layout check.')),5000);
+  const frame=()=>{const current=el.scrollLeft;stableFrames=Math.abs(current-previous)<.1?stableFrames+1:0;previous=current;if(stableFrames>=6){clearTimeout(timeout);resolve();}else requestAnimationFrame(frame);};
+  requestAnimationFrame(frame);
+ }));
+}
+
 async function expandAdvanced(page) {
  const advanced=page.locator('#intent-editor details.intent-advanced');
  if(await advanced.count()&&await advanced.getAttribute('open')===null)await advanced.locator('summary').click();
@@ -98,9 +107,9 @@ async function chooseMode(toolbar, mode, customName) {
   await page.locator('#intent-editor[open]').waitFor();
   await page.locator('#intent-name').fill('Chess practice');
   await page.locator('#intent-description').fill('Chess endgame training: king and pawn endings, rook endgames and checkmates.');
-  await page.locator('#intent-icon').selectOption('game');
+  await page.locator('[data-icon-choice="game"]').click();
   await page.locator('#channels').fill('Board Academy');
-  await page.locator('#intent-count-time').uncheck();
+  await page.locator('[name="intent-timer-policy"][value="none"]').check();
   await expandAdvanced(page);await page.locator('#topics').fill('rook endings');
   await page.getByRole('button',{name:'Create intent',exact:true}).click();
   await page.locator('#intent-editor[open]').waitFor({state:'detached'});
@@ -110,7 +119,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await page.locator('#intent-description').inputValue(),'Chess endgame training: king and pawn endings, rook endgames and checkmates.');
   assert.equal(await page.locator('#intent-icon').inputValue(),'game');
   assert.equal(await page.locator('#channels').inputValue(),'Board Academy');
-  assert.equal(await page.locator('#intent-count-time').isChecked(),false);
+  assert.equal(await page.locator('[name="intent-timer-policy"][value="none"]').isChecked(),true);
   await expandAdvanced(page);assert.equal(await page.locator('#topics').inputValue(),'rook endings');
   await page.locator('#close-editor').click();
   await page.getByRole('switch',{name:'Hide Shorts',exact:true}).click();
@@ -219,11 +228,15 @@ async function chooseMode(toolbar, mode, customName) {
   await feed.locator('.shorts-grid').focus();await yt.keyboard.press('ArrowRight');
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.shorts-grid').scrollLeft>50);
   await feed.locator('.shorts-grid').evaluate(el=>el.blur());
+  // Crossing 50px proves keyboard scrolling started; it does not mean the
+  // browser's smooth-scroll animation has finished. Let it settle before resizing.
+  await settleHorizontalScroll(feed.locator('.shorts-grid'));
   await yt.screenshot({path:path.join(shots,'intent-home-shorts-mobile.png'),fullPage:true});
   await yt.setViewportSize({width:1920,height:1100});
   await yt.waitForFunction(count=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.first-grid').children.length===count,firstRow.length);
   assert.equal(await feed.locator('.card').count(),20,'responsive splitting never duplicates cards');
-  await feed.locator('.shorts-grid').evaluate(el=>{el.blur();el.scrollLeft=0;});
+  await settleHorizontalScroll(feed.locator('.shorts-grid'));
+  await feed.locator('.shorts-grid').evaluate(el=>{el.blur();el.scrollTo({left:0,behavior:'instant'});});
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.shorts-grid').scrollLeft<=1);
   await yt.screenshot({path:path.join(shots,'intent-home-shorts.png'),fullPage:true});
   assert.equal(await feed.locator('[data-video-id="w0000000098"]').count(),0,'unrelated videos stay excluded with Shorts visible');

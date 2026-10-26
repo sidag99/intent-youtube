@@ -27,6 +27,10 @@
 :host([data-layout=launcher]) .chevron{width:10px;flex-basis:10px}
 .option,.pause-button{min-height:44px}
 .menu-budget{margin:0;padding:2px 16px 8px;font-size:12px;line-height:16px;color:var(--intent-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trigger{position:relative;isolation:isolate}.trigger:hover{background:transparent}.trigger::before{content:"";position:absolute;inset:3px 0;border-radius:15px;z-index:-1;pointer-events:none}.trigger:hover::before{background:var(--intent-hover)}
+.selected-symbol svg{display:block;width:14px;height:14px}
+:host([data-layout=compact]) .trigger::before{inset:3px 1px;border-radius:19px}
+:host([data-layout=launcher]) .controls{padding:0}:host([data-layout=launcher]) .trigger::before{inset:3px;border-radius:19px}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 `;
   const svg = (path, className = '') => {
@@ -34,6 +38,11 @@
     icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
     if (className) icon.setAttribute('class', className);
     const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path'); shape.setAttribute('d', path); icon.append(shape); return icon;
+  };
+  const intentIcon = (markup, custom = false) => {
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [name, value] of Object.entries({viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': custom ? '1.7' : '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) icon.setAttribute(name, value);
+    icon.innerHTML = markup; return icon;
   };
   class Toolbar {
     constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}, onPaused = () => {}} = {}) {
@@ -66,6 +75,7 @@
         this.layoutObserver?.disconnect();
         this.layoutObserver = new ResizeObserver(this.layoutReposition);
         for (const element of [masthead, center, start]) this.layoutObserver.observe(element);
+        this.alignmentTarget = null;
       }
       this.center = center; this.start = start; this.container = container;
       this.masthead = masthead; masthead.setAttribute('data-intent-toolbar', '');
@@ -86,6 +96,32 @@
       for (const [element, properties] of this.flowStyles) if (!properties.hadStyleAttribute && !element.getAttribute('style')?.trim()) element.removeAttribute('style');
       this.flowStyles.clear();
     }
+    observeAlignmentTarget(node) {
+      if (this.alignmentTarget === node) return;
+      if (this.alignmentTarget) this.layoutObserver?.unobserve(this.alignmentTarget);
+      this.alignmentTarget = node; if (node) this.layoutObserver?.observe(node);
+    }
+    contentLeft() {
+      const visibleLeft = node => {
+        if (!node || node.closest('[hidden]')) return null;
+        const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+        if (rect.width >= 100 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {this.observeAlignmentTarget(node); return rect.left;}
+        return null;
+      };
+      if (location.pathname === '/watch') {
+        for (const watch of document.querySelectorAll('ytd-watch-flexy:not([hidden])')) {
+          for (const selector of ['#player', '#player-container-outer', '#player-container-inner', '#primary']) {
+            const left = visibleLeft(watch.querySelector(selector));
+            if (left !== null) return left;
+          }
+        }
+      } else if (location.pathname === '/') {
+        for (const cover of document.querySelector('#intent-home-feed')?.shadowRoot?.querySelectorAll('.cover') || []) {
+          const left = visibleLeft(cover); if (left !== null) return left;
+        }
+      }
+      this.observeAlignmentTarget(null); return null;
+    }
     positionControls() {
       if (!this.host?.isConnected || !this.masthead || !this.center || !this.start) return;
       const masthead = this.masthead.getBoundingClientRect(), start = this.start.getBoundingClientRect(), center = this.center.getBoundingClientRect();
@@ -101,6 +137,10 @@
       // Subtract our existing footprint so repeated scans never shrink it again.
       const searchSpace = center.width - otherWidth;
       const width = overlay ? available >= 360 ? 360 : available >= 200 ? 200 : 180 : searchSpace >= 448 ? 200 : searchSpace >= 428 ? 180 : 44;
+      // Choose the responsive tier using all available space first. Align within
+      // that tier, so a shifted player never forces a narrower control.
+      const contentLeft = this.contentLeft();
+      const alignedLeft = !overlay || contentLeft === null ? left : Math.max(left, Math.min(contentLeft, center.left - 12 - width));
       const layout = width === 360 ? 'full' : width === 44 ? 'launcher' : 'compact';
       const placement = overlay ? 'overlay' : 'flow';
       const useCenter = !overlay && center.width > 44 && getComputedStyle(this.center).display !== 'none';
@@ -116,7 +156,7 @@
       }
       this.host.dataset.placement = placement; this.host.dataset.layout = layout;
       this.host.style.setProperty('--intent-toolbar-width', `${width}px`); this.host.style.setProperty('--intent-toolbar-gap', width === 44 ? '4px' : '8px');
-      this.host.style.left = overlay ? `${Math.round(left)}px` : 'auto';
+      this.host.style.left = overlay ? `${Math.round(alignedLeft)}px` : 'auto';
       this.host.style.top = overlay ? `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : 44)) / 2)}px` : 'auto';
       this.menuRefreshButton.hidden = this.menuSettingsButton.hidden = layout === 'full'; this.menuBudget.hidden = layout !== 'launcher';
       if (layout === 'launcher') this.closeTimer();
@@ -184,7 +224,7 @@
       try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.error.textContent = error.message;}
     }
     updateOptions(settings) {
-      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒']), ['off', 'Off', '○']];
+      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['off', 'Off', '○']];
       const signature = JSON.stringify(options);
       if (signature === this.optionSignature) return;
       const hadFocus = this.open && this.options?.includes(this.root.activeElement);
@@ -192,9 +232,10 @@
       this.options = options.map(([id, name, symbol]) => {
         const option = document.createElement('button'); option.type = 'button'; option.className = 'option'; option.dataset.mode = id; option.id = `intent-option-${id}`; option.tabIndex = -1; option.setAttribute('role', 'option');
         const label = document.createElement('span'); label.className = 'option-name'; label.textContent = name;
-        const glyph = document.createElement('span'); glyph.className = 'option-symbol'; glyph.setAttribute('aria-hidden', 'true'); if (IntentCore.MODE_ICONS?.[id]) {
-          const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'none'); icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('stroke-width', '1.5'); icon.setAttribute('stroke-linecap', 'round'); icon.setAttribute('stroke-linejoin', 'round'); icon.innerHTML = IntentCore.MODE_ICONS[id]; glyph.append(icon);
-        } else glyph.textContent = symbol;
+        const glyph = document.createElement('span'); glyph.className = 'option-symbol'; glyph.setAttribute('aria-hidden', 'true');
+        const customMarkup = IntentCore.INTENT_ICON_PATHS?.[settings.customIntents?.[id]?.icon];
+        const markup = IntentCore.MODE_ICONS?.[id] || customMarkup;
+        if (markup) glyph.append(intentIcon(markup, Boolean(customMarkup))); else glyph.textContent = symbol;
         option.append(glyph, label, svg('m5 12 4 4L19 6', 'check'));
         option.addEventListener('click', () => this.choose(id)); return option;
       });
@@ -222,7 +263,12 @@
       const detail = state === 'off' ? defaults.off : this.coverage?.detail || defaults[state];
       const label = {'off-here': 'Off here', loading: 'Loading', unavailable: 'Unavailable'}[state] || '';
       const custom = Object.hasOwn(this.settings.customIntents || {}, this.settings.mode);
-      this.selectedSymbol.textContent = IntentCore.modes(this.settings)[this.settings.mode]?.symbol || '◒';
+      const selectedIcon = this.settings.customIntents?.[this.settings.mode]?.icon, markup = IntentCore.INTENT_ICON_PATHS?.[selectedIcon];
+      const iconSignature = custom ? `${selectedIcon}:${markup || ''}` : '';
+      if (this.selectedIconSignature !== iconSignature) {
+        this.selectedIconSignature = iconSignature;
+        if (markup) this.selectedSymbol.replaceChildren(intentIcon(markup, true)); else this.selectedSymbol.textContent = custom ? IntentCore.modes(this.settings)[this.settings.mode]?.symbol || '◒' : '';
+      }
       this.selectedSymbol.hidden = !custom || state === 'paused' || this.settings.mode === 'off';
       this.modeName.textContent = state === 'paused' ? 'Paused' : this.settings.mode === 'off' ? 'Intent off' : this.savedModeName;
       this.host.dataset.filterState = state; this.trigger.dataset.filterState = state;
@@ -433,7 +479,7 @@
       if (this.host.dataset.theme !== theme) this.host.dataset.theme = theme;
     }
     destroy() {
-      this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect();
+      this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect(); this.alignmentTarget = null;
       window.removeEventListener('resize', this.layoutReposition); window.removeEventListener('scroll', this.layoutReposition, true);
       this.restoreFlowStyles(); this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
     }

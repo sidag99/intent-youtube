@@ -1,5 +1,6 @@
 const {chromium} = require('playwright');
 const path = require('node:path');
+const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const file = name => 'file://' + path.join(root, name);
@@ -18,6 +19,18 @@ async function openEditor(page, mode) {
 async function openCreate(page) {
   await page.locator('#new-intent').click();
   await page.locator('#intent-editor[open]').waitFor();
+}
+async function chooseIcon(page, key) {
+  await page.locator(`[data-icon-choice="${key}"]`).click();
+  assert.equal(await page.locator('#intent-icon').inputValue(), key);
+  assert.equal(await page.locator(`[data-icon-choice="${key}"]`).getAttribute('aria-pressed'), 'true');
+}
+async function assertSharedIcon(page, selector, key) {
+  const shape = await page.locator(selector).evaluate((svg, key) => {
+    const expected = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); expected.innerHTML = IntentCore.INTENT_ICON_PATHS[key];
+    return {actual: svg.innerHTML, expected: expected.innerHTML, stroke: svg.getAttribute('stroke-width')};
+  }, key);
+  assert.equal(shape.actual, shape.expected); assert.equal(shape.stroke, '1.7');
 }
 async function advanced(page) {
   const section = page.locator('#intent-editor .intent-advanced');
@@ -51,11 +64,10 @@ async function scopeStatus(page, text) {
   assert.ok((await status.getAttribute('aria-live')) || (await status.getAttribute('role')) === 'status', 'scope changes are announced as a live status');
 }
 async function stored(page) { return page.evaluate(() => JSON.parse(localStorage.getItem('intent-demo'))); }
-async function toggleCount(page, name, enabled) {
-  const control = page.getByRole('switch', {name, exact: true});
-  if ((await control.getAttribute('aria-checked')) !== String(enabled)) await control.click();
-  await idle(page);
-  assert.equal(await control.getAttribute('aria-checked'), String(enabled));
+async function chooseTimerPolicy(page, mode, value, editor = false) {
+  const control = page.locator(editor ? `[name="intent-timer-policy"][value="${value}"]` : `[data-timer-policy-mode="${mode}"][value="${value}"]`);
+  await control.check(); if (!editor) await idle(page);
+  assert.equal(await control.isChecked(), true);
 }
 (async () => {
   const browser = await chromium.launch({channel: 'chromium', headless: true});
@@ -67,14 +79,31 @@ async function toggleCount(page, name, enabled) {
     await page.goto(file('settings.html'));
     await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
     assert.equal(await page.getByRole('switch', {name: 'Low-time reminders', exact: true}).count(), 0, 'retired reminders are not advertised');
-    assert.equal(await page.locator('[data-match-only-mode="off"]').count(),0,'modes-off browsing never offers a topic-based exemption');
-    assert.equal(await page.locator('[data-match-only-mode="work"]').count(),0,'counted intents do not offer an exemption policy');
-    const musicMatch=page.getByRole('switch',{name:'Only exempt matching Music videos',exact:true});
-    assert.equal(await musicMatch.getAttribute('aria-checked'),'false','matching-only exemptions are opt-in');
-    await musicMatch.click();await idle(page);assert.equal((await stored(page)).matchOnlyModes.music,true);
-    await page.reload();await musicMatch.waitFor();assert.equal(await musicMatch.getAttribute('aria-checked'),'true','the matching-only preference survives reload');
-    assert.match(await page.locator('#matching-policy-help').textContent(),/uncertain videos stay exempt.*unrelated videos count.*Browsing and search.*local model.*no extra requests/i);
-    await musicMatch.click();await idle(page);
+    await page.getByRole('heading',{name:'Time counting',exact:true}).waitFor();
+    assert.equal(await page.getByRole('radiogroup',{name:'Modes off time counting',exact:true}).getByRole('radio').count(),2,'modes-off browsing offers count-all or do-not-count');
+    assert.equal(await page.getByRole('radiogroup',{name:'Work time counting',exact:true}).getByRole('radio').count(),3);
+    assert.equal(await page.locator('[data-timer-policy-mode="work"][value="all"]').isChecked(),true);
+    const musicMatch=page.locator('[data-timer-policy-mode="music"][value="off-topic"]');
+    assert.equal(await page.locator('[data-timer-policy-mode="music"][value="none"]').isChecked(),true,'Music keeps its default exemption');
+    await chooseTimerPolicy(page,'music','off-topic');assert.equal((await stored(page)).matchOnlyModes.music,true);assert.equal((await stored(page)).countModes.music,false);
+    await page.reload();await musicMatch.waitFor();assert.equal(await musicMatch.isChecked(),true,'the off-topic-only policy survives reload');
+    assert.match(await page.locator('#timer-policy-help-music').textContent(),/clearly unrelated.*Matching and uncertain.*browsing and search.*exempt/i);
+    await chooseTimerPolicy(page,'music','none');assert.equal((await stored(page)).matchOnlyModes.music,false);
+    assert.equal(await page.locator('#intent-count-time,#intent-match-only,[data-count-mode],[data-match-only-mode]').count(),0,'the old paired switches and checkbox controls are gone');
+    const policyShots = path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results'); fs.mkdirSync(policyShots, {recursive: true});
+    for (const [scheme, width] of [['light',1440],['dark',1440],['light',390],['dark',390]]) {
+      await page.emulateMedia({colorScheme:scheme});await page.setViewportSize({width,height:1000});
+      const panel=page.locator('.timer-modes-panel');await panel.scrollIntoViewIfNeeded();
+      assert.equal(await panel.getByRole('radiogroup').count(),4);
+      assert.equal(await panel.locator('input:checked').count(),4,'each intent has exactly one clear time-counting policy');
+      assert.equal(await panel.evaluate(element=>element.scrollWidth<=element.clientWidth),true,'time choices fit the panel without horizontal overflow');
+      const targets=await panel.locator('.timer-policy-option').evaluateAll(labels=>labels.map(label=>({width:label.getBoundingClientRect().width,height:label.getBoundingClientRect().height})));
+      assert.ok(targets.every(target=>target.width>=44&&target.height>=44),'all time policies have normal touch targets');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await panel.screenshot({path:path.join(policyShots,`intent-time-counting-${scheme}-${width}.png`)});
+    }
+    await page.emulateMedia({colorScheme:'light'});await page.setViewportSize({width:1440,height:1100});
+
     builtinDefaults = await page.evaluate(() => Object.fromEntries(Object.entries(IntentCore.MODES).map(([mode, definition]) => [mode, {name: definition.name, scope: IntentSemantic.PROFILES[mode], topics: definition.topics, searches: IntentFeed.queries({...IntentCore.defaults(), mode})}])));
     assert.equal(await page.locator('.rules-panel').count(), 0, 'intent fields stay in an editor rather than a permanent page panel');
     assert.equal(await page.locator('#tab-pause').count(), 0, 'full settings never expose a tab-specific pause control');
@@ -112,15 +141,43 @@ async function toggleCount(page, name, enabled) {
     await page.reload(); await metadataLimit.waitFor(); assert.equal(await metadataLimit.inputValue(), '0');
     await openCreate(page);
     assert.equal(await page.locator('#intent-editor .intent-advanced').evaluate(element => element.open), false, 'extra discovery fields are optional Advanced options');
+    assert.equal(await page.locator('select#intent-icon').count(), 0, 'the icon picker never opens a native OS dropdown');
+    assert.equal(await page.locator('#intent-icon').getAttribute('type'), 'hidden');
+    assert.equal(await page.locator('#intent-icon-picker [data-icon-choice]').count(), 20);
+    assert.equal(await page.locator('#intent-icon-picker [aria-pressed="true"]').count(), 1);
+    assert.equal(await page.getByRole('button', {name: 'Compass icon', exact: true}).getAttribute('aria-pressed'), 'true');
+    for (const key of await page.evaluate(() => Object.keys(IntentCore.INTENT_ICON_PATHS))) await assertSharedIcon(page, `[data-icon-choice="${key}"] svg`, key);
+    await page.getByRole('button', {name: 'Compass icon', exact: true}).focus();
+    for (const [key, expected] of [['Home','code'],['End','heart'],['ArrowLeft','leaf'],['ArrowUp','camera'],['ArrowRight','language'],['ArrowDown','heart']]) {
+      await page.keyboard.press(key); assert.equal(await page.locator('#intent-icon').inputValue(), expected);
+      assert.equal(await page.locator(`[data-icon-choice="${expected}"]`).evaluate(button => button === document.activeElement), true);
+    }
+    await page.keyboard.press('Tab'); assert.equal(await page.locator('#intent-description').evaluate(input => input === document.activeElement), true, 'Tab leaves the palette after its selected icon');
+    const shots = path.resolve(process.env.INTENT_SCREENSHOTS || 'test-results'); fs.mkdirSync(shots, {recursive: true});
+    const paletteColors = {};
+    for (const [scheme, width] of [['light',1440],['dark',1440],['light',390],['dark',390]]) {
+      await page.emulateMedia({colorScheme: scheme}); await page.setViewportSize({width, height: 844});
+      await page.locator('#intent-icon-picker').scrollIntoViewIfNeeded();
+      const palette = await page.locator('#intent-icon-picker').evaluate(group => ({background: getComputedStyle(group.querySelector('button')).backgroundColor, color: getComputedStyle(group.querySelector('button')).color, controls: [...group.querySelectorAll('button')].map(button => {const rect = button.getBoundingClientRect(), svg = button.querySelector('svg').getBoundingClientRect(); return {width: rect.width, height: rect.height, icon: svg.width, label: button.getAttribute('aria-label'), title: button.title};})}));
+      assert.ok(palette.controls.every(button => button.width >= 44 && button.height >= 44 && button.icon >= 24 && button.label && button.title), 'each visual icon has a readable size, touch target and name');
+      assert.notEqual(palette.background, palette.color);
+      assert.equal(await page.locator('#intent-editor').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth), true, 'the palette fits the modal without sideways scrolling');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      paletteColors[scheme] = palette.background;
+      await page.screenshot({path: path.join(shots, `intent-icon-picker-${scheme}-${width}.png`)});
+    }
+    assert.notEqual(paletteColors.light, paletteColors.dark, 'the palette follows YouTube-style light and dark themes');
+    await page.emulateMedia({colorScheme: 'light'}); await page.setViewportSize({width:1440, height:1100});
     await page.locator('#intent-name').fill('Unfinished intent draft');
     await page.locator('#intent-description').fill('Keep this description only if I save the new intent.');
-    await page.locator('#intent-icon').selectOption('plane');
-    await page.locator('#intent-count-time').uncheck();await page.locator('#intent-match-only').check();
+    await chooseIcon(page, 'plane');
+    await chooseTimerPolicy(page,null,'off-topic',true);
     await page.locator('#cancel-editor').click();
     assert.deepEqual((await stored(page)).customIntents, {}, 'Cancel never creates an intent');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'new-intent');
     await openCreate(page); assert.equal(await page.locator('#intent-name').inputValue(), '', 'cancelled create draft is discarded');
-    assert.equal(await page.locator('#intent-match-only-controls').isVisible(),false);assert.equal(await page.locator('#intent-match-only').isChecked(),false,'cancelled matching-only drafts are discarded');
+    assert.equal(await page.locator('#intent-icon').inputValue(), 'compass', 'Cancel discards the icon draft');
+    assert.equal(await page.locator('[name="intent-timer-policy"][value="all"]').isChecked(),true,'cancelled timer-policy drafts are discarded');
     await page.locator('#close-editor').click();
     await metadataLimit.fill('12'); await metadataLimit.press('Tab'); await idle(page);
     assert.equal((await stored(page)).metadataLimit, 12);
@@ -203,7 +260,13 @@ async function toggleCount(page, name, enabled) {
       assert.equal((await stored(page)).mode, beforeRole.mode, 'adding a template does not switch the current intent');
     }
     assert.equal(await page.locator('[data-add-template="ai"]').isDisabled(), true, 'installed templates cannot be duplicated');
-    await openEditor(page, 'custom-ai'); await page.locator('#intent-icon').selectOption('plane');
+    await assertSharedIcon(page, '[data-template="ai"] .intent-template-icon svg', 'sparkles');
+    await assertSharedIcon(page, '[data-mode="custom-ai"] .intent-symbol svg', 'sparkles');
+    await openEditor(page, 'custom-ai'); await chooseIcon(page, 'plane');
+    await assertSharedIcon(page, '#intent-icon-preview svg', 'plane');
+    await page.locator('#cancel-editor').click();
+    await openEditor(page, 'custom-ai');assert.equal(await page.locator('#intent-icon').inputValue(),'sparkles','Cancel restores a saved custom icon');
+    await chooseIcon(page,'plane');
     await page.getByRole('button', {name: 'Save preferences', exact: true}).click(); await saved(page); await closeEditor(page);
     assert.equal((await stored(page)).customIntents['custom-ai'].icon, 'plane');
     assert.equal(await page.locator('#intent-order').count(), 0, 'ordering lives in the selector rather than a separate dropdown');
@@ -214,7 +277,7 @@ async function toggleCount(page, name, enabled) {
     assert.equal((await stored(page)).intentOrder[0], 'custom-ai');
     assert.equal(await page.locator('.mode-grid [data-mode]').first().getAttribute('data-mode'), 'custom-ai');
     assert.equal((await stored(page)).customIntents['custom-ai'].icon, 'plane');
-    assert.equal(await page.locator('[data-mode="custom-ai"] .intent-symbol').textContent(), await page.evaluate(() => IntentCore.INTENT_ICONS.plane));
+    await assertSharedIcon(page, '[data-mode="custom-ai"] .intent-symbol svg', 'plane');
     console.log('PASS role preset apply/edit/delete/create independence, optional intent library, custom icons, removal of Leisure and persistent intent ordering');
 
     await openEditor(page, 'study'); await page.getByLabel('Intent name', {exact: true}).fill('Exam revision');
@@ -226,57 +289,62 @@ async function toggleCount(page, name, enabled) {
     assert.equal((await stored(page)).mode, initialMode);
     assert.match(await page.locator('[data-mode="study"]').textContent(), /Exam revision/);
     assert.equal(await page.locator('#new-tab-mode option[value="study"]').textContent(), 'Always Exam revision');
-    assert.equal(await page.getByRole('switch', {name: 'Count Exam revision time', exact: true}).count(), 1, 'renamed built-ins keep their stable ID across timer and new-tab controls');
+    assert.equal(await page.getByRole('radiogroup', {name: 'Exam revision time counting', exact: true}).count(), 1, 'renamed built-ins keep their stable timer policy');
     const beforeMatchingDraft=await stored(page);
-    await openEditor(page,'work');assert.equal(await page.locator('#intent-match-only-controls').isVisible(),false);
-    await page.locator('#intent-count-time').uncheck();await page.locator('#intent-match-only').check();
-    await page.locator('#intent-count-time').check();assert.equal(await page.locator('#intent-match-only-controls').isVisible(),false);
-    await page.locator('#intent-count-time').uncheck();assert.equal(await page.locator('#intent-match-only').isChecked(),true,'draft matching preference survives temporarily re-enabling counted time');
-    await page.locator('#cancel-editor').click();assert.deepEqual(await stored(page),beforeMatchingDraft,'Cancel discards both count and matching-only changes');
-    await openEditor(page,'work');await page.locator('#intent-count-time').uncheck();await page.locator('#intent-match-only').check();
+    await openEditor(page,'work');await chooseTimerPolicy(page,null,'off-topic',true);
+    await chooseTimerPolicy(page,null,'all',true);assert.equal(await page.locator('[name="intent-timer-policy"]:checked').count(),1,'editor choices stay mutually exclusive');
+    await chooseTimerPolicy(page,null,'off-topic',true);
+    for (const [scheme,width] of [['light',1440],['dark',390]]) {
+      await page.emulateMedia({colorScheme:scheme});await page.setViewportSize({width,height:844});
+      await page.locator('.intent-timer-field').scrollIntoViewIfNeeded();
+      assert.equal(await page.locator('#intent-editor').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth),true);
+      await page.screenshot({path:path.join(policyShots,`intent-editor-time-counting-${scheme}-${width}.png`)});
+    }
+    await page.emulateMedia({colorScheme:'light'});await page.setViewportSize({width:1440,height:1100});
+    await page.locator('#cancel-editor').click();assert.deepEqual(await stored(page),beforeMatchingDraft,'Cancel discards the timer-policy draft');
+    await openEditor(page,'work');await chooseTimerPolicy(page,null,'off-topic',true);
     await page.getByRole('button',{name:'Save preferences',exact:true}).click();await saved(page);await closeEditor(page);
-    assert.equal((await stored(page)).matchOnlyModes.work,true,'built-in editor saves its matching-only timer rule');
-    assert.equal(await page.getByRole('switch',{name:'Only exempt matching Work videos',exact:true}).getAttribute('aria-checked'),'true');
-    await page.getByRole('switch',{name:'Only exempt matching Work videos',exact:true}).click();await idle(page);
-    await toggleCount(page, 'Count Work time', false); await toggleCount(page, 'Count Music time', true);
-    assert.equal(await musicMatch.count(),0,'enabling counted time hides its matching-only switch');
+    assert.equal((await stored(page)).matchOnlyModes.work,true);assert.equal((await stored(page)).countModes.work,false);
+    assert.equal(await page.locator('[data-timer-policy-mode="work"][value="off-topic"]').isChecked(),true,'editor and panel show the same saved policy');
+    await chooseTimerPolicy(page,'work','none');await chooseTimerPolicy(page,'music','all');
+    assert.equal((await stored(page)).matchOnlyModes.music,false,'Count all clears the matching-only flag');
     await page.getByLabel('Intent for new YouTube tabs', {exact: true}).selectOption('music'); await idle(page);
     await page.reload(); await page.getByRole('heading', {name: 'What are you here for?'}).waitFor();
-    assert.equal(await page.getByRole('switch', {name: 'Count Work time', exact: true}).getAttribute('aria-checked'), 'false');
-    assert.equal(await page.getByRole('switch', {name: 'Count Music time', exact: true}).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.locator('[data-timer-policy-mode="work"][value="none"]').isChecked(), true);
+    assert.equal(await page.locator('[data-timer-policy-mode="music"][value="all"]').isChecked(), true);
     assert.equal(await page.getByLabel('Intent for new YouTube tabs', {exact: true}).inputValue(), 'music');
 
     await openCreate(page);
     await page.locator('#intent-name').fill('Bicycle & repair');
     await page.locator('#intent-description').fill('Bicycle maintenance, wheel truing and safe brake repairs');
-    await page.locator('#intent-icon').selectOption('tools');
+    await chooseIcon(page, 'tools');
     await page.locator('#channels').fill('Initial Workshop');
-    await page.locator('#intent-count-time').uncheck();
-    await page.locator('#intent-match-only').check();
+    await chooseTimerPolicy(page,null,'off-topic',true);
     await advanced(page); await page.locator('#topics').fill('initial repairs');
     await page.getByRole('button', {name: 'Create intent', exact: true}).click(); await idle(page);
     const customId = (await stored(page)).mode; assert.match(customId, /^custom-[a-z0-9-]+$/);
     assert.equal(await page.locator('#intent-editor').count(), 0, 'creation does not leave an unexpected modal over the page');
-    assert.equal(await page.getByRole('switch', {name: 'Count Bicycle & repair time', exact: true}).getAttribute('aria-checked'), 'false');
+    assert.equal(await page.locator(`[data-timer-policy-mode="${customId}"][value="off-topic"]`).isChecked(),true);
     assert.equal((await stored(page)).customIntents[customId].icon, 'tools');
     assert.equal((await stored(page)).channels[customId], 'Initial Workshop');
     assert.equal((await stored(page)).customTopics[customId], 'initial repairs');
     assert.equal((await stored(page)).matchOnlyModes[customId],true,'custom intent creation saves matching-only exemptions');
-    assert.equal(await page.getByRole('switch',{name:'Only exempt matching Bicycle & repair videos',exact:true}).getAttribute('aria-checked'),'true');
+    assert.equal(await page.getByRole('radiogroup',{name:'Bicycle & repair time counting',exact:true}).getByRole('radio',{name:'Off-topic only',exact:true}).isChecked(),true);
     await openEditor(page, customId);
     assert.equal(await page.locator('#builtin-defaults').count(), 0, 'custom intents do not claim to have built-in defaults');
     assert.equal(await page.getByLabel('Intent name', {exact: true}).inputValue(), 'Bicycle & repair');
+    assert.equal(await page.locator('#intent-icon').inputValue(), 'tools');await assertSharedIcon(page, '#intent-icon-preview svg', 'tools');
     await page.getByLabel('Intent name', {exact: true}).fill('Bike workshop');
     await page.locator('#intent-description').fill('Restoring steel bicycles, adjusting derailleurs and rebuilding wheels');
-    await advanced(page); await page.locator('#intent-count-time').check();
-    assert.equal(await page.locator('#intent-match-only-controls').isVisible(),false);
+    await advanced(page);await chooseTimerPolicy(page,null,'all',true);
     await page.locator('#topics').fill('wheelbuilding, touring bikes'); await page.locator('#channels').fill('Workshop North');
     await page.getByRole('button', {name: 'Save preferences'}).click(); await saved(page);
     assert.equal(await page.getByLabel('Intent description for bike workshop', {exact: true}).inputValue(), 'Restoring steel bicycles, adjusting derailleurs and rebuilding wheels');
     await closeEditor(page); await page.getByRole('button', {name: 'Bike workshop Your custom intent', exact: true}).waitFor();
-    assert.equal(await page.locator(`[data-match-only-mode="${customId}"]`).count(),0,'counted custom intents keep their exemption policy dormant');
-    await toggleCount(page, 'Count Bike workshop time', false);
-    assert.equal(await page.getByRole('switch',{name:'Only exempt matching Bike workshop videos',exact:true}).getAttribute('aria-checked'),'true','renaming and re-enabling an exemption preserves its stable policy');
+    assert.equal(await page.locator(`[data-timer-policy-mode="${customId}"][value="all"]`).isChecked(),true);
+    assert.equal((await stored(page)).matchOnlyModes[customId],false,'Count all clears conditional exemptions');
+    await chooseTimerPolicy(page,customId,'off-topic');
+    assert.equal(await page.getByRole('radiogroup',{name:'Bike workshop time counting',exact:true}).getByRole('radio',{name:'Off-topic only',exact:true}).isChecked(),true,'renamed intents retain a clear policy control');
     const policy = page.getByLabel('Intent for new YouTube tabs', {exact: true});
     assert.equal(await policy.locator(`option[value="${customId}"]`).textContent(), 'Always Bike workshop');
     await policy.selectOption(customId); await idle(page);

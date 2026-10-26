@@ -61,7 +61,9 @@ async function chooseMode(toolbar, mode, customName) {
  const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
  const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1920,height:1100}});context.setDefaultTimeout(20000);
  const texts={W:['Ship a tiny app this weekend','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],M:['Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.'],S:['Why the sky changes colour','An accessible explanation of scattering and wavelengths from sunlight.']};
- const ids={};const renderers=[];const networkCounts={searches:0,metadata:0};const searchLocales=[];
+ const ids={};const renderers=[];const networkCounts={searches:0,metadata:0,continuations:0};
+ const pagingDescription='Turn an idea into a working tool for your clients from the first screen to a finished release.';
+ const nextResult={videoRenderer:{videoId:'N0000000000',title:{simpleText:'Ship a tiny app · next search page'},ownerText:{simpleText:'Independent Builders'},detailedMetadataSnippets:[{snippetText:{simpleText:'Turn an idea into a working tool for your clients, from the first screen to a finished release.'}}]}};const searchLocales=[];
  for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:prefix==='S'?'Curious Minds':'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'},viewCountText:{simpleText:'39 lakh views'},publishedTimeText:{simpleText:'2 years ago'}}});}
  ids.J0000000000={title:texts.M[0],description:texts.M[1],author:'Evening Sessions'};
  ids.A0000000000={title:texts.W[0],description:texts.W[1],author:'Maker Notes'};
@@ -80,9 +82,16 @@ async function chooseMode(toolbar, mode, customName) {
   await context.route('https://www.youtube.com/**',async route=>{
    const url=new URL(route.request().url()),india=url.searchParams.get('intent-test')==='india';
    if(url.pathname.startsWith('/shorts/'))return route.fulfill({contentType:'text/html',body:directShortsFixture});
+   if(url.pathname==='/youtubei/v1/search'){
+    networkCounts.continuations++;
+    assert.equal(route.request().method(),'POST');
+    const body=route.request().postDataJSON();assert.equal(body.continuation,'intent-test-next-page');
+    assert.deepEqual(body.context,{client:{clientName:'WEB',clientVersion:'2.20261023.01.00',hl:'en-GB',gl:'DE'}});
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({onResponseReceivedCommands:[{appendContinuationItemsAction:{continuationItems:[{itemSectionRenderer:{contents:[renderers[0],nextResult]}}]}}]})});
+   }
    if(url.pathname==='/results'){
     if(route.request().isNavigationRequest())return route.fulfill({contentType:'text/html',body:'<!doctype html>'+localeBootstrap()+'<meta charset="utf-8"><style>body{margin:0;font-family:Arial,sans-serif}'+mastheadCSS+'</style>'+masthead+'<ytd-search><div id="primary"><ytd-video-renderer><h3 id="video-title">Python programming tutorial</h3></ytd-video-renderer></div></ytd-search>'});
-    networkCounts.searches++;searchLocales.push({hl:url.searchParams.get('hl'),gl:url.searchParams.get('gl')});return route.fulfill({contentType:'text/html',body:search(url.searchParams.get('gl'))});
+    networkCounts.searches++;searchLocales.push({hl:url.searchParams.get('hl'),gl:url.searchParams.get('gl')});return route.fulfill({contentType:'text/html',body:(url.searchParams.get('search_query')===pagingDescription?'<script>ytcfg.set('+JSON.stringify({INNERTUBE_CONTEXT_CLIENT_NAME:1,INNERTUBE_CONTEXT_CLIENT_VERSION:'2.20261023.01.00',INNERTUBE_API_KEY:'PublicBootstrapKey_1234567890'})+');</script><script>var ytInitialData = '+JSON.stringify({contents:{sectionListRenderer:{contents:[{itemSectionRenderer:{contents:renderers}},{continuationItemRenderer:{continuationEndpoint:{commandMetadata:{webCommandMetadata:{apiUrl:'/youtubei/v1/search'}},continuationCommand:{token:'intent-test-next-page',request:'CONTINUATION_REQUEST_TYPE_SEARCH'}}}}]}}})+';</script>':search(url.searchParams.get('gl')))});
    }
    if(url.pathname==='/watch'){
     const videoId=url.searchParams.get('v');
@@ -437,13 +446,14 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await settings.locator('[data-mode="leisure"]').count(),0,'fresh installs only include Work, Study and Music');
   await chooseMode(third.locator('#intent-toolbar'),'custom-ai','Artificial Intelligence');
   await settings.locator('[data-edit="custom-ai"]').click();
-  await settings.locator('#intent-icon').selectOption('science');
+  await settings.locator('[data-icon-choice="science"]').click();
   await settings.getByRole('button',{name:'Save preferences',exact:true}).click();
   await settings.getByText('All preferences saved on this device.',{exact:true}).waitFor();
   await settings.locator('#close-editor').click();
   const thirdToolbar=third.locator('#intent-toolbar');
   await thirdToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
-  await third.locator('#intent-toolbar .option[data-mode="custom-ai"] .option-symbol').filter({hasText:'⚛'}).waitFor();
+  const scienceMarkup=await settings.evaluate(()=>{const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=IntentCore.INTENT_ICON_PATHS.science;return svg.innerHTML;});
+  await third.waitForFunction(expected=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('.option[data-mode="custom-ai"] .option-symbol svg')?.innerHTML===expected,scienceMarkup);
   assert.equal(await thirdToolbar.getByRole('option',{name:'Artificial Intelligence',exact:true}).getAttribute('aria-selected'),'true');
   await thirdToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).press('Escape');
   for(let position=2;position>=0;position--){await settings.locator('[data-move-intent="custom-ai"][data-direction="-1"]').click();await settings.waitForFunction(async position=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});return state.settings.intentOrder[position]==='custom-ai';},position);}
@@ -460,9 +470,9 @@ async function chooseMode(toolbar, mode, customName) {
   await settings.locator('#intent-editor[open]').waitFor();
   await settings.locator('#intent-name').fill('Build apps');
   await settings.locator('#intent-description').fill('Build useful software applications and tools for clients, programming and delivering finished digital products.');
-  await settings.locator('#intent-icon').selectOption('tools');
+  await settings.locator('[data-icon-choice="tools"]').click();
   await settings.locator('#channels').fill('Independent Builders');
-  await settings.locator('#intent-count-time').uncheck();
+  await settings.locator('[name="intent-timer-policy"][value="none"]').check();
   await expandAdvanced(settings);await settings.locator('#topics').fill('software tools');
   await settings.getByRole('button',{name:'Create intent',exact:true}).click();
   await settings.locator('#intent-editor[open]').waitFor({state:'detached'});
@@ -475,7 +485,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await settings.locator('#intent-description').inputValue(),'Build useful software applications and tools for clients, programming and delivering finished digital products.');
   assert.equal(await settings.locator('#intent-icon').inputValue(),'tools');
   assert.equal(await settings.locator('#channels').inputValue(),'Independent Builders');
-  assert.equal(await settings.locator('#intent-count-time').isChecked(),false);
+  assert.equal(await settings.locator('[name="intent-timer-policy"][value="none"]').isChecked(),true);
   await expandAdvanced(settings);assert.equal(await settings.locator('#topics').inputValue(),'software tools');
   await settings.locator('#close-editor').click();
   // This later budget scenario intentionally counts the custom intent.
@@ -502,6 +512,24 @@ async function chooseMode(toolbar, mode, customName) {
   const afterPreview=await settings.evaluate(async()=>{const state=await chrome.runtime.sendMessage({type:'GET_STATE'});const session=await chrome.storage.session.get(['tabModes','pausedTabs']);return{settings:state.settings,session};});
   assert.deepEqual(afterPreview,beforePreview,'preview does not change saved intents, ordering, per-tab modes or pause state');
   console.log('PASS real-model custom preview includes a semantic paraphrase and optional rejected music examples, with bounded searches and unchanged settings/tab choices');
+  // A narrow custom intent has one query; real search continuations must still offer more.
+  await settings.evaluate(({customId,description})=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{customIntents:{[customId]:{name:'Build apps paging check',description,icon:'tools'}},customTopics:{[customId]:''},channels:{[customId]:''},metadataLimit:0}}),{customId,description:pagingDescription});
+  const pagingFeed=third.locator('#intent-home-feed');
+  await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.status')?.textContent.startsWith('12 videos for build apps paging check'),null,{timeout:60000});
+  await pagingFeed.locator('.more').waitFor({state:'visible',timeout:60000});
+  assert.equal(await pagingFeed.locator('.card').count(),12);
+  assert.equal(await pagingFeed.locator('.discovery').textContent(),'Real YouTube videos · Topic discovery');
+  const continuationBefore=networkCounts.continuations;
+  await pagingFeed.getByRole('button',{name:'Find more videos',exact:true}).click();
+  await pagingFeed.locator('[data-video-id="N0000000000"]').waitFor({timeout:60000});
+  assert.equal(networkCounts.continuations,continuationBefore+1);
+  assert.equal(await pagingFeed.locator('.card').count(),13,'duplicate videos on a continuation are removed');
+  assert.equal(await pagingFeed.locator('.more').isVisible(),false);
+  await pagingFeed.locator('.discovery-end').waitFor({state:'visible'});
+  await third.screenshot({path:path.join(shots,'intent-installed-discovery.png'),fullPage:true});
+  await settings.evaluate(saved=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:saved}),beforePreview.settings);
+  await third.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Ship a tiny app'),null,{timeout:60000});
+  console.log('PASS one-query custom intent loads real search continuations through the service worker and actual model, deduplicates results, labels the source and explains exhaustion');
   // Remaining-time warnings are visible in the clock without altering Chrome action badges.
   await third.bringToFront();
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=3000000;});

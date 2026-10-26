@@ -12,6 +12,29 @@
   });
   const MAX_CUSTOM_INTENTS = 24;
   const INTENT_ICONS = Object.freeze({code: '⌘', book: '▤', music: '♫', compass: '◈', game: '♟', film: '▣', tools: '⚒', sparkles: '✦', news: '▥', plane: '✈', food: '♨', fitness: '⚡', palette: '◉', camera: '▧', language: '文', science: '⚛', history: '⌛', finance: '¤', leaf: '❧', heart: '♡'});
+  // Trusted shared 24px outline icons, used by picker, tiles and YouTube controls.
+  const INTENT_ICON_PATHS = Object.freeze({
+    code: '<path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/>',
+    book: MODE_ICONS.study,
+    music: MODE_ICONS.music,
+    compass: '<circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z"/>',
+    game: '<path d="M8 7h8c3 0 4 3 5 8 1 4-2 5-4 2l-1-1H8l-1 1c-2 3-5 2-4-2 1-5 2-8 5-8ZM7 10v5m-2.5-2.5h5"/><circle cx="16" cy="11" r=".75"/><circle cx="18" cy="14" r=".75"/>',
+    film: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4M17 8h4m-4 8h4M7 12h10"/>',
+    tools: '<path d="m14 5 3 3 4-4a6 6 0 0 1-8 8L6 20a2.1 2.1 0 0 1-3-3l8-7a6 6 0 0 1 8-8l-5 3Z"/>',
+    sparkles: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3ZM20 2v4m-2-2h4M3 19v3m-1.5-1.5h3"/>',
+    news: '<path d="M5 3h14v17H5a2 2 0 0 1-2-2V7h2m14 13a2 2 0 0 0 2-2V7h-2M8 7h8M8 11h3v3H8zM14 11h2m-2 3h2M8 17h8"/>',
+    plane: '<path d="m21 3-6 18-4-8-8-4L21 3ZM11 13l5-5"/>',
+    food: '<path d="M4 3v6c0 3 6 3 6 0V3M7 3v18M15 12h5V3c-4 2-5 6-5 9ZM20 12v9"/>',
+    fitness: '<path d="m8 8 8 8M6 4l-3 3 3 3m1-7 3 3-4 4-3-3m14 7 4 4-3 3-4-4m4-4 3 3-3 3M4 4l-2-2m18 18 2 2"/>',
+    palette: '<path d="M21 12a9 9 0 1 0-9 9h1a2 2 0 0 0 1-3c-1-2 0-3 2-3h2a3 3 0 0 0 3-3Z"/><circle cx="7" cy="10" r="1"/><circle cx="10" cy="6" r="1"/><circle cx="15" cy="7" r="1"/><circle cx="6" cy="15" r="1"/>',
+    camera: '<path d="M8 5 10 2h4l2 3h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4Z"/><circle cx="12" cy="13" r="4"/>',
+    language: '<path d="M3 5h12M9 3v2M5 5c0 6 4 9 9 11M13 5c0 5-4 10-9 12M14 21l4-10 4 10M15.5 17h5"/>',
+    science: '<ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/><circle cx="12" cy="12" r="1"/>',
+    history: '<path d="M6 3h12M6 21h12M7 3v4c0 3 4 3 5 5-1 2-5 2-5 5v4M17 3v4c0 3-4 3-5 5 1 2 5 2 5 5v4M9 17h6"/>',
+    finance: '<circle cx="12" cy="12" r="9"/><path d="M15 7h-4a2.5 2.5 0 0 0 0 5h2a2.5 2.5 0 0 1 0 5H9M12 5v14"/>',
+    leaf: '<path d="M21 3c0 10-3 17-10 17a7 7 0 0 1-7-7C4 6 11 3 21 3ZM3 21l13-13M8 16v-5m0 5h5"/>',
+    heart: '<path d="M20.5 4.5a5.2 5.2 0 0 0-7.5 0L12 5.6l-1-1.1a5.2 5.2 0 0 0-7.5 7.3L12 21l8.5-9.2a5.2 5.2 0 0 0 0-7.3Z"/>'
+  });
   const INTENT_TEMPLATES = Object.freeze(Object.fromEntries(Object.entries({
     gaming: {name: 'Gaming', icon: 'game', description: 'Video games, gameplay, game reviews, strategy guides, walkthroughs, esports and gaming hardware.'},
     'tv-film': {name: 'TV & Film', icon: 'film', description: 'Film and television reviews, thoughtful criticism, story analysis, filmmaker interviews, production insights and recommendations about cinema and television.'},
@@ -169,5 +192,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, MAX_CUSTOM_INTENTS, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();

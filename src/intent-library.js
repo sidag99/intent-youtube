@@ -2,6 +2,7 @@
 (() => {
   const C = IntentCore;
   const escape = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+  const icon = key => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${C.INTENT_ICON_PATHS[key] || C.INTENT_ICON_PATHS.compass}</svg>`;
   class IntentLibrary {
     constructor({getSettings, update, onCreate = () => {}}) {this.getSettings = getSettings; this.update = update; this.onCreate = onCreate; this.search = ''; this.catalogueOpen = false;}
     render() {
@@ -9,7 +10,7 @@
       const settings = this.getSettings(), installed = Object.values(settings.customIntents);
       host.innerHTML = `<div class="section-head"><h2>Add an intent</h2><button type="button" class="button primary" id="new-intent" ${installed.length >= C.MAX_CUSTOM_INTENTS ? 'disabled' : ''}>Create your own intent</button></div><details id="intent-catalogue" ${this.catalogueOpen ? 'open' : ''}><summary>Add from the intent library</summary><p class="section-copy">Add only the modes you want. Each template becomes an editable intent with its own icon and timer rule.</p><label class="visually-hidden" for="template-search">Find an intent template</label><input type="search" id="template-search" placeholder="Find a mode…" value="${escape(this.search)}"><div class="template-grid">${Object.entries(C.INTENT_TEMPLATES).map(([id, template]) => {
         const added = installed.some(record => record.templateId === id);
-        return `<article class="intent-template" data-template="${id}" ${this.matches(template) ? '' : 'hidden'}><h3><span aria-hidden="true">${escape(C.INTENT_ICONS[template.icon] || template.symbol || '◎')}</span> ${escape(template.name)}</h3><p>${escape(template.description)}</p><button type="button" class="button" data-add-template="${id}" ${added || installed.length >= C.MAX_CUSTOM_INTENTS ? 'disabled' : ''}>${added ? 'Added' : 'Add intent'}</button></article>`;
+        return `<article class="intent-template" data-template="${id}" ${this.matches(template) ? '' : 'hidden'}><h3><span class="intent-template-icon" aria-hidden="true">${icon(template.icon)}</span> ${escape(template.name)}</h3><p>${escape(template.description)}</p><button type="button" class="button" data-add-template="${id}" ${added || installed.length >= C.MAX_CUSTOM_INTENTS ? 'disabled' : ''}>${added ? 'Added' : 'Add intent'}</button></article>`;
       }).join('')}</div><p class="field-hint">${installed.length} / ${C.MAX_CUSTOM_INTENTS} optional and custom intents. Remove any of these through its pencil editor.</p><p class="template-empty" ${Object.values(C.INTENT_TEMPLATES).some(template => this.matches(template)) ? 'hidden' : ''}>No templates match. Use Create your own intent above.</p></details>`;
       host.querySelector('#new-intent').onclick = () => this.onCreate();
       host.querySelector('#intent-catalogue').addEventListener('toggle', event => {this.catalogueOpen = event.target.open;});

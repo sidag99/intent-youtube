@@ -78,6 +78,9 @@
       const style = document.createElement('style'); style.textContent = globalThis.IntentFeedTheme || '';
       this.title = document.createElement('h1'); this.title.className = 'sr-only';
       this.title.id = 'feed-heading';
+      const discovery = document.createElement('p'); discovery.className = 'discovery'; discovery.textContent = 'Real YouTube videos · Topic discovery';
+      discovery.title = 'Every card links to a real YouTube video found in public topic searches. Intent filters these results locally; AI does not invent videos. This is topic discovery, not your personalized YouTube feed.';
+      discovery.style.cssText = 'margin:0 0 2px;font-size:11px;line-height:16px;color:var(--yt-spec-text-secondary,var(--intent-muted))';
       this.status = document.createElement('div'); this.status.className = 'status'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
       this.grid = document.createElement('div'); this.grid.className = 'grid first-grid'; this.grid.setAttribute('aria-label', 'Videos for your intent');
       this.shortShelf = document.createElement('section'); this.shortShelf.className = 'shorts-shelf'; this.shortShelf.hidden = true; this.shortShelf.setAttribute('aria-label', 'Shorts for your intent');
@@ -100,9 +103,15 @@
       this.restGrid = document.createElement('div'); this.restGrid.className = 'grid rest-grid'; this.restGrid.hidden = true; this.restGrid.setAttribute('aria-label', 'More videos for your intent');
       if (this.surface === 'home') this.resizeObserver = new ResizeObserver(() => this.layoutHome());
       this.more = document.createElement('button'); this.more.className = 'more'; this.more.textContent = 'Find more videos'; this.more.hidden = true;
-      this.more.addEventListener('click', () => this.load(false, false));
+      this.more.addEventListener('click', () => this.restartRequired ? this.restart(true) : this.load(false, false));
+      this.endState = document.createElement('p'); this.endState.className = 'note discovery-end'; this.endState.hidden = true; this.endState.setAttribute('role', 'status');
+      this.endMessage = document.createElement('span');
+      this.endSearch = document.createElement('a'); this.endSearch.className = 'search'; this.endSearch.textContent = 'Search YouTube'; this.endSearch.style.marginInline = '8px';
+      const adjust = document.createElement('button'); adjust.type = 'button'; adjust.textContent = 'Adjust intent'; adjust.style.marginTop = '8px';
+      adjust.addEventListener('click', () => this.runtime.sendMessage({type: 'OPEN_SETTINGS'}).catch(() => {}));
+      this.endState.append(this.endMessage, this.endSearch, adjust);
       const note = document.createElement('p'); note.className = 'note'; note.textContent = 'Public YouTube searches, analysed locally using titles, available descriptions and hashtags. The topic model is bundled with Intent; this does not change your YouTube recommendation algorithm.';
-      root.append(style, this.title, this.status, this.grid, this.shortShelf, this.restGrid, this.more, note);
+      root.append(style, this.title, discovery, this.status, this.grid, this.shortShelf, this.restGrid, this.more, this.endState, note);
     }
     collapseEmptySpacing(renderer, primary) {
       // YouTube sometimes removes the chip renderer but leaves its fixed-height
@@ -148,7 +157,8 @@
       if (this.watchThumbnailWidth) this.host.style.setProperty('--intent-watch-thumbnail-width', `${this.watchThumbnailWidth}px`);
     }
     restart(fresh) {
-      this.generation++; this.items = []; this.cursor = 0; this.hasMore = true; this.busy = false; this.autoBatches = 0;
+      this.generation++; this.items = []; this.cursor = 0; this.pageCursor = null; this.hasMore = true; this.busy = false; this.autoBatches = 0; this.loadFailed = false; this.restartRequired = false; this.endReason = '';
+      this.endState.hidden = true; this.more.textContent = 'Find more videos';
       this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
       this.title.textContent = this.surface === 'watch' ? `${C.modes(this.settings)[this.settings.mode].name} recommendations` : `◒ ${C.modes(this.settings)[this.settings.mode].name}, with intent.`;
       this.host.setAttribute('aria-label', `${C.modes(this.settings)[this.settings.mode].name} videos`);
@@ -167,7 +177,7 @@
     async load(fresh, auto) {
       if (this.busy || !this.hasMore || this.items.length >= 120) return;
       const generation = this.generation, signature = this.signature;
-      this.busy = true; this.more.disabled = true;
+      this.busy = true; this.more.disabled = true; this.loadFailed = false; this.more.textContent = 'Find more videos';
       this.setFeedState(this.items.length ? 'active' : 'loading');
       this.status.className = 'status'; this.status.textContent = (this.items.length ? 'Finding more videos for your intent…' : 'Finding videos and analysing topics locally…') + (this.settings.metadataLimit ? ` Up to ${this.settings.metadataLimit} extra video-page requests per batch.` : ' Fuller checks are off.');
       this.status.removeAttribute('title');
@@ -176,7 +186,7 @@
       try {
         let timer;
         const response = await Promise.race([
-          this.runtime.sendMessage({type: 'GET_FEED', key: signature, locale: this.locale, cursor: this.cursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
+          this.runtime.sendMessage({type: 'GET_FEED', key: signature, locale: this.locale, cursor: this.cursor, pageCursor: this.pageCursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
           new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The feed took too long to load. Try refreshing or lowering the fuller-check limit in settings.')), 180000); })
         ]).finally(() => clearTimeout(timer));
         if (generation !== this.generation) return;
@@ -191,7 +201,7 @@
           else this.grid.append(this.card(video));
         }
         this.layoutHome();
-        this.cursor = response.nextCursor; this.hasMore = response.hasMore;
+        this.cursor = response.nextCursor; this.pageCursor = response.pageCursor || null; this.hasMore = response.hasMore; this.endReason = response.endReason || ''; this.restartRequired = false;
         if (response.metadataStats) {
           this.hasMetadataStats = true;
           for (const field of Object.keys(this.metadataStats)) this.metadataStats[field] += Math.max(0, Math.min(100, Math.trunc(Number(response.metadataStats[field]) || 0)));
@@ -208,13 +218,22 @@
         if (!this.items.length) this.empty('No matching videos yet.', 'Try refreshing, loading more topics, or adding subjects and channels in Intent settings.');
       } catch (error) {
         if (generation !== this.generation) return;
+        this.loadFailed = true; this.restartRequired = /continuation.*expired|refresh discovery/i.test(error.message);
         this.status.className = 'status error'; this.status.textContent = error.message;
         this.setFeedState('unavailable');
         if (!this.items.length) this.empty('Your feed couldn’t load.', 'YouTube may be unavailable or asking for consent. Retry with Refresh feed, or open search below.');
       } finally {
         if (generation === this.generation) {
           this.busy = false; this.more.disabled = false;
-          this.more.hidden = !this.hasMore || this.items.length >= 120;
+          this.more.hidden = !this.loadFailed && (!this.hasMore || this.items.length >= 120);
+          this.more.textContent = this.loadFailed ? this.restartRequired ? 'Restart discovery' : 'Retry loading more' : 'Find more videos';
+          this.endState.hidden = this.loadFailed || this.hasMore && this.items.length < 120;
+          if (!this.endState.hidden) {
+            this.endMessage.textContent = this.items.length >= 120 ? '120 real videos loaded. Open YouTube search to keep exploring.' : this.endReason || 'No more matching videos from these public searches.';
+            const search = new URL('https://www.youtube.com/results'); search.searchParams.set('search_query', F.queries(this.settings, this.round)[0] || C.modes(this.settings)[this.settings.mode].name);
+            if (this.locale?.hl) search.searchParams.set('hl', this.locale.hl); if (this.locale?.gl) search.searchParams.set('gl', this.locale.gl);
+            this.endSearch.href = search.href;
+          }
           this.grid.removeAttribute('aria-busy');
         }
       }

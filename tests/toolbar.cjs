@@ -109,6 +109,33 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await nativePage.evaluate(()=>actualToolbar.destroy());
     assert.equal(await nativePage.locator('#center').getAttribute('style'),null);assert.equal(await nativePage.locator('#native-group').getAttribute('style'),null);
     await nativePage.close();
+    // Watch alignment uses the actual player ahead of its padded primary/outer
+    // containers, without paying for alignment by shrinking the responsive tier.
+    await page.evaluate(()=>{
+      history.replaceState({},'', '/watch?v=alignment1');
+      const watch=document.createElement('ytd-watch-flexy');watch.id='alignment-watch';watch.style.cssText='display:block;position:absolute;top:90px;left:0';
+      watch.innerHTML='<div id="primary" style="margin-left:240px"><div id="player-container-outer" style="margin-left:24px"><div id="player" style="margin-left:16px;width:800px;height:450px;background:#222"></div></div></div>';
+      document.body.append(watch);toolbar.sync(testSettings,true,{state:'active'});
+    });
+    const playerAlignment=await page.evaluate(()=>({toolbar:toolbar.host.getBoundingClientRect().left,player:document.querySelector('#alignment-watch #player').getBoundingClientRect().left,width:toolbar.host.getBoundingClientRect().width,native:measureNative()}));
+    assert.equal(playerAlignment.toolbar,playerAlignment.player);assert.equal(playerAlignment.toolbar,280);assert.equal(playerAlignment.width,360);assert.deepEqual(playerAlignment.native,nativeBefore[3111]);
+    await page.screenshot({path:path.join(shots,'intent-toolbar-player-aligned.png'),clip:{x:0,y:0,width:1400,height:180}});
+    await page.evaluate(()=>{const player=document.querySelector('#alignment-watch #player');player.style.position='fixed';player.style.left='1000px';toolbar.positionControls();});
+    const clampedAlignment=await page.evaluate(()=>({left:toolbar.host.getBoundingClientRect().left,width:toolbar.host.getBoundingClientRect().width,maximum:document.querySelector('#center').getBoundingClientRect().left-12-360}));
+    assert.ok(Math.abs(clampedAlignment.left-clampedAlignment.maximum)<=1);assert.equal(clampedAlignment.width,360,'a far-right player does not collapse the full control just to align');
+    await page.evaluate(()=>{document.querySelector('#alignment-watch #player').style.left='0px';toolbar.positionControls();});
+    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),await page.evaluate(()=>document.querySelector('#start').getBoundingClientRect().right+28),'logo clearance takes priority over a flush-left/theater player');
+    await page.evaluate(()=>{document.querySelector('#alignment-watch').hidden=true;toolbar.positionControls();});
+    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),await page.evaluate(()=>document.querySelector('#start').getBoundingClientRect().right+28),'a hidden outgoing Watch player cannot move the control');
+    await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{document.querySelector('#alignment-watch').hidden=false;toolbar.sync(testSettings,true,{state:'active'});});
+    assert.equal(await toolbar.getAttribute('data-layout'),'launcher');assert.equal(await trigger.isVisible(),true,'player alignment preserves the narrow usable launcher fallback');
+    await page.setViewportSize({width:3111,height:900});
+    await page.evaluate(()=>{
+      document.querySelector('#alignment-watch').remove();history.replaceState({},'','/');
+      const home=document.createElement('section');home.id='intent-home-feed';const shadow=home.attachShadow({mode:'open'});shadow.innerHTML='<a class="cover" style="display:block;position:fixed;top:90px;left:320px;width:280px;height:157px"></a>';document.body.append(home);toolbar.sync(testSettings,true,{state:'active'});
+    });
+    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),320,'Home can align to its first visible Intent cover');
+    await page.evaluate(()=>{document.querySelector('#intent-home-feed').remove();toolbar.sync(testSettings,true,testCoverage);});
     const normalLabels = await page.evaluate(() => {
       const result = [];
       for (const [mode, state, customIntents] of [['off','active',{}],['work','active',{}],['study','active',{}],['music','active',{}],['work','paused',{}],['custom-maker','active',{'custom-maker':{name:'Making & Building',description:'Make physical and digital projects',icon:'tools'}}]]) {
@@ -146,7 +173,8 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
       for (const icon of ['tools', 'science']) {
         const settings = IntentCore.sanitize({...original, mode: 'custom-build', customIntents: {...original.customIntents, 'custom-build': {...original.customIntents['custom-build'], icon}}});
         toolbar.sync(settings, true, {state: 'active'});
-        records.push({symbol: toolbar.selectedSymbol.textContent, hidden: toolbar.selectedSymbol.hidden, expected: IntentCore.INTENT_ICONS[icon], toolbarWidth: toolbar.host.getBoundingClientRect().width, searchWidth: document.querySelector('ytd-searchbox').getBoundingClientRect().width});
+        const expected=document.createElementNS('http://www.w3.org/2000/svg','svg');expected.innerHTML=IntentCore.INTENT_ICON_PATHS[icon];
+        records.push({symbol: toolbar.selectedSymbol.querySelector('svg')?.innerHTML, hidden: toolbar.selectedSymbol.hidden, expected:expected.innerHTML,stroke:toolbar.selectedSymbol.querySelector('svg')?.getAttribute('stroke'),weight:toolbar.selectedSymbol.querySelector('svg')?.getAttribute('stroke-width'),toolbarWidth: toolbar.host.getBoundingClientRect().width, searchWidth: document.querySelector('ytd-searchbox').getBoundingClientRect().width});
       }
       toolbar.sync({...original, mode: 'custom-build'}, true, {state: 'paused'}); const hiddenPaused = toolbar.selectedSymbol.hidden;
       toolbar.sync({...original, mode: 'off'}, true, {state: 'active'}); const hiddenOff = toolbar.selectedSymbol.hidden;
@@ -154,9 +182,24 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     });
     assert.ok(selectedIcons.records.every(record => !record.hidden && record.symbol === record.expected && record.toolbarWidth === 360), 'selected custom intent displays its chosen icon on the toolbar button');
     assert.notEqual(selectedIcons.records[0].symbol, selectedIcons.records[1].symbol, 'editing a custom icon updates the selected button immediately');
+    assert.ok(selectedIcons.records.every(record=>record.stroke==='currentColor'&&record.weight==='1.7'),'custom selected glyphs use the shared theme-aware SVG stroke');
     assert.equal(selectedIcons.records[0].searchWidth, selectedIcons.records[1].searchWidth, 'custom icon changes preserve search width');
     assert.equal(selectedIcons.hiddenPaused, true); assert.equal(selectedIcons.hiddenOff, true); assert.equal(selectedIcons.hiddenBuiltin, true);
     assert.equal(await toolbar.locator('.selected-symbol').getAttribute('aria-hidden'), 'true');
+    for(const width of [3111,1440])for(const theme of ['light','dark']){
+      await page.setViewportSize({width,height:900});
+      await page.evaluate(theme=>{document.documentElement.toggleAttribute('dark',theme==='dark');toolbar.sync({...testSettings,mode:'off'},true,{state:'active'});toolbar.updateTheme();},theme);
+      await trigger.hover();
+      const hover=await trigger.evaluate(button=>{const paint=getComputedStyle(button,'::before'),box=button.getBoundingClientRect(),outer=button.closest('.controls').getBoundingClientRect();return{buttonBackground:getComputedStyle(button).backgroundColor,hoverBackground:paint.backgroundColor,top:box.top+parseFloat(paint.top)-outer.top,left:box.left+parseFloat(paint.left)-outer.left,bottom:outer.bottom-(box.bottom-parseFloat(paint.bottom)),radius:paint.borderRadius,height:box.height};});
+      assert.equal(hover.buttonBackground,'rgba(0, 0, 0, 0)','hover paints a contained inner pill without filling the complete hit area');
+      assert.equal(hover.hoverBackground,theme==='dark'?'rgb(63, 63, 63)':'rgb(229, 229, 229)');
+      assert.deepEqual([hover.top,hover.left,hover.bottom],[3,3,3],'the hover surface keeps an even 3px inset from the controller edge');
+      if(width===1440)assert.equal(hover.height,44,'compact hover styling keeps the full-height touch target');
+      await page.screenshot({path:path.join(shots,`intent-toolbar-hover-${theme}-${width===3111?'full':'compact'}.png`),clip:{x:80,y:0,width:540,height:90}});
+      await trigger.focus();await page.keyboard.press('ArrowLeft');
+      assert.equal(await trigger.evaluate(button=>getComputedStyle(button).outlineWidth),'2px','keyboard focus keeps its existing visible outline');
+    }
+    await page.setViewportSize({width:3111,height:900});await page.evaluate(()=>{document.documentElement.removeAttribute('dark');toolbar.sync(testSettings,true,testCoverage);toolbar.updateTheme();});
     // A manual Off selection wins over unsupported-page coverage and does not inherit its explanation.
     await page.evaluate(() => {
       history.replaceState({}, '', '/');
@@ -191,6 +234,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await option('Build things').count(), 1);
     assert.equal(await option('Work').locator('.option-symbol svg').count(),1,'built-in modes have their shared native-style SVG icon');
     assert.equal(await page.evaluate(()=>Object.keys(IntentCore.MODE_ICONS).every(id=>{const expected=document.createElementNS('http://www.w3.org/2000/svg','svg');expected.innerHTML=IntentCore.MODE_ICONS[id];return toolbar.root.querySelector(`[role=option][data-mode="${id}"] .option-symbol svg`)?.innerHTML===expected.innerHTML;})),true,'toolbar built-in icons use the shared settings icon definitions');
+    assert.equal(await page.evaluate(()=>{const expected=document.createElementNS('http://www.w3.org/2000/svg','svg');expected.innerHTML=IntentCore.INTENT_ICON_PATHS[testSettings.customIntents['custom-build'].icon];return toolbar.root.querySelector('[role=option][data-mode="custom-build"] .option-symbol svg')?.innerHTML===expected.innerHTML;}),true,'custom menu options share the settings SVG icon definitions');
     assert.equal(await option('Work').locator('.option-symbol').getAttribute('aria-hidden'), 'true');
     assert.equal(await toolbar.locator('#intent-mode-popover').evaluate(menu => menu.matches(':popover-open')), true, 'menu uses the top layer outside masthead clipping');
     const positions = await page.evaluate(() => {const host = document.querySelector('#intent-toolbar'), root = host.shadowRoot; const trigger = root.querySelector('#intent-mode-trigger').getBoundingClientRect(), menu = root.querySelector('#intent-mode-popover').getBoundingClientRect();return {triggerBottom: trigger.bottom, menuTop: menu.top, menuLeft: menu.left, menuRight: menu.right};});

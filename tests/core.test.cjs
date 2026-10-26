@@ -257,3 +257,13 @@ test('matching-only exemptions are strictly opt-in per valid intent and do not c
   assert.equal(C.countsMode(s, 'work'), false); assert.equal(C.countsMode(s, 'study'), true);
   assert.ok(Object.values(C.defaults().matchOnlyModes).every(value => value === false));
 });
+
+test('all allowed custom icon IDs have shared trusted outline markup without remote assets', () => {
+  assert.deepEqual(Object.keys(C.INTENT_ICON_PATHS), Object.keys(C.INTENT_ICONS));
+  for (const markup of Object.values(C.INTENT_ICON_PATHS)) {
+    assert.match(markup, /<(path|rect|circle|ellipse)\b/);
+    assert.doesNotMatch(markup, /<script|foreignObject|\bhref=|\bon[a-z]+=|<image/i);
+  }
+  assert.equal(C.INTENT_ICON_PATHS.book, C.MODE_ICONS.study);
+  assert.equal(C.INTENT_ICON_PATHS.music, C.MODE_ICONS.music);
+});
