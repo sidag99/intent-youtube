@@ -1,5 +1,29 @@
 (() => {
   const C = IntentCore;
+  if (window.top !== window || !C.isYouTube(location.href)) return;
+  document.dispatchEvent(new Event('intent-dispose-content'));
+  let disposed = false;
+  const cleanups = [], observers = [], intervals = [];
+  const owner = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const runtimeHasIdentity = 'id' in chrome.runtime;
+  const alive = () => {try {return !disposed && (!runtimeHasIdentity || Boolean(chrome.runtime.id));} catch {return false;}};
+  const claim = () => document.documentElement?.setAttribute('data-intent-content-owner', owner);
+  const listen = (target, name, callback, options) => {const guarded = (...args) => {if (alive()) callback(...args);}; target.addEventListener(name, guarded, options); cleanups.push(() => target.removeEventListener(name, guarded, options));};
+  const mutations = callback => {const observer = new MutationObserver((...args) => {if (alive()) {claim(); callback(...args);} else dispose();}); observers.push(observer); return observer;};
+  const every = (callback, duration) => {const id = setInterval(() => {if (alive()) callback(); else dispose();}, duration); intervals.push(id); return id;};
+  function dispose() {
+    if (disposed) return; disposed = true;
+    observers.forEach(observer => observer.disconnect()); intervals.forEach(clearInterval); cleanups.splice(0).forEach(fn => fn());
+    clearTimeout(pending); clearTimeout(topicTimer); clearTimeout(topicNavigationTimer); clearTimeout(homePendingTimer);
+    homeFeed?.destroy(); watchFeed?.destroy(); toolbar?.destroy(); clearVideoTopic(); restoreShortsGate();
+    for (const [nodes, attribute] of [[markedHiddenElements, 'data-intent-hidden'], [markedShortShelves, 'data-intent-short-shelf'], [markedShortNav, 'data-intent-short-nav']]) {for (const node of nodes) node.removeAttribute(attribute); nodes.clear();}
+    document.removeEventListener('intent-dispose-content', dispose); document.removeEventListener('intent-context-lost', dispose);
+    try {chrome.runtime.onMessage.removeListener?.(messageListener);} catch { /* The old extension context may already be gone. */ }
+    // Keep topic protection briefly while a fresh context claims this document.
+    // Disabling the extension, with no replacement, restores native content.
+    setTimeout(() => {if (document.documentElement?.getAttribute('data-intent-content-owner') === owner) {for (const attr of ['data-intent-content-owner','data-intent-topics','data-intent-home-route','data-intent-home-pending','data-intent-shorts']) document.documentElement.removeAttribute(attr);}}, 2000);
+  }
+  document.addEventListener('intent-dispose-content', dispose); document.addEventListener('intent-context-lost', dispose); claim();
   let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false, settingsRevision = 0;
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
@@ -317,7 +341,7 @@
   function observeTheme() {
     if (themeObserved || !document.documentElement) return;
     themeObserved = true;
-    new MutationObserver(refreshTheme).observe(document.documentElement, {attributes: true, attributeFilter: ['dark', 'data-theme', 'style']});
+    mutations(refreshTheme).observe(document.documentElement, {attributes: true, attributeFilter: ['dark', 'data-theme', 'style']});
     refreshTheme();
   }
   function shortsGate() {
@@ -361,6 +385,7 @@
   }
   function scan() {
     pending = null;
+    if (!alive()) {dispose(); return;}
     if (!settings || !document.documentElement) return;
     syncTopicGuard();
     observeTheme();
@@ -395,14 +420,16 @@
     filterShortsNavigation();
     shortsGate();
   }
-  function schedule() { if (!pending) pending = setTimeout(scan, 120); }
+  function schedule() { if (!alive()) {dispose(); return;} if (!pending) pending = setTimeout(scan, 120); }
   async function heartbeat() {
+    if (!alive()) {dispose(); return;}
     if (running) return;
     running = true;
     const revision = settingsRevision;
     try {
       const playing = !tabPaused && [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && m.readyState > 1);
       const state = await chrome.runtime.sendMessage({type: 'HEARTBEAT', playing, ...(window.top === window ? {appearance: IntentHome.theme()} : {})});
+      if (!alive()) {dispose(); return;}
       if (state?.ok) {
         // A popup/toolbar change can arrive while an earlier snapshot is in flight.
         // Never let that older response undo a newer pause or intent selection.
@@ -415,10 +442,12 @@
           location.replace(chrome.runtime.getURL('blocked.html'));
         }
       }
-    } catch { /* Reloading an unpacked extension invalidates old scripts; refresh YouTube. */ }
-    finally { running = false; if (revision !== settingsRevision) queueMicrotask(heartbeat); }
+    } catch (error) { if (!alive() || /context invalidated/i.test(error.message || '')) dispose(); }
+    finally { running = false; if (alive() && revision !== settingsRevision) queueMicrotask(heartbeat); }
   }
-  chrome.runtime.onMessage.addListener(message => {
+  const messageListener = (message, sender, respond) => {
+    if (message.type === 'INTENT_PING') {respond?.({ok: alive(), contextValid: alive()}); return;}
+    if (!alive()) {dispose(); return;}
     if (message.type === 'SETTINGS') {
       settingsRevision++;
       if (message.reset) {homeFeed?.destroy(); watchFeed?.destroy();}
@@ -428,8 +457,9 @@
       heartbeat();
       schedule();
     }
-  });
-  new MutationObserver(records => {
+  };
+  chrome.runtime.onMessage.addListener(messageListener);
+  mutations(records => {
     if (changedTopicScripts(records)) topicScriptRevision++;
     if (topicContext && topicContext.video.id !== currentTopicVideoId()) clearVideoTopic();
     syncTopicGuard();
@@ -445,19 +475,19 @@
     if (!value) return null;
     try {return new URL(value, location.href);} catch {return null;}
   }
-  document.addEventListener('click', event => {
+  listen(document, 'click', event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.defaultPrevented) return;
     const link = event.composedPath().find(node => node instanceof HTMLAnchorElement);
     if (!link || link.target && link.target !== '_self' || link.hasAttribute('download')) return;
     try { const url = new URL(link.href); if (url.origin === location.origin && url.pathname === '/') armHomePending(); } catch {}
   }, true);
-  document.addEventListener('yt-navigate-start', event => {
+  listen(document, 'yt-navigate-start', event => {
     startTopicNavigation();
     const url = navigationDestination(event);
     if (!url || url.origin === location.origin && url.pathname === '/') armHomePending();
     else clearHomePending();
   });
-  document.addEventListener('yt-navigate-finish', () => {
+  listen(document, 'yt-navigate-finish', () => {
     lastURL = location.href;
     clearTimeout(topicNavigationTimer); topicNavigating = false;
     syncTopicGuard();
@@ -466,18 +496,18 @@
     // Navigation has settled: unsupported layouts keep their native content.
     if (settings && (!isHome() || !homeFeed?.host?.isConnected)) clearHomePending();
   });
-  window.addEventListener('popstate', () => {startTopicNavigation(); syncTopicGuard(); if (isHome()) armHomePending(); else clearHomePending(); schedule();});
+  listen(window, 'popstate', () => {startTopicNavigation(); syncTopicGuard(); if (isHome()) armHomePending(); else clearHomePending(); schedule();});
   if (isHome()) armHomePending(true);
-  document.addEventListener('intent-feed-state-change', schedule);
-  window.addEventListener('resize', schedule, {passive: true});
+  listen(document, 'intent-feed-state-change', schedule);
+  listen(window, 'resize', schedule, {passive: true});
   // Theme changes do not require a reload or another network/model request.
   observeTheme();
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshTheme);
-  document.addEventListener('play', () => { shortsGateIfReady(); heartbeat(); }, true);
-  document.addEventListener('pause', heartbeat, true);
-  document.addEventListener('visibilitychange', heartbeat);
+  listen(matchMedia('(prefers-color-scheme: dark)'), 'change', refreshTheme);
+  listen(document, 'play', () => { shortsGateIfReady(); heartbeat(); }, true);
+  listen(document, 'pause', heartbeat, true);
+  listen(document, 'visibilitychange', heartbeat);
   function shortsGateIfReady() { if (settings) shortsGate(); }
-  setInterval(() => {
+  every(() => {
     if (location.href !== lastURL) {const changed = Boolean(lastURL); lastURL = location.href; if (changed) clearVideoTopic(); schedule();}
     heartbeat();
   }, 5000);

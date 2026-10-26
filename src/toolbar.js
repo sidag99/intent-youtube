@@ -75,7 +75,6 @@
         this.layoutObserver?.disconnect();
         this.layoutObserver = new ResizeObserver(this.layoutReposition);
         for (const element of [masthead, center, start]) this.layoutObserver.observe(element);
-        this.alignmentTarget = null;
       }
       this.center = center; this.start = start; this.container = container;
       this.masthead = masthead; masthead.setAttribute('data-intent-toolbar', '');
@@ -96,32 +95,6 @@
       for (const [element, properties] of this.flowStyles) if (!properties.hadStyleAttribute && !element.getAttribute('style')?.trim()) element.removeAttribute('style');
       this.flowStyles.clear();
     }
-    observeAlignmentTarget(node) {
-      if (this.alignmentTarget === node) return;
-      if (this.alignmentTarget) this.layoutObserver?.unobserve(this.alignmentTarget);
-      this.alignmentTarget = node; if (node) this.layoutObserver?.observe(node);
-    }
-    contentLeft() {
-      const visibleLeft = node => {
-        if (!node || node.closest('[hidden]')) return null;
-        const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
-        if (rect.width >= 100 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {this.observeAlignmentTarget(node); return rect.left;}
-        return null;
-      };
-      if (location.pathname === '/watch') {
-        for (const watch of document.querySelectorAll('ytd-watch-flexy:not([hidden])')) {
-          for (const selector of ['#player', '#player-container-outer', '#player-container-inner', '#primary']) {
-            const left = visibleLeft(watch.querySelector(selector));
-            if (left !== null) return left;
-          }
-        }
-      } else if (location.pathname === '/') {
-        for (const cover of document.querySelector('#intent-home-feed')?.shadowRoot?.querySelectorAll('.cover') || []) {
-          const left = visibleLeft(cover); if (left !== null) return left;
-        }
-      }
-      this.observeAlignmentTarget(null); return null;
-    }
     positionControls() {
       if (!this.host?.isConnected || !this.masthead || !this.center || !this.start) return;
       const masthead = this.masthead.getBoundingClientRect(), start = this.start.getBoundingClientRect(), center = this.center.getBoundingClientRect();
@@ -137,10 +110,10 @@
       // Subtract our existing footprint so repeated scans never shrink it again.
       const searchSpace = center.width - otherWidth;
       const width = overlay ? available >= 360 ? 360 : available >= 200 ? 200 : 180 : searchSpace >= 448 ? 200 : searchSpace >= 428 ? 180 : 44;
-      // Choose the responsive tier using all available space first. Align within
-      // that tier, so a shifted player never forces a narrower control.
-      const contentLeft = this.contentLeft();
-      const alignedLeft = !overlay || contentLeft === null ? left : Math.max(left, Math.min(contentLeft, center.left - 12 - width));
+      // Choose the responsive tier before applying the preferred logo gap.
+      // Anchor to header geometry only. Home cards and player layout must not
+      // move the same control when navigating between YouTube surfaces.
+      const alignedLeft = overlay ? Math.max(left, Math.min(start.right + (innerWidth > 700 ? 88 : 12), center.left - 12 - width)) : left;
       const layout = width === 360 ? 'full' : width === 44 ? 'launcher' : 'compact';
       const placement = overlay ? 'overlay' : 'flow';
       const useCenter = !overlay && center.width > 44 && getComputedStyle(this.center).display !== 'none';
@@ -217,11 +190,15 @@
     async refreshFeed() {
       if (this.refreshButton.disabled) return;
       this.refreshPending = true; this.paintCoverage(); this.error.textContent = '';
-      try {await this.onRefresh();} catch (error) {this.error.textContent = error.message;}
+      try {await this.onRefresh();} catch (error) {this.handleError(error);}
       finally {this.refreshPending = false; this.paintCoverage();}
     }
+    handleError(error) {
+      if (/context invalidated/i.test(error?.message || '')) {document.dispatchEvent(new Event('intent-context-lost')); return;}
+      this.error.textContent = error?.message || 'Please try again.';
+    }
     async openSettings() {
-      try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.error.textContent = error.message;}
+      try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.handleError(error);}
     }
     updateOptions(settings) {
       const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['off', 'Off', '○']];
@@ -341,7 +318,7 @@
         const result = await this.runtime.sendMessage({type: 'SET_MODE', mode});
         if (!result?.ok || !result.settings) throw new Error(result?.error || 'Intent could not change mode. Try again.');
         this.updateTimer(result); this.settings = result.settings; this.updateOptions(this.settings); this.paintSelection(); this.onSettings(result.settings);
-      } catch (error) { this.error.textContent = error.message; }
+      } catch (error) { this.handleError(error); }
       finally {
         this.pending = false; this.trigger.disabled = false; this.trigger.removeAttribute('aria-busy');
         if (this.host.isConnected && (document.activeElement === this.host || document.activeElement === document.body)) this.trigger.focus({preventScroll: true});
@@ -359,7 +336,7 @@
         if (result.settings) { this.settings = result.settings; this.updateOptions(this.settings); this.paintSelection(); this.onSettings(result.settings); }
         else this.paintCoverage();
         this.onPaused(result.tabPaused);
-      } catch (error) { this.error.textContent = error.message; }
+      } catch (error) { this.handleError(error); }
       finally {
         this.pausePending = false; this.trigger.disabled = false; this.trigger.removeAttribute('aria-busy'); this.paintCoverage();
         if (this.host.isConnected && (document.activeElement === this.host || document.activeElement === document.body)) this.trigger.focus({preventScroll: true});
@@ -479,7 +456,7 @@
       if (this.host.dataset.theme !== theme) this.host.dataset.theme = theme;
     }
     destroy() {
-      this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect(); this.alignmentTarget = null;
+      this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect();
       window.removeEventListener('resize', this.layoutReposition); window.removeEventListener('scroll', this.layoutReposition, true);
       this.restoreFlowStyles(); this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
     }

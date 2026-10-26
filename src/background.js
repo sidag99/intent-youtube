@@ -1,6 +1,7 @@
-importScripts('core.js', 'feed.js', 'timer-topic.js');
+importScripts('core.js', 'feed.js', 'timer-topic.js', 'reconnect.js');
 const C = IntentCore, T = IntentTimerTopic;
 const feedService = IntentFeed.createService({judge: classifyLocally});
+const reconnectService = IntentReconnect.create(chrome);
 let creatingAI;
 async function classifyLocally(videos, settings) {
   if (!videos.length) return [];
@@ -17,6 +18,7 @@ async function classifyLocally(videos, settings) {
 let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appliedBlock;
 let feedRevision = 0;
 const tabFeedRevisions = new Map();
+const nativeRecommendationCache = new Map(), nativeRecommendationJobs = new Map();
 let queue = Promise.resolve();
 const reports = new Map(), timerURLs = new Map(), timerReviews = new Map(), timerTopicCache = new Map(), timerTopicJobs = new Map();
 const URLS = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
@@ -235,7 +237,10 @@ async function tick(message = {}, sender = {}) {
       pausedTabs = {}; timerReviews.clear();
       for (const id of Object.keys(tabModes)) tabModes[id] = 'work';
       for (const tab of tabs) if (isYouTubeTab(tab)) tabModes[tab.id] = 'work';
-    } else if (Object.hasOwn(patch, 'mode') && Number.isInteger(targetTabId)) tabModes[targetTabId] = settings.mode;
+    } else if (Object.hasOwn(patch, 'mode') && Number.isInteger(targetTabId)) {
+      if (tabModes[targetTabId] !== settings.mode) tabFeedRevisions.set(targetTabId, (tabFeedRevisions.get(targetTabId) || 0) + 1);
+      tabModes[targetTabId] = settings.mode;
+    }
     for (const tab of tabs) if (Object.hasOwn(tabModes, tab.id) || isYouTubeTab(tab)) ensureMode(tab.id); // Deleted custom intents fall back safely.
     await chrome.storage.local.set({settings});
     await broadcast(tabs, resetting);
@@ -267,6 +272,9 @@ async function tick(message = {}, sender = {}) {
   return result;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'FILTER_RECOMMENDATIONS') {
+    filterRecommendations(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
+  }
   if (message?.type === 'CHECK_TIMER_VIDEO') {
     checkTimerVideo(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
   }
@@ -322,6 +330,78 @@ async function checkTimerVideo(message, sender) {
     if (timerReviews.get(sender.tab.id) !== prepared.review || pausedTabs[sender.tab.id] || T.videoId(timerURLs.get(sender.tab.id)) !== videoId || T.key(effectiveSettings(sender.tab.id)) !== prepared.key) return {ok: true, stale: true};
     Object.assign(prepared.review, estimate); await persistReviews();
     return {ok: true, ...await tick({}, sender)};
+  });
+}
+function recommendationPage(value) {
+  try {
+    const url = new URL(value);
+    const videoId = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
+    if (!C.isYouTube(url.href) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname) || !(url.pathname === '/' || videoId)) return null;
+    return {url: url.href, videoId};
+  } catch {return null;}
+}
+function recommendationVideos(input, currentVideo) {
+  if (!Array.isArray(input)) throw new Error('Recommendations must be a list of video metadata.');
+  const text = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
+  const tags = value => Array.isArray(value) ? value.slice(0, 30).filter(item => typeof item === 'string').map(item => item.slice(0, 100)) : [];
+  const seen = new Set(), videos = [];
+  for (const item of input.slice(0, 48)) {
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !/^[\w-]{11}$/.test(item.id) || item.id === currentVideo || seen.has(item.id)) continue;
+    const title = text(item.title, 500).trim(); if (!title) continue;
+    let thumbnail = `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
+    try {
+      const url = new URL(text(item.thumbnail, 2048));
+      if (url.protocol === 'https:' && !url.username && !url.password && !url.port && (url.hostname === 'ytimg.com' || url.hostname.endsWith('.ytimg.com'))) thumbnail = url.href;
+    } catch { /* Only the owned YouTube thumbnail fallback is used. */ }
+    seen.add(item.id);
+    videos.push({id: item.id, title, channel: text(item.channel, 200), description: text(item.description, 1200), metadata: text(item.metadata, 120), duration: text(item.duration, 30), thumbnail, shorts: item.shorts === true, keywords: tags(item.keywords), hashtags: tags(item.hashtags)});
+  }
+  return videos;
+}
+async function filterRecommendations(message, sender) {
+  const page = recommendationPage(sender.url);
+  if (!page || !Number.isInteger(sender.tab?.id) || (sender.frameId || 0) !== 0) throw new Error('Recommendations can only be checked on the current top-level YouTube Home or video page.');
+  const locale = IntentFeed.normalizeLocale(message.locale);
+  const prepared = await serial(async () => {
+    const state = await tick({}, sender);
+    if (state.tabId !== sender.tab.id || recommendationPage(timerURLs.get(sender.tab.id))?.url !== page.url) return {skip: {ok: true, stale: true}};
+    if (state.tabPaused) return {skip: {ok: true, paused: true, tabPaused: true}};
+    if (state.blocked) return {skip: {ok: true, blocked: true}};
+    if (state.settings.mode === 'off') return {skip: {ok: true, off: true, key: IntentFeed.key(state.settings, locale), items: [], semantic: true}};
+    if (message.key !== IntentFeed.key(state.settings, locale)) return {skip: {ok: true, stale: true}};
+    const videos = recommendationVideos(message.videos, page.videoId).filter(video => C.classify(video, {...state.settings, mode: 'off'}).visible);
+    return {settings: state.settings, videos, revision: feedRevision, tabRevision: tabFeedRevisions.get(sender.tab.id) || 0, key: message.key};
+  });
+  if (prepared.skip) return prepared.skip;
+  const active = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && prepared.revision === feedRevision && prepared.tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && prepared.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale) && recommendationPage(timerURLs.get(sender.tab.id))?.url === page.url;
+  const cacheKey = JSON.stringify([prepared.key, prepared.videos]), now = Date.now();
+  for (const [key, entry] of nativeRecommendationCache) if (now - entry.at >= 600000) nativeRecommendationCache.delete(key);
+  let items, failure;
+  try {
+    const cached = nativeRecommendationCache.get(cacheKey);
+    if (cached) items = cached.items;
+    else {
+      let job = nativeRecommendationJobs.get(cacheKey);
+      if (!job) {
+        if (nativeRecommendationJobs.size >= 32) throw new Error('Too many recommendation checks are already running. Try again shortly.');
+        job = classifyLocally(prepared.videos, prepared.settings).then(decisions => {
+          const accepted = prepared.videos.filter((video, index) => decisions[index]?.accepted === true && C.classify(video, {...prepared.settings, mode: 'off'}).visible);
+          nativeRecommendationCache.set(cacheKey, {at: Date.now(), items: accepted});
+          while (nativeRecommendationCache.size > 64) nativeRecommendationCache.delete(nativeRecommendationCache.keys().next().value);
+          return accepted;
+        }).finally(() => nativeRecommendationJobs.delete(cacheKey));
+        nativeRecommendationJobs.set(cacheKey, job);
+      }
+      items = await job;
+    }
+  } catch (error) {failure = error;}
+  return serial(async () => {
+    const current = await tick({}, sender);
+    if (current.tabPaused) return {ok: true, paused: true, tabPaused: true};
+    if (!active() || current.tabId !== sender.tab.id) return {ok: true, stale: true};
+    if (current.blocked) return {ok: true, blocked: true};
+    if (failure) throw failure;
+    return {ok: true, key: prepared.key, items: items.filter(video => video.id !== page.videoId && C.classify(video, {...current.settings, mode: 'off'}).visible), semantic: true};
   });
 }
 async function feedRequest(message, sender) {
@@ -380,12 +460,13 @@ async function previewRequest(message, sender) {
 }
 const refresh = () => { serial(() => tick()).catch(() => {}); };
 chrome.alarms.onAlarm.addListener(refresh);
-chrome.tabs.onActivated.addListener(refresh);
+chrome.tabs.onActivated.addListener(info => {refresh(); reconnectService?.activate(info).catch(() => {});});
 chrome.tabs.onCreated?.addListener(tab => {
   if (!isYouTubeTab(tab)) return;
   serial(async () => { await initialize(); ensureMode(tab.id); await chrome.storage.session.set({tabModes}); await tick(); }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener(id => {
+  reconnectService?.forget(id);
   serial(async () => {
     await initialize();
     actionStates.delete(id);
@@ -414,7 +495,7 @@ chrome.tabs.onUpdated.addListener((id, info, tab = {}) => {
   if (!navigation && !(supported && (status || info.audible !== undefined))) return;
   serial(async () => {
     await initialize();
-    if (navigation) {reports.delete(id); if (!info.url.startsWith(blockedURL())) timerReviews.delete(id); timerURLs.set(id, info.url);}
+    if (navigation) {tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1); reports.delete(id); if (!info.url.startsWith(blockedURL())) timerReviews.delete(id); timerURLs.set(id, info.url);}
     if (navigation || isYouTubeTab(tab)) ensureMode(id);
     // Chrome can clear tab-specific action appearance during navigation even
     // though the saved mode is unchanged. Invalidate inside the queue so an
@@ -426,9 +507,9 @@ chrome.tabs.onUpdated.addListener((id, info, tab = {}) => {
     if ((navigation || status) && Object.hasOwn(tabModes, id)) await paintAction(id, tabAction({id}, state.budgetExhausted));
   }).catch(() => {});
 });
-chrome.windows.onFocusChanged.addListener(refresh);
+chrome.windows.onFocusChanged.addListener(windowId => {refresh(); reconnectService?.focus(windowId).catch(() => {});});
 chrome.idle.onStateChanged.addListener(refresh);
-chrome.runtime.onInstalled.addListener(refresh);
+chrome.runtime.onInstalled.addListener(() => {refresh(); reconnectService?.installed().catch(() => {});});
 chrome.runtime.onStartup.addListener(() => serial(async () => {
   await initialize(); tracker = {lastAt: Date.now(), counting: false}; await tick();
 }));

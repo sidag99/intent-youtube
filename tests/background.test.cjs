@@ -1013,3 +1013,204 @@ test('pending navigation from a conditional break page can reach Home, search an
     }
   }
 });
+
+require('../src/core.js'); require('../src/feed.js');
+const nativeKey = (settings = {}, locale) => IntentFeed.key(IntentCore.sanitize(settings), locale);
+const nativeVideo = (id = 'N0000000000', title = 'A useful project') => ({id, title, channel: 'Studio', description: 'How to build a useful software tool.', thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`});
+const filterNative = (h, videos = [nativeVideo()], settings = {}, sender = fromTab(1), extra = {}) => h.send({type: 'FILTER_RECOMMENDATIONS', key: nativeKey(settings, extra.locale), videos, ...extra}, sender);
+
+test('native recommendation checks return only bundled-model acceptances without search or enrichment requests', async () => {
+  let inspected, searches = 0;
+  const config = {metadataLimit: 40};
+  const h = harness({settings: config}, undefined, async () => {searches++; throw new Error('No external fetch is permitted');}, async (videos, settings) => {inspected = {videos, settings}; return videos.map(video => ({accepted: video.id === 'N0000000000', uncertain: false}));});
+  const result = await filterNative(h, [nativeVideo(), nativeVideo('N0000000001')], config);
+  assert.equal(result.ok, true); assert.equal(result.semantic, true); assert.equal(result.key, nativeKey(config));
+  assert.deepEqual(Array.from(result.items, video => video.id), ['N0000000000']); assert.equal(searches, 0);
+  assert.equal(inspected.settings.metadataLimit, 40, 'the metadata preference cannot cause this API to fetch descriptions');
+  assert.equal(h.storageWrites.some(write => Object.keys(write.values).some(key => /recommendation/i.test(key))), false, 'candidate metadata and decisions are not persisted');
+});
+
+test('native recommendation metadata is bounded, deduplicated and strips all supplied source/verdict flags', async () => {
+  let inspected;
+  const h = harness({}, undefined, undefined, async videos => {inspected = videos; return videos.map(() => ({accepted: true}));});
+  const supplied = {...nativeVideo(), title: 't'.repeat(600), channel: 'C'.repeat(250), description: 'D'.repeat(1600), metadata: 'M'.repeat(150), duration: '0'.repeat(50), keywords: Array(40).fill('K'.repeat(150)), hashtags: ['real', 7, ...Array(35).fill('H'.repeat(150))], thumbnail: 'https://attacker.example/image.jpg', accepted: true, visible: true, semantic: true, source: 'native', categoryId: 'work', url: 'https://attacker.example/' };
+  const input = [supplied, supplied, {...nativeVideo(), id: '../invalid'}, ...Array.from({length: 60}, (_, index) => nativeVideo('N' + String(index + 1).padStart(10, '0')))];
+  const result = await filterNative(h, input);
+  assert.equal(result.ok, true); assert.ok(inspected.length <= 48); assert.equal(new Set(inspected.map(video => video.id)).size, inspected.length);
+  const first = inspected[0];
+  assert.equal(first.title.length, 500); assert.equal(first.channel.length, 200); assert.equal(first.description.length, 1200); assert.equal(first.metadata.length, 120); assert.equal(first.duration.length, 30);
+  assert.equal(first.keywords.length, 30); assert.ok(first.keywords.every(value => value.length === 100)); assert.ok(first.hashtags.every(value => typeof value === 'string' && value.length <= 100));
+  assert.equal(first.thumbnail, 'https://i.ytimg.com/vi/N0000000000/hqdefault.jpg'); assert.equal(first.shorts, false);
+  assert.deepEqual(Object.keys(first).sort(), ['channel','description','duration','hashtags','id','keywords','metadata','shorts','thumbnail','title']);
+  assert.equal(inspected.some(video => Number(video.id.slice(1)) >= 46), false, 'only the first48 records are considered before validation/deduplication');
+  for (const thumbnail of ['http://i.ytimg.com/a.jpg','https://ytimg.com.evil.test/a.jpg','https://user:password@i.ytimg.com/a.jpg','https://i.ytimg.com:8443/a.jpg','javascript:alert(1)']) {
+    const checked = await filterNative(h, [{...nativeVideo(), thumbnail}]); assert.equal(checked.items[0].thumbnail, 'https://i.ytimg.com/vi/N0000000000/hqdefault.jpg');
+  }
+});
+
+test('native recommendation authorization requires a current top-level native Home or watch page', async () => {
+  let calls = 0;
+  const h = harness({}, undefined, undefined, async videos => {calls++; return videos.map(() => ({accepted: true}));});
+  for (const sender of [{...fromTab(1), frameId: 2}, {url: 'https://www.youtube.com/'}, {...fromTab(1), url: 'https://example.com/'}, {...fromTab(1), url: 'https://www.youtube.com.evil.test/'}, {...fromTab(1), url: 'https://music.youtube.com/'}, {...fromTab(1), url: 'https://www.youtube-nocookie.com/embed/abcdefghijk'}, {...fromTab(1), url: 'https://www.youtube.com/results?search_query=work'}, {...fromTab(1), url: 'https://www.youtube.com/watch?v=bad'}, {...fromTab(1), url: 'chrome-extension://intent/settings.html'}]) assert.equal((await filterNative(h, [nativeVideo()], {}, sender)).ok, false);
+  assert.equal(calls, 0);
+  assert.equal((await filterNative(h, [nativeVideo()], {}, {...fromTab(1), url: topicURL(topicID)})).stale, true, 'the sender cannot spoof the live tab identity');
+  assert.equal((await filterNative(h, [nativeVideo()], {}, fromTab(1), {locale:{hl:'de',gl:'DE'},key:nativeKey()})).stale, true, 'locale is part of the feed key');
+  assert.equal(calls, 0);
+  h.setTabs([{id:1,windowId:1,active:true,url:topicURL(topicID)}]);
+  const watch = await filterNative(h, [nativeVideo(topicID),nativeVideo(nextTopicID)], {}, topicSender());
+  assert.deepEqual(Array.from(watch.items, video => video.id), [nextTopicID], 'the trusted current watch ID is always excluded');
+});
+
+test('native distractions take precedence over model acceptance and channel inclusion', async () => {
+  let received;
+  const config = {blockedTerms:'spoiler',channels:{work:'Trusted channel'}};
+  const h = harness({settings:config}, undefined, undefined, async (videos, settings) => {received=videos;return videos.map(video=>({accepted:IntentCore.terms(settings.channels.work).includes(IntentCore.normalize(video.channel))}));});
+  const result = await filterNative(h,[{...nativeVideo(),channel:'Trusted channel'}, {...nativeVideo('N0000000001'),shorts:true},nativeVideo('N0000000002','You won’t believe this!!!'),nativeVideo('N0000000003','A spoiler story'),{...nativeVideo('N0000000004','You won’t believe this!!!'),channel:'Trusted channel'}],config);
+  assert.deepEqual(Array.from(received,video=>video.id),['N0000000000']);
+  assert.deepEqual(Array.from(result.items,video=>video.id),['N0000000000']);
+});
+
+test('native checks skip model work for Off, Pause, stale keys and blocked budgets', async () => {
+  let calls=0;
+  const judge=async videos=>{calls++;return videos.map(()=>({accepted:true}));};
+  const off=harness({settings:{mode:'off'}},undefined,undefined,judge);
+  assert.equal((await filterNative(off,[nativeVideo()],{mode:'off'})).off,true);
+  const paused=harness({},undefined,undefined,judge);await paused.send({type:'SET_TAB_PAUSED',paused:true},fromTab(1));
+  assert.equal((await filterNative(paused)).paused,true);
+  const blocked=harness({settings:{dailyMinutes:1},days:{'2026-10-24':60000}},undefined,undefined,judge);
+  assert.equal((await filterNative(blocked,[nativeVideo()],{dailyMinutes:1})).blocked,true);
+  const stale=harness({},undefined,undefined,judge);assert.equal((await filterNative(stale,[nativeVideo()],{},fromTab(1),{key:'wrong'})).stale,true);
+  assert.equal(calls,0);
+});
+
+test('native model work shares in-flight/cache results and does not block accounting or mode changes', async () => {
+  let calls=0,release,started;
+  const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
+  const h=harness({},undefined,undefined,async videos=>{calls++;started();await gate;return videos.map(()=>({accepted:true}));});
+  h.setTabs(tabsPair());
+  const first=filterNative(h);await began;const second=filterNative(h,[nativeVideo()],{},fromTab(2));
+  h.advance(5000);assert.equal((await tabState(h,1)).usedMs,5000,'accounting completes while the local model is pending');
+  await h.send({type:'GET_STATE'});assert.equal(calls,1);release();
+  const results=await Promise.all([first,second]);assert.ok(results.every(result=>result.items.length===1));
+  await filterNative(h);assert.equal(calls,1,'identical sanitized metadata reuses the model verdict');
+  h.advance(600001);await filterNative(h);assert.equal(calls,2,'cached candidate verdicts expire after ten minutes');
+});
+
+test('native results are suppressed after mode, pause/resume, reset, rules or navigation changes', async () => {
+  const mutations=[
+    h=>h.send({type:'SET_MODE',mode:'music'},fromTab(1)),
+    async h=>{await h.send({type:'SET_MODE',mode:'music'},fromTab(1));await h.send({type:'SET_MODE',mode:'work'},fromTab(1));},
+    async h=>{await h.send({type:'SET_TAB_PAUSED',paused:true},fromTab(1));await h.send({type:'SET_TAB_PAUSED',paused:false},fromTab(1));},
+    h=>h.send({type:'RESET_SETTINGS'}),
+    h=>h.send({type:'UPDATE_SETTINGS',patch:{intentDescriptions:{work:'A different subject'}}}),
+    h=>h.updateTab(1,{url:topicURL(topicID)}),
+    h=>h.updateTab(1,{url:'https://www.youtube.com/'}),
+    h=>h.removeTab(1)
+  ];
+  for(const mutate of mutations){
+    let release,started;const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
+    const h=harness({},undefined,undefined,async videos=>{started();await gate;return videos.map(()=>({accepted:true}));});
+    const pending=filterNative(h);await began;await mutate(h);release();const result=await pending;
+    assert.equal(result.stale,true);assert.equal(result.items,undefined);
+  }
+});
+
+test('native model failures fail closed and exhausted budgets suppress late accepted results', async () => {
+  const failed=harness({},undefined,undefined,async()=>{throw new Error('Model unavailable');});
+  const error=await filterNative(failed);assert.equal(error.ok,false);assert.equal(error.items,undefined);
+  let release,started;const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
+  const config={dailyMinutes:1},h=harness({settings:config,days:{'2026-10-24':59000}},undefined,undefined,async videos=>{started();await gate;return videos.map(()=>({accepted:true}));});
+  const pending=filterNative(h,[nativeVideo()],config);await began;h.advance(2000);await h.send({type:'GET_STATE'});release();
+  const result=await pending;assert.equal(result.blocked,true);assert.equal(result.items,undefined);
+});
+
+test('native model jobs and metadata caches have finite bounds without blocking ordinary state requests', async () => {
+  let calls=0,release;const gate=new Promise(resolve=>{release=resolve;});
+  const h=harness({},undefined,undefined,async videos=>{calls++;await gate;return videos.map(()=>({accepted:true}));});
+  const pending=Array.from({length:32},(_,index)=>filterNative(h,[nativeVideo('B'+String(index).padStart(10,'0'))]));
+  await h.send({type:'GET_STATE'});assert.equal(calls,32);
+  const overflow=await filterNative(h,[nativeVideo('B9999999999')]);assert.equal(overflow.ok,false);assert.match(overflow.error,/already running/);assert.equal(calls,32);
+  release();assert.ok((await Promise.all(pending)).every(result=>result.items.length===1));
+  let cachedCalls=0;
+  const cached=harness({},undefined,undefined,async videos=>{cachedCalls++;return videos.map(()=>({accepted:true}));});
+  for(let index=0;index<65;index++)await filterNative(cached,[nativeVideo('C'+String(index).padStart(10,'0'))]);
+  assert.equal(cachedCalls,65);
+  await filterNative(cached,[nativeVideo('C0000000064')]);assert.equal(cachedCalls,65,'a recent batch remains cached');
+  await filterNative(cached,[nativeVideo('C0000000000')]);assert.equal(cachedCalls,66,'the oldest batch is evicted when the64-entry bound is exceeded');
+});
+
+function recoveryHarness({ping = async () => ({ok:false}), ownership = {owned:true,legacy:true}, inject = async () => {}} = {}) {
+  let time=0;
+  const tabs=new Map([[1,{id:1,windowId:1,active:true,url:'https://www.youtube.com/'}]]),calls={get:[],query:[],ping:[],probe:[],css:[],files:[],reload:0,update:0};
+  const manifest=JSON.parse(source('../manifest.json'));
+  const api={runtime:{getManifest:()=>manifest},tabs:{
+    get:async id=>{calls.get.push(id);if(!tabs.has(id))throw new Error('Tab closed');return {...tabs.get(id)};},
+    query:async query=>{calls.query.push(query);return [...tabs.values()].filter(tab=>tab.active===true&&(query.windowId===undefined||tab.windowId===query.windowId)&&/^https?:\/\/(?:[^/]+\.)?youtube(?:-nocookie)?\.com\//.test(tab.url));},
+    sendMessage:async(id,message,options)=>{calls.ping.push({id,message,options});return ping(id,message);},
+    reload:()=>{calls.reload++;},update:()=>{calls.update++;}
+  },scripting:{
+    insertCSS:async options=>{calls.css.push(options);},
+    executeScript:async options=>{if(options.func){calls.probe.push(options);return[{frameId:0,result:ownership}];}calls.files.push(options);await inject(options);return[];}
+  }};
+  const context=vm.createContext({URL,Date,console});vm.runInContext(source('reconnect.js'),context);
+  const service=context.IntentReconnect.create(api,()=>time);
+  return {service,api,tabs,calls,manifest,advance:milliseconds=>{time+=milliseconds;}};
+}
+
+test('recovery leaves a healthy live controller alone and performs no background tab scan on activation',async()=>{
+  const h=recoveryHarness({ping:async()=>({ok:true,contextValid:true})});
+  assert.equal(await h.service.activate({tabId:1}),false);assert.equal(h.calls.ping.length,1);assert.equal(h.calls.query.length,0);
+  assert.equal(h.calls.probe.length,0);assert.equal(h.calls.files.length,0);assert.equal(h.calls.css.length,0);assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);
+  assert.equal(h.calls.ping[0].message.type,'INTENT_PING');assert.equal(h.calls.ping[0].options.frameId,0);
+});
+
+test('invalidated supported tabs recover through owned manifest files in frame0 without reloading or touching the player',async()=>{
+  const h=recoveryHarness();assert.equal(await h.service.activate({tabId:1}),true);
+  assert.equal(h.calls.probe.length,1);assert.equal(h.calls.css.length,1);assert.equal(h.calls.files.length,1);
+  const injection=h.calls.files[0];assert.deepEqual(Array.from(injection.files),h.manifest.content_scripts[0].js);
+  assert.deepEqual(Array.from(h.calls.css[0].files),h.manifest.content_scripts[0].css);
+  assert.equal(injection.target.tabId,1);assert.deepEqual(Array.from(injection.target.frameIds),[0]);assert.equal(injection.world,'ISOLATED');
+  assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);assert.equal(h.calls.query.length,0);
+});
+
+test('recovery skips outside sites, embedded players, inactive tabs and legacy controllers without a disposal protocol',async()=>{
+  const h=recoveryHarness();
+  for(const url of ['https://example.com/','https://studio.youtube.com/','https://music.youtube.com/','https://www.youtube.com/embed/abcdefghijk','https://www.youtube-nocookie.com/embed/abcdefghijk','chrome-extension://intent/blocked.html']){
+    h.tabs.set(1,{id:1,active:true,url});assert.equal(await h.service.activate({tabId:1}),false,url);
+  }
+  h.tabs.set(1,{id:1,active:false,url:'https://www.youtube.com/'});assert.equal(await h.service.activate({tabId:1}),false);
+  assert.equal(h.calls.ping.length,0);assert.equal(h.calls.files.length,0);
+  const legacy=recoveryHarness({ownership:{owned:false,legacy:true}});assert.equal(await legacy.service.activate({tabId:1}),false);assert.equal(legacy.calls.probe.length,1);assert.equal(legacy.calls.css.length,0);assert.equal(legacy.calls.files.length,0);
+  const empty=recoveryHarness({ownership:{owned:false,legacy:false}});assert.equal(await empty.service.activate({tabId:1}),true,'a fresh page with no old controller can safely initialize');
+});
+
+test('install recovery queries only active YouTube scopes and concurrent activation deduplicates repair work',async()=>{
+  let release,started;const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
+  const h=recoveryHarness({ping:async()=>{started();await gate;return undefined;}});
+  const first=h.service.activate({tabId:1});await began;const second=h.service.activate({tabId:1});release();await Promise.all([first,second]);
+  assert.equal(h.calls.ping.length,1);assert.equal(h.calls.files.length,1);
+  const installed=recoveryHarness();installed.tabs.set(2,{id:2,active:false,url:'https://www.youtube.com/watch?v=abcdefghijk'});installed.tabs.set(3,{id:3,active:true,url:'https://example.com/'});installed.tabs.set(4,{id:4,active:true,url:'https://www.youtube.com/embed/abcdefghijk'});
+  await installed.service.installed();assert.equal(installed.calls.query.length,1);
+  assert.equal(installed.calls.query[0].active,true);assert.ok(installed.calls.query[0].url.every(pattern=>pattern.includes('youtube')));
+  assert.deepEqual(installed.calls.files.map(call=>call.target.tabId),[1]);
+});
+
+test('recovery revalidates navigation after ping and bounds repeated failed injections without retry loops',async()=>{
+  let release,started;const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
+  const h=recoveryHarness({ping:async()=>{started();await gate;return undefined;}});
+  const pending=h.service.activate({tabId:1});await began;h.tabs.set(1,{id:1,active:true,url:'https://example.com/'});release();assert.equal(await pending,false);assert.equal(h.calls.probe.length,0);assert.equal(h.calls.files.length,0);
+  const failed=recoveryHarness({inject:async()=>{throw new Error('Page navigated');}});
+  assert.equal(await failed.service.activate({tabId:1}),false);assert.equal(await failed.service.activate({tabId:1}),false);assert.equal(failed.calls.files.length,1,'activation does not loop on a failed script injection');
+  failed.advance(5000);assert.equal(await failed.service.activate({tabId:1}),false);assert.equal(failed.calls.files.length,2,'a later user activation can retry');
+  assert.equal(failed.calls.reload,0);assert.equal(failed.calls.update,0);
+});
+
+test('returning focus repairs only the active YouTube tab in that Chrome window',async()=>{
+  const h=recoveryHarness();
+  h.tabs.set(2,{id:2,windowId:2,active:true,url:'https://www.youtube.com/watch?v=abcdefghijk'});
+  h.tabs.set(3,{id:3,windowId:1,active:false,url:'https://www.youtube.com/'});
+  await h.service.focus(-1);assert.equal(h.calls.query.length,0,'leaving Chrome does not scan tabs');
+  await h.service.focus(1);assert.equal(h.calls.query.length,1);assert.equal(h.calls.query[0].windowId,1);assert.equal(h.calls.query[0].active,true);
+  assert.deepEqual(h.calls.files.map(call=>call.target.tabId),[1]);
+  assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);
+});

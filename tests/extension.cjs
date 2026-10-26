@@ -133,6 +133,21 @@ async function chooseMode(toolbar, mode, customName) {
   assert.ok(searchLocales.some(locale=>locale.hl==='en-IN'&&locale.gl==='IN'),'regional searches use a distinct locale-aware cache');
   assert.equal(await feed.locator('.meta').first().innerText(),'3.9M views · 2 years ago','a different region cannot overwrite this page’s metadata');
   await regionalPage.close();await yt.bringToFront();
+  // Real installed native filtering uses the packaged model, alongside discovery.
+  const nativeNetworkBefore={...networkCounts};
+  await yt.evaluate(()=>{
+    const native=document.querySelector('#native');
+    for(const [id,title,description] of [['W0000000000','Ship a tiny app this weekend · 1','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],['Z0000000000','Ship a tiny app from your sketches','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],['J0000000000','Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.']]) {
+      const card=document.createElement('ytd-rich-item-renderer');card.innerHTML=`<a id="video-title" href="/watch?v=${id}">${title}</a><div id="channel-name"><a>Maker Notes</a></div><div id="description-text">${description}</div><div id="metadata-line"><span>3.9M views</span><span>2 years ago</span></div>`;native.append(card);
+    }
+  });
+  await yt.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.recommended-grid [data-video-id="Z0000000000"]'),null,{timeout:60000});
+  assert.deepEqual(await feed.locator('.recommended-grid .title').allTextContents(),['Ship a tiny app this weekend · 1','Ship a tiny app from your sketches']);
+  assert.equal(await feed.locator('[data-video-id="W0000000000"]').count(),1,'native match takes priority over discovery duplicate with the real model');
+  assert.equal(await feed.locator('.recommended-grid [data-video-id="J0000000000"]').count(),0,'real model rejects the unrelated musical description');
+  assert.deepEqual(networkCounts,nativeNetworkBefore,'native checks do not fetch public search pages or fuller descriptions');
+  await yt.screenshot({path:path.join(shots,'intent-installed-hybrid-feed.png'),fullPage:true});
+  console.log('PASS installed hybrid recommendations: actual model, native-first sections, duplicate suppression and no extra metadata/search requests');
 
   assert.match((await actionFor(yt)).title,/Work intent.*timer counts toward your daily limit/);assert.equal((await actionFor(yt)).badge,'W');
   const workTabId=await tabIdFor(yt),workWrites=await iconWrites(workTabId);

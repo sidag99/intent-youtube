@@ -109,33 +109,27 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await nativePage.evaluate(()=>actualToolbar.destroy());
     assert.equal(await nativePage.locator('#center').getAttribute('style'),null);assert.equal(await nativePage.locator('#native-group').getAttribute('style'),null);
     await nativePage.close();
-    // Watch alignment uses the actual player ahead of its padded primary/outer
-    // containers, without paying for alignment by shrinking the responsive tier.
-    await page.evaluate(()=>{
-      history.replaceState({},'', '/watch?v=alignment1');
-      const watch=document.createElement('ytd-watch-flexy');watch.id='alignment-watch';watch.style.cssText='display:block;position:absolute;top:90px;left:0';
-      watch.innerHTML='<div id="primary" style="margin-left:240px"><div id="player-container-outer" style="margin-left:24px"><div id="player" style="margin-left:16px;width:800px;height:450px;background:#222"></div></div></div>';
-      document.body.append(watch);toolbar.sync(testSettings,true,{state:'active'});
-    });
-    const playerAlignment=await page.evaluate(()=>({toolbar:toolbar.host.getBoundingClientRect().left,player:document.querySelector('#alignment-watch #player').getBoundingClientRect().left,width:toolbar.host.getBoundingClientRect().width,native:measureNative()}));
-    assert.equal(playerAlignment.toolbar,playerAlignment.player);assert.equal(playerAlignment.toolbar,280);assert.equal(playerAlignment.width,360);assert.deepEqual(playerAlignment.native,nativeBefore[3111]);
-    await page.screenshot({path:path.join(shots,'intent-toolbar-player-aligned.png'),clip:{x:0,y:0,width:1400,height:180}});
-    await page.evaluate(()=>{const player=document.querySelector('#alignment-watch #player');player.style.position='fixed';player.style.left='1000px';toolbar.positionControls();});
-    const clampedAlignment=await page.evaluate(()=>({left:toolbar.host.getBoundingClientRect().left,width:toolbar.host.getBoundingClientRect().width,maximum:document.querySelector('#center').getBoundingClientRect().left-12-360}));
-    assert.ok(Math.abs(clampedAlignment.left-clampedAlignment.maximum)<=1);assert.equal(clampedAlignment.width,360,'a far-right player does not collapse the full control just to align');
-    await page.evaluate(()=>{document.querySelector('#alignment-watch #player').style.left='0px';toolbar.positionControls();});
-    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),await page.evaluate(()=>document.querySelector('#start').getBoundingClientRect().right+28),'logo clearance takes priority over a flush-left/theater player');
-    await page.evaluate(()=>{document.querySelector('#alignment-watch').hidden=true;toolbar.positionControls();});
-    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),await page.evaluate(()=>document.querySelector('#start').getBoundingClientRect().right+28),'a hidden outgoing Watch player cannot move the control');
-    await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{document.querySelector('#alignment-watch').hidden=false;toolbar.sync(testSettings,true,{state:'active'});});
-    assert.equal(await toolbar.getAttribute('data-layout'),'launcher');assert.equal(await trigger.isVisible(),true,'player alignment preserves the narrow usable launcher fallback');
+    // The anchor depends only on masthead geometry, never outgoing/hidden page content.
+    const stableAnchor = await page.evaluate(() => toolbar.host.getBoundingClientRect().left);
+    assert.equal(stableAnchor, await page.evaluate(() => document.querySelector('#start').getBoundingClientRect().right + 88));
+    for (const route of ['/watch?v=alignment01', '/', '/results?search_query=study']) {
+      for (const offset of [0, 280, 1000]) {
+        await page.evaluate(({route,offset}) => {
+          history.replaceState({}, '', route);
+          let watch = document.querySelector('#alignment-watch');
+          if (!watch) {watch=document.createElement('ytd-watch-flexy');watch.id='alignment-watch';watch.innerHTML='<div id="player" style="width:800px;height:450px"></div>';document.body.append(watch);}
+          watch.style.cssText=`position:absolute;top:90px;left:${offset}px`;watch.hidden=offset===1000;
+          toolbar.sync(testSettings,true,{state:'active'});
+        }, {route,offset});
+        assert.equal(await page.evaluate(() => toolbar.host.getBoundingClientRect().left), stableAnchor, 'navigation, theater mode and hidden renderers cannot move the header control');
+        assert.deepEqual(await page.evaluate(() => measureNative()),nativeBefore[3111]);
+      }
+    }
+    await page.screenshot({path:path.join(shots,'intent-toolbar-stable-anchor.png'),clip:{x:0,y:0,width:1400,height:180}});
+    await page.setViewportSize({width:390,height:844});await page.evaluate(()=>toolbar.sync(testSettings,true,{state:'active'}));
+    assert.equal(await toolbar.getAttribute('data-layout'),'launcher');assert.equal(await trigger.isVisible(),true);
     await page.setViewportSize({width:3111,height:900});
-    await page.evaluate(()=>{
-      document.querySelector('#alignment-watch').remove();history.replaceState({},'','/');
-      const home=document.createElement('section');home.id='intent-home-feed';const shadow=home.attachShadow({mode:'open'});shadow.innerHTML='<a class="cover" style="display:block;position:fixed;top:90px;left:320px;width:280px;height:157px"></a>';document.body.append(home);toolbar.sync(testSettings,true,{state:'active'});
-    });
-    assert.equal(await page.evaluate(()=>toolbar.host.getBoundingClientRect().left),320,'Home can align to its first visible Intent cover');
-    await page.evaluate(()=>{document.querySelector('#intent-home-feed').remove();toolbar.sync(testSettings,true,testCoverage);});
+    await page.evaluate(()=>{document.querySelector('#alignment-watch').remove();history.replaceState({},'','/');toolbar.sync(testSettings,true,testCoverage);});
     const normalLabels = await page.evaluate(() => {
       const result = [];
       for (const [mode, state, customIntents] of [['off','active',{}],['work','active',{}],['study','active',{}],['music','active',{}],['work','paused',{}],['custom-maker','active',{'custom-maker':{name:'Making & Building',description:'Make physical and digital projects',icon:'tools'}}]]) {
