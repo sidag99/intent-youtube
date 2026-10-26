@@ -3,7 +3,7 @@
 **YouTube, with purpose.** A Chrome / Edge extension with intent-driven home and watch-page recommendations, local topic analysis, distraction controls and a daily budget.
 
 - **Filled home and watch feeds:** Work, Study, Music and the optional intents you install load matching videos from public YouTube searches. Approved videos appear in a compact home grid or a recommendation list beside/below the current video, without holes left by rejected recommendations.
-- **Controls beside the YouTube logo:** Intent occupies the spare space between YouTube’s logo and its native search group. The search field, microphone and header keep their original dimensions and positions. The control uses a full or compact layout, or a logo launcher when space is tight; if there is no free slot, use the Chrome extension popup. The original green-and-white logo opens a custom menu with keyboard navigation. Long intent names use an ellipsis. Search/unsupported pages show their coverage status, and loading/failed feeds stay explicit.
+- **Responsive YouTube controls:** Intent uses spare space beside the YouTube logo when available, preserving native search geometry. At narrow widths or high zoom it reserves space in the header and lets search become narrower. A readable compact control keeps the mode and clock; the smallest layout is a 44px launcher that opens the full menu. The control never disappears to save space. Refresh and Settings move into the menu when their inline icons cannot fit, and launcher layouts show the timer summary there too. Long names use an ellipsis; normal names fit the wider desktop control.
 - **Your own definitions:** use the pencil on any intent to edit its name, description, topics and channels, including Work, Study and Music, or add up to 24 optional/custom intents. Custom intents have a choice of 20 icons. A configured description replaces the broad built-in topic scope. Built-in editors show their exact factory semantic descriptions, topic keywords and discovery searches, with a live indication of whether the built-in scope or a custom description is in use.
 - **Optional intent library:** add Gaming, TV & Film, Making & Building, Artificial Intelligence, News, Travel, Cooking, Fitness, Art & Design, Photography, Languages, Science, History, Finance, Nature, DIY & Repair, Books or Wellbeing. Templates become editable custom intents; adding one does not switch the current intent. Arrange the installed intents in any order, shared by settings, popup and toolbar. Leisure is removed; old Leisure selections fall back to Work.
 - **Editable role presets:** General, Software engineer, Accountant, Designer, Researcher and Student provide starting descriptions for Work and Study. Apply, rename, edit, delete or create role presets. Applying changes only the two descriptions, and each intent stays editable afterward.
@@ -27,7 +27,7 @@
 
 The committed package includes model assets and the inference runtime, so there is **no npm or AI setup for end users**. Chrome 120+ is required. This is an unpacked development extension; it has not been published in an extension store. Firefox and Safari packaging are not included.
 
-For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.7.5 adds a 28px desktop gap after the YouTube logo, replaces the timer button with a hover/focus tooltip, and gives Exempt enough space to remain fully visible. Native search size and the previous header-overlay and Shorts fixes are preserved. No new permissions beyond version 1.2 are required.
+For an existing installation, replace its files, click **Reload** on the Extensions page, and refresh YouTube tabs. Version 1.8.0 adds current-video topic estimates and optional matching-only timer exemptions. It also widens the desktop toolbar for ordinary intent names, adds a 28px logo gap, and uses a non-button timer tooltip with a fully visible Exempt label. Search keeps its native size when space permits and may narrow at high zoom so Intent remains accessible. Previous header-overlay and Shorts fixes are preserved. No new permissions beyond version 1.2 are required.
 
 ## How the feed works
 
@@ -87,11 +87,21 @@ Per-tab selections are kept in session storage across reloads and background-wor
 
 **Reset settings** opens a confirmation explaining the changes. It restores factory preferences and built-in names, removes custom intents/rules, restores the role-preset library and initial intent order, clears per-tab pauses, and sets open tab intents to Work. Daily usage history and the detected YouTube appearance are retained. Reset is a settings reset, not a way to erase today’s time.
 
+## Current-video topic labels
+
+With an intent active, a small label beside the native video title estimates its topic from the title, available description, hashtags and tags. Categories come from your configured intents, including custom ones. A clear mismatch reads, for example, **Music · Outside Study**. Less certain estimates say **Likely Work · uncertain**, or **Topic uncertain** when no category is clear. These are local metadata estimates, not an analysis of the video's pictures or audio. The chosen intent does not change automatically.
+
+This uses the existing bundled model and metadata already present on the page, with bounded caching and shared requests; it makes no extra public video-page requests. Off and Pause suppress the label and new checks. The label supports long videos and Shorts when Shorts are allowed.
+
 ## Time accounting
 
 The toolbar clock reports the shared remaining budget and whether this tab is actually contributing time. A different counted tab may keep the shared timer running while the current intent is exempt. The clock uses accounting snapshots from the background worker; it does not start a second timer or change Chrome’s intent/pause badge. With blocking disabled, the tooltip explains that there is no enforced limit.
 
 The clock turns amber at ten minutes remaining and red at two minutes. The unreliable in-page reminder option has been removed; no reminder messages are advertised or sent.
+
+For a timer-exempt intent, **Only exempt matching videos** is an optional setting in the intent editor and the settings timer panel. It is off by default. Matching videos stay exempt; only strong evidence of an unrelated topic turns the current video into counted time. Checking, model errors and uncertain decisions remain exempt. Home browsing and searches keep the intent's exemption. There is no per-video exemption override. The timer tooltip explains the current decision. Changing the rule affects future accounting, without retroactive charges.
+
+The rule applies to the open video's normal foreground use and eligible background playback. At the daily limit a confirmed unrelated video closes, while Home/search and other exempt videos remain accessible. Conditional topic checks happen after page metadata loads and may take time; they do not create a whole-tab network ban that would also block the next useful video. Ordinary counted intents keep the existing network-level daily block.
 
 - Each intent, including custom intents and modes-off browsing, has an independent **Count time** switch. Music starts excluded; other intents start counted. Changes apply to future accounting and do not erase time already used.
 - Counts foreground YouTube browsing while its browser window is focused and the system is active (60-second idle threshold).

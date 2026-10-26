@@ -59,10 +59,14 @@ async function chooseMode(toolbar, mode, customName) {
 (async()=>{
  const root=path.resolve(__dirname,'..');
  const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdirSync(shots,{recursive:true});
- const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1660,height:1100}});context.setDefaultTimeout(20000);
+ const context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'intent-extension-')),{channel:'chromium',headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--load-extension=${root}`],viewport:{width:1920,height:1100}});context.setDefaultTimeout(20000);
  const texts={W:['Ship a tiny app this weekend','Turn an idea into a working tool for your clients, from the first screen to a finished release.'],M:['Blue notes after midnight','A mellow trio with double bass, brushed drums, and saxophone.'],S:['Why the sky changes colour','An accessible explanation of scattering and wavelengths from sunlight.']};
  const ids={};const renderers=[];const networkCounts={searches:0,metadata:0};const searchLocales=[];
  for(const [prefix,[title,description]]of Object.entries(texts))for(let i=0;i<12;i++){const id=prefix+String(i).padStart(10,'0');ids[id]={title:title+' · '+(i+1),description};renderers.push({videoRenderer:{videoId:id,title:{simpleText:ids[id].title},ownerText:{simpleText:prefix==='S'?'Curious Minds':'Studio '+prefix},detailedMetadataSnippets:[{snippetText:{simpleText:description}}],thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'}]},lengthText:{simpleText:'12:40'},viewCountText:{simpleText:'39 lakh views'},publishedTimeText:{simpleText:'2 years ago'}}});}
+ ids.J0000000000={title:texts.M[0],description:texts.M[1],author:'Evening Sessions'};
+ ids.A0000000000={title:texts.W[0],description:texts.W[1],author:'Maker Notes'};
+ ids.C0000000000={title:texts.S[0],description:texts.S[1],author:'Curious Minds'};
+ ids.L0000000000={title:'Academic lessons, university lectures and studying for exams.',description:'Learning mathematics, physics, chemistry, biology and other sciences.'};
  ids.Q0000000000={title:'Python programming tutorial in sixty seconds',description:'Build useful software with Python programming.'};
  ids.R0000000000={title:'Jazz piano improvisation in sixty seconds',description:'A quick piano jazz music performance.'};
  renderers.push({reelShelfRenderer:{items:[{reelItemRenderer:{videoId:'Q0000000000',headline:{simpleText:ids.Q0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/Q0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'Q0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/Q0000000000'}}}}},{reelItemRenderer:{videoId:'R0000000000',headline:{simpleText:ids.R0000000000.title},thumbnail:{thumbnails:[{url:'https://i.ytimg.com/vi/R0000000000/hqdefault.jpg'}]},navigationEndpoint:{reelWatchEndpoint:{videoId:'R0000000000'},commandMetadata:{webCommandMetadata:{url:'/shorts/R0000000000'}}}}}]}});
@@ -82,9 +86,9 @@ async function chooseMode(toolbar, mode, customName) {
    }
    if(url.pathname==='/watch'){
     const videoId=url.searchParams.get('v');
-    const metadata='<script>var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:videoId,title:ids[videoId]?.title,shortDescription:ids[videoId]?.description}})+';</script>';
+    const metadata='<script>var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:videoId,title:ids[videoId]?.title,shortDescription:ids[videoId]?.description,author:ids[videoId]?.author}})+';</script>';
     if(!route.request().isNavigationRequest()){networkCounts.metadata++;return route.fulfill({contentType:'text/html',body:metadata});}
-    return route.fulfill({contentType:'text/html',body:'<!doctype html><html dark>'+localeBootstrap()+'<meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #333}ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px}#player{height:440px;background:#080808}#related{display:block}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-watch-flexy><main><div id="player"><video id="playing-video"></video></div><h2>'+ids[videoId].title+'</h2><p>'+ids[videoId].description+'</p></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related">Original unrelated recommendations</ytd-watch-next-secondary-results-renderer></div></aside></ytd-watch-flexy>'+metadata+'<script>window.testPlayer=document.querySelector("#playing-video");window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;</script></html>'});
+    return route.fulfill({contentType:'text/html',body:'<!doctype html><html dark>'+localeBootstrap()+'<meta charset="utf-8"><style>:root{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f;--yt-spec-text-secondary:#606060}html[dark]{--yt-spec-base-background:#0f0f0f;--yt-spec-text-primary:#f1f1f1;--yt-spec-text-secondary:#aaa}body{margin:0;background:var(--yt-spec-base-background);color:var(--yt-spec-text-primary);font-family:Arial,sans-serif}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #333}ytd-watch-flexy{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:24px;padding:24px}#player{height:440px;background:#080808}#related{display:block}@media(max-width:700px){ytd-watch-flexy{display:block;padding:12px}#player{height:200px}}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-watch-flexy video-id="'+videoId+'"><main><div id="player"><video id="playing-video"></video></div><ytd-watch-metadata><h1>'+ids[videoId].title+'</h1><div id="description">'+ids[videoId].description+'</div></ytd-watch-metadata></main><aside id="secondary"><div id="chat">Live chat stays available</div><div id="related"><ytd-watch-next-secondary-results-renderer id="native-related">Original unrelated recommendations</ytd-watch-next-secondary-results-renderer></div></aside></ytd-watch-flexy>'+metadata+'<script>window.testPlayer=document.querySelector("#playing-video");window.playerPauses=0;testPlayer.pause=()=>{playerPauses++;};testPlayer.currentTime=37;</script></html>'});
    }
    return route.fulfill({contentType:'text/html',body:'<!doctype html>'+localeBootstrap(india?'en-IN':'en-GB',india?'IN':'DE')+'<meta charset="utf-8"><style>body{margin:0;background:#f8f8f2;color:#283b30;font-family:system-ui}'+mastheadCSS+'.top{padding:18px 30px;border-bottom:1px solid #dfe2d7}ytd-browse{display:block}#primary{width:100%;margin:0}</style>'+masthead+'<div class="top">YouTube · Intent preview — synthetic recommendations, actual packaged model</div><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-grid-renderer id="native">Original unrelated recommendations</ytd-rich-grid-renderer></div></ytd-browse>'});
   });
@@ -160,6 +164,24 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(brand.loaded,true,'the toolbar brand renders without a failed extension image');
   assert.equal(brand.tag,'svg');assert.equal(brand.src,null);assert.equal(brand.viewBox,'0 0 128 128');assert.equal(await logo.locator('circle').getAttribute('fill'),'#3b5b3f');assert.equal(await logo.locator('path').getAttribute('fill'),'#f3f5e6');assert.equal(await logo.locator('[href],[src]').count(),0);
 
+  await yt.setViewportSize({width:390,height:844});
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.layout==='launcher');
+  const launcherGeometry=await toolbar.evaluate(el=>{const rect=el.getBoundingClientRect();return{width:rect.width,height:rect.height,display:getComputedStyle(el).display};});
+  assert.equal(launcherGeometry.width,44);assert.ok(launcherGeometry.height>=44);assert.notEqual(launcherGeometry.display,'none','the installed control remains visible when zoom leaves little search space');
+  const installedTrigger=toolbar.getByRole('combobox',{name:'Intent mode',exact:true});await installedTrigger.click();
+  await toolbar.locator('#intent-menu-budget').waitFor();assert.match(await toolbar.locator('#intent-menu-budget').innerText(),/left.*used/);
+  assert.equal(await toolbar.getByRole('button',{name:'Intent settings',exact:true}).count(),1);
+  assert.equal(await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).count(),1);
+  assert.equal(await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).isEnabled(),true);
+  const launcherMenu=await toolbar.locator('#intent-mode-popover').boundingBox();assert.ok(launcherMenu.x>=8&&launcherMenu.x+launcherMenu.width<=382&&launcherMenu.y>=8&&launcherMenu.y+launcherMenu.height<=836,'the installed chooser stays within the narrow viewport');
+  assert.equal(await yt.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'flow reservation does not cause horizontal page overflow');
+  await yt.screenshot({path:path.join(shots,'intent-installed-launcher.png')});
+  await yt.keyboard.press('Escape');assert.equal(await installedTrigger.getAttribute('aria-expanded'),'false');assert.equal(await installedTrigger.evaluate(el=>el.getRootNode().activeElement===el),true);
+  await yt.setViewportSize({width:1920,height:1100});await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.dataset.layout==='full'&&document.querySelector('#intent-toolbar')?.dataset.placement==='overlay');
+  const restoredSearch=await yt.evaluate(()=>[document.querySelector('#search'),document.querySelector('#search input')].map(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,width:rect.width};}));
+  assert.deepEqual(restoredSearch,searchUnchanged.native,'leaving compact flow restores the original native search width and position');
+  console.log('PASS installed44px launcher keeps budget, settings and refresh accessible without overflow and restores native desktop search geometry');
+
   const glassFixture=await installGlassFixture(yt);assert.deepEqual(glassFixture,{initiallyCovered:true,mastheadBottom:64});
   await assertFirstRowUncovered(yt);
   await yt.screenshot({path:path.join(shots,'intent-home-glass-clear-installed.png')});
@@ -216,6 +238,13 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.goto('https://www.youtube.com/watch?v=M0000000000');
   const watchFeed=yt.locator('#intent-watch-feed');
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
+  await yt.waitForFunction(()=>{const badge=document.querySelector('#intent-video-topic');return badge?.dataset.videoId==='M0000000000'&&badge.dataset.state!=='checking';},null,{timeout:60000});
+  const initialVideoTopic=await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'GET_STATE',targetTabId}),workTabId);
+  assert.equal(await yt.locator('#intent-video-topic').getAttribute('data-state'),'uncertain','installed Music topic diagnostic: '+JSON.stringify({videoTopic:initialVideoTopic.videoTopic,timerTopicState:initialVideoTopic.timerTopicState,label:await yt.locator('#intent-video-topic').textContent()}));
+  assert.match(await yt.locator('#intent-video-topic').innerText(),/Music/);
+  assert.equal(await yt.locator('#intent-video-topic').getAttribute('role'),'note');
+  assert.equal(await yt.locator('#intent-video-topic').getByRole('button').count(),0,'the video topic label is informational');
+  assert.equal(await yt.locator('#intent-video-topic').evaluate(el=>el.previousElementSibling?.tagName),'H1','the current-video label follows its native title');
   assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   assert.equal(await watchFeed.locator('.meta').first().innerText(),'3.9M views · 2 years ago');
   await yt.evaluate(()=>{document.querySelector('ytd-watch-flexy').style.gridTemplateColumns='minmax(0,1fr) 330px';document.querySelector('#secondary').style.width='330px';});
@@ -250,6 +279,62 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForFunction(()=>document.querySelector('#intent-watch-feed')?.shadowRoot.querySelectorAll('.card').length>=11,null,{timeout:60000});
   console.log('PASS real installed extension replaces watch recommendations, excludes current video, follows YouTube appearance and preserves playback during mode changes');
   await settings.locator('#close-editor').click();
+  // The model supplies a read-only category. An opt-in exemption policy only charges strong mismatches.
+  const topicState=()=>settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'GET_STATE',targetTabId}),workTabId);
+  const topicBudgetBefore=(await topicState()).usedMs;
+  await yt.goto('https://www.youtube.com/watch?v=J0000000000');
+  await yt.locator('#intent-video-topic[data-video-id="J0000000000"][data-state="matching"]').waitFor({timeout:60000});
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{matchOnlyModes:{music:true}}}));
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.timerState==='exempt');
+  let currentTopic=await topicState();assert.equal(currentTopic.timerTopicState,'matching');assert.equal(currentTopic.timerExempt,true);
+  await yt.goto('https://www.youtube.com/watch?v=A0000000000');
+  await yt.locator('#intent-video-topic[data-video-id="A0000000000"][data-state="uncertain"]').waitFor({timeout:60000});
+  assert.match(await yt.locator('#intent-video-topic').innerText(),/Work.*uncertain/i,'the best estimated category is still visible when its relation is uncertain');
+  currentTopic=await topicState();assert.equal(currentTopic.timerExempt,true);assert.equal(currentTopic.timerTopicState,'uncertain','uncertain app-building evidence does not revoke Music’s exemption');
+
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{countModes:{study:false},matchOnlyModes:{study:true}}}));
+  await chooseMode(toolbar,'study');await yt.goto('https://www.youtube.com/watch?v=J0000000000');await yt.bringToFront();
+  await yt.locator('#intent-video-topic[data-video-id="J0000000000"][data-state="unrelated"]').waitFor({timeout:60000});
+  assert.match(await yt.locator('#intent-video-topic').innerText(),/Music.*Outside Study/);
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.tabCounting==='true');
+  currentTopic=await topicState();assert.equal(currentTopic.timerExempt,false);assert.equal(currentTopic.timerTopicState,'unrelated');
+  const chargedFrom=currentTopic.usedMs;await yt.waitForTimeout(1100);
+  assert.ok((await topicState()).usedMs>=chargedFrom+1000,'a real unrelated video contributes elapsed foreground usage');
+  assert.equal(await yt.locator('#intent-video-topic').getByRole('button').count(),0,'there is no per-video exemption control');
+  const overrideReply=await settings.evaluate(async targetTabId=>{try{return await chrome.runtime.sendMessage({type:'SET_VIDEO_EXEMPT',targetTabId,videoId:'J0000000000',exempt:true});}catch{return null;}},workTabId);
+  assert.ok(!overrideReply?.ok);assert.equal((await topicState()).timerExempt,false,'an unsupported per-video override message cannot change the saved policy');
+  await yt.screenshot({path:path.join(shots,'intent-unrelated-video-label.png'),fullPage:true});
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{matchOnlyModes:{study:false}}}));
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.timerState==='exempt');
+  currentTopic=await topicState();assert.equal(currentTopic.timerExempt,true);assert.equal(currentTopic.timerTopicState,'off');assert.equal(currentTopic.videoTopic.status,'unrelated');
+  await yt.locator('#intent-video-topic[data-state="unrelated"]').waitFor();
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{matchOnlyModes:{study:true}}}));
+  await yt.waitForFunction(()=>document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer')?.dataset.tabCounting==='true');
+  await worker.evaluate(()=>{days[IntentCore.dayKey()]=settings.dailyMinutes*60000;});
+  await yt.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await yt.getByRole('heading',{name:'There’s a whole world'}).waitFor();
+  assert.equal(yt.url(),`chrome-extension://${id}/blocked.html`,'the current clearly unrelated video is blocked at the daily limit');
+  await yt.goto('https://www.youtube.com/');await yt.locator('#intent-home-feed').waitFor().catch(async error=>{
+    const diagnosis=await worker.evaluate(async tabId=>({tabs:await chrome.tabs.query({}),review:timerReviews.get(tabId),timerURL:timerURLs.get(tabId),state:stateFor(tabId),tracker}),workTabId);
+    await yt.screenshot({path:path.join(shots,'intent-topic-home-navigation-failure.png'),fullPage:true});
+    throw new Error(error.message+'; Home after conditional block diagnostic: '+JSON.stringify({url:yt.url(),diagnosis,pageErrors,consoleErrors}));
+  });
+  currentTopic=await topicState();assert.equal(currentTopic.blocked,false);assert.equal(currentTopic.timerTopicState,'not-video');assert.equal(currentTopic.timerExempt,true);
+  await yt.goto('https://www.youtube.com/results?search_query=physics');await yt.locator('#intent-toolbar').waitFor();
+  currentTopic=await topicState();assert.equal(currentTopic.blocked,false);assert.equal(currentTopic.timerTopicState,'not-video');assert.equal(currentTopic.timerExempt,true);assert.equal(await yt.locator('#intent-video-topic').count(),0,'search has no current-video label');
+  await yt.goto('https://www.youtube.com/watch?v=L0000000000');
+  await yt.locator('#intent-video-topic[data-video-id="L0000000000"][data-state="matching"]').waitFor({timeout:60000});
+  currentTopic=await topicState();assert.equal(currentTopic.budgetExhausted,true);assert.equal(currentTopic.blocked,false);assert.equal(currentTopic.timerExempt,true);
+  await yt.screenshot({path:path.join(shots,'intent-matching-video-label.png'),fullPage:true});
+  await yt.goto('https://www.youtube.com/watch?v=C0000000000');
+  await yt.locator('#intent-video-topic[data-video-id="C0000000000"][data-state="uncertain"]').waitFor({timeout:60000});
+  currentTopic=await topicState();assert.equal(currentTopic.blocked,false);assert.equal(currentTopic.timerExempt,true,'an uncertain science explanation stays accessible at the limit');
+  await yt.screenshot({path:path.join(shots,'intent-uncertain-video-label.png'),fullPage:true});
+  await worker.evaluate(usedMs=>{days[IntentCore.dayKey()]=usedMs;},topicBudgetBefore);
+  await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{countModes:{study:true},matchOnlyModes:{music:false,study:false}}}));
+  await chooseMode(toolbar,'music');await yt.goto('https://www.youtube.com/watch?v=M0000000000');
+  await yt.locator('#intent-video-topic[data-video-id="M0000000000"][data-state="uncertain"]').waitFor({timeout:60000});
+  console.log('PASS actual-model video labels, conservative uncertainty and opt-in matching-only exemptions count clear mismatches while keeping Home/search and matching videos accessible at the daily limit');
   // URL/finish can precede renderer replacement: protect both outgoing and incoming recommendations.
   await yt.evaluate(()=>{
     window.transitionPlayer=document.querySelector('#playing-video');window.transitionTime=transitionPlayer.currentTime;

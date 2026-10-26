@@ -1,5 +1,5 @@
-importScripts('core.js', 'feed.js');
-const C = IntentCore;
+importScripts('core.js', 'feed.js', 'timer-topic.js');
+const C = IntentCore, T = IntentTimerTopic;
 const feedService = IntentFeed.createService({judge: classifyLocally});
 let creatingAI;
 async function classifyLocally(videos, settings) {
@@ -18,7 +18,7 @@ let settings, days, tracker, appearance, tabModes, pausedTabs, initialized, appl
 let feedRevision = 0;
 const tabFeedRevisions = new Map();
 let queue = Promise.resolve();
-const reports = new Map();
+const reports = new Map(), timerURLs = new Map(), timerReviews = new Map(), timerTopicCache = new Map(), timerTopicJobs = new Map();
 const URLS = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
 const validMode = (mode, config = settings) => C.validMode ? C.validMode(mode, config) : Object.hasOwn(C.MODES, mode) || mode === 'off';
 const initialMode = () => C.initialMode ? C.initialMode(settings) : settings.mode;
@@ -82,7 +82,7 @@ async function paintAction(tabId, {text = '', title = OFF_SITE_TITLE, active = f
 function tabAction(tab, exhausted) {
   const mode = ensureMode(tab.id), paused = pausedTabs[tab.id] === true;
   if (paused) return {icon: 'paused', title: 'Intent — Paused on this tab; filters and timer are off'};
-  const counted = countsMode(mode), blocked = exhausted && counted;
+  const counted = countsTab(tab.id), blocked = exhausted && counted;
   const timer = counted ? 'timer counts toward your daily limit' : 'timer is exempt from your daily limit';
   if (blocked) return {text: 'END', title: `Intent — Daily limit reached on this tab; ${mode === 'off' ? 'topic filtering is off' : 'YouTube access is blocked'}`, color: '#9b4135'};
   if (mode === 'off') return {text: 'OFF', title: `Intent — Off on this tab; topic filtering is off; ${timer}`};
@@ -102,11 +102,24 @@ function ensureMode(tabId) {
 function effectiveSettings(tabId) {
   return {...settings, mode: Number.isInteger(tabId) ? ensureMode(tabId) : settings.mode};
 }
+function currentReview(tabId) {
+  const review = timerReviews.get(tabId), config = effectiveSettings(tabId), url = timerURLs.get(tabId) || '';
+  return review && review.key === T.key(config) && (review.videoId === T.videoId(url) || url.startsWith(blockedURL())) ? review : null;
+}
+function topicPolicy(tabId) {
+  const mode = ensureMode(tabId);
+  if (countsMode(mode) || mode === 'off' || !settings.matchOnlyModes?.[mode]) return 'off';
+  if (!T.videoId(timerURLs.get(tabId)) && !(timerURLs.get(tabId) || '').startsWith(blockedURL())) return 'not-video';
+  return currentReview(tabId)?.status || 'checking';
+}
+function countsTab(tabId) {return countsMode(ensureMode(tabId)) || topicPolicy(tabId) === 'unrelated';}
+const persistReviews = () => chrome.storage.session.set({timerReviews: Object.fromEntries(timerReviews)});
 function stateFor(tabId, now = Date.now()) {
   const effective = effectiveSettings(tabId), base = C.snapshot(effective, days, now);
   const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
-  const timerExempt = tabPaused || !countsMode(effective.mode);
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId,
+  const timerExempt = tabPaused || !(Number.isInteger(tabId) ? countsTab(tabId) : countsMode(effective.mode));
+  const review = Number.isInteger(tabId) && !tabPaused && effective.mode !== 'off' ? currentReview(tabId) : null;
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null} : null,
     timerDay: C.dayKey(now), timerUpdatedAt: now, timerRunning: !base.blocked && tracker?.counting === true,
     tabCounting: !base.blocked && !timerExempt && tracker?.counting === true && (tracker.countingTabs || []).includes(tabId)};
 }
@@ -116,12 +129,15 @@ async function initialize() {
     const data = await chrome.storage.local.get(['settings', 'days', 'appearance']);
     settings = C.sanitize(data.settings); days = data.days || {};
     appearance = ['light', 'dark'].includes(data.appearance) ? data.appearance : undefined;
-    const session = await chrome.storage.session.get(['tracker', 'tabModes', 'pausedTabs']);
+    const session = await chrome.storage.session.get(['tracker', 'tabModes', 'pausedTabs', 'timerReviews']);
     tracker = session.tracker || {lastAt: Date.now(), counting: false};
     tabModes = {};
     for (const [id, mode] of Object.entries(session.tabModes || {})) if (/^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && validMode(mode)) tabModes[id] = mode;
     pausedTabs = {};
     for (const [id, paused] of Object.entries(session.pausedTabs || {})) if (/^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && paused === true) {pausedTabs[id] = true; ensureMode(Number(id));}
+    for (const [id, review] of Object.entries(session.timerReviews || {}).slice(-128)) {
+      if (/^\d+$/.test(id) && review && /^[\w-]{11}$/.test(review.videoId) && typeof review.key === 'string' && review.key.length <= 250000 && ['matching', 'unrelated', 'uncertain'].includes(review.status)) timerReviews.set(Number(id), review);
+    }
     if (!(await chrome.alarms.get('intent-tick'))) await chrome.alarms.create('intent-tick', {periodInMinutes: .5});
     chrome.idle.setDetectionInterval(60);
   })();
@@ -150,7 +166,7 @@ async function applyBlock(exhausted, tabs) {
     await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: [1], addRules: baseBlocked ? [{id: 1, priority: 1, action: redirect, condition}] : []});
     appliedBlock = signature;
   }
-  if (exhausted) await Promise.allSettled(tabs.filter(tab => hasYouTubeURL(tab) && !pausedTabs[tab.id] && countsMode(ensureMode(tab.id))).map(tab => chrome.tabs.update(tab.id, {url: blockedURL()})));
+  if (exhausted) await Promise.allSettled(tabs.filter(tab => hasYouTubeURL(tab) && !pausedTabs[tab.id] && countsTab(tab.id)).map(tab => chrome.tabs.update(tab.id, {url: blockedURL()})));
   // The default is visibly inactive on every other site; supported tabs override it.
   await paintAction();
   await Promise.allSettled(tabs.filter(isYouTubeTab).map(tab => paintAction(tab.id, tabAction(tab, exhausted))));
@@ -160,7 +176,13 @@ async function tick(message = {}, sender = {}) {
   const [tabs, focused, idle] = await Promise.all([
     chrome.tabs.query({url: [...URLS, blockedURL() + '*']}), chrome.windows.getLastFocused().catch(() => ({focused: false})), chrome.idle.queryState(60)
   ]);
-  for (const tab of tabs) if (isYouTubeTab(tab)) ensureMode(tab.id);
+  for (const tab of tabs) if (isYouTubeTab(tab)) {
+    // Leaving the break page must use the destination immediately; otherwise
+    // the previous unrelated verdict can redirect an exempt Home/search visit.
+    const currentURL = C.isYouTube(tab.pendingUrl) ? tab.pendingUrl : tab.url;
+    ensureMode(tab.id); if (currentURL) timerURLs.set(tab.id, currentURL);
+    if (!T.videoId(currentURL) && !(currentURL || '').startsWith(blockedURL())) timerReviews.delete(tab.id);
+  }
   const senderScoped = sender.tab && (sender.frameId || 0) === 0 && (tabs.some(tab => tab.id === sender.tab.id && isYouTubeTab(tab)) || Object.hasOwn(tabModes, sender.tab.id) && isYouTubeTab(sender.tab));
   let targetTabId = senderScoped && (C.isYouTube(sender.url || sender.tab.url) || sender.url?.startsWith(blockedURL())) ? sender.tab.id : undefined;
   if (Object.hasOwn(message, 'targetTabId')) {
@@ -191,7 +213,7 @@ async function tick(message = {}, sender = {}) {
   let nextSettings;
   if (patch) {
     const merged = {...settings, ...patch};
-    for (const field of ['countModes', 'customTopics', 'channels', 'intentDescriptions', 'intentNames']) if (patch[field]) merged[field] = {...settings[field], ...patch[field]};
+    for (const field of ['countModes', 'matchOnlyModes', 'customTopics', 'channels', 'intentDescriptions', 'intentNames']) if (patch[field]) merged[field] = {...settings[field], ...patch[field]};
     nextSettings = resetting ? C.defaults() : C.sanitize(merged);
     if (Object.hasOwn(patch, 'mode') && !validMode(patch.mode, nextSettings)) throw new Error('Choose a valid intent mode.');
   }
@@ -210,7 +232,7 @@ async function tick(message = {}, sender = {}) {
     settings = nextSettings;
     if (resetting) {
       feedRevision++;
-      pausedTabs = {};
+      pausedTabs = {}; timerReviews.clear();
       for (const id of Object.keys(tabModes)) tabModes[id] = 'work';
       for (const tab of tabs) if (isYouTubeTab(tab)) tabModes[tab.id] = 'work';
     } else if (Object.hasOwn(patch, 'mode') && Number.isInteger(targetTabId)) tabModes[targetTabId] = settings.mode;
@@ -222,7 +244,7 @@ async function tick(message = {}, sender = {}) {
     const wasPaused = pausedTabs[targetTabId] === true;
     if (pauseChange) pausedTabs[targetTabId] = true; else delete pausedTabs[targetTabId];
     if (wasPaused !== pauseChange) tabFeedRevisions.set(targetTabId, (tabFeedRevisions.get(targetTabId) || 0) + 1);
-    reports.delete(targetTabId);
+    reports.delete(targetTabId); timerReviews.delete(targetTabId);
     await chrome.storage.session.set({tabModes, pausedTabs});
     await broadcast(tabs.filter(tab => tab.id === targetTabId));
   }
@@ -232,19 +254,22 @@ async function tick(message = {}, sender = {}) {
   }
   const state = stateFor(targetTabId, now);
   const youtubeTabs = tabs.filter(hasYouTubeURL);
-  const eligible = youtubeTabs.filter(tab => !pausedTabs[tab.id] && countsMode(ensureMode(tab.id)));
+  const eligible = youtubeTabs.filter(tab => !pausedTabs[tab.id] && countsTab(tab.id));
   const countingTabs = !state.budgetExhausted && idle !== 'locked' ? eligible.filter(tab =>
     idle === 'active' && focused.focused && tab.active && tab.windowId === focused.id ||
     settings.countPlayback && (tab.audible || [...(reports.get(tab.id)?.values() || [])].some(report => report.playing))
   ).map(tab => tab.id) : [];
   tracker = {lastAt: now, counting: countingTabs.length > 0, countingTabs};
   await chrome.storage.local.set({days});
-  await chrome.storage.session.set({tracker, tabModes, pausedTabs});
+  await chrome.storage.session.set({tracker, tabModes, pausedTabs, timerReviews: Object.fromEntries(timerReviews)});
   await applyBlock(state.budgetExhausted, tabs);
   const result = stateFor(targetTabId, now);
   return result;
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'CHECK_TIMER_VIDEO') {
+    checkTimerVideo(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
+  }
   if (message?.type === 'GET_PREVIEW') {
     previewRequest(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
   }
@@ -255,6 +280,50 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === 'OPEN_SETTINGS') { chrome.runtime.openOptionsPage().then(() => respond({ok: true})); return true; }
   serial(() => tick(message, sender)).then(state => respond({ok: true, ...state}), error => respond({ok: false, error: error.message})); return true;
 });
+async function checkTimerVideo(message, sender) {
+  const videoId = T.videoId(sender.url);
+  if (!sender.tab || (sender.frameId || 0) !== 0 || !videoId || message.video?.id !== videoId) throw new Error('Video topics can only be checked for the current top-level YouTube video.');
+  const video = T.metadata(message.video, videoId);
+  if (!video.title.trim()) throw new Error('The current video title is not available yet.');
+  const prepared = await serial(async () => {
+    const state = await tick({}, sender);
+    if (state.tabId !== sender.tab.id || T.videoId(timerURLs.get(sender.tab.id)) !== videoId) return {skip: {ok: true, stale: true}};
+    if (state.blocked || state.tabPaused || state.settings.mode === 'off' || state.settings.hideShorts && new URL(sender.url).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
+    const key = T.key(state.settings), metadataKey = JSON.stringify(video), cacheKey = JSON.stringify([key, metadataKey]);
+    const previous = currentReview(sender.tab.id);
+    if (previous?.metadataKey === metadataKey && previous.status !== 'checking') return {skip: {ok: true, ...state}};
+    const review = {videoId, key, metadataKey, status: 'checking', categoryId: null};
+    timerReviews.set(sender.tab.id, review); await persistReviews();
+    return {settings: state.settings, key, cacheKey, review};
+  });
+  if (prepared.skip) return prepared.skip;
+  let estimate = timerTopicCache.get(prepared.cacheKey);
+  if (!estimate) {
+    let job = timerTopicJobs.get(prepared.cacheKey);
+    if (!job) {
+      if (timerTopicJobs.size >= 8) estimate = {status: 'uncertain', categoryId: null};
+      else {
+        // Topic estimation ignores recommendation-only distractions/channel rules.
+        const config = {...prepared.settings, hideShorts: false, hideClickbait: false, blockedTerms: '', channels: Object.fromEntries(Object.keys(C.modes(prepared.settings)).map(id => [id, '']))};
+        job = classifyLocally([video], config).then(decisions => T.estimate(decisions[0], prepared.settings)).catch(() => ({status: 'uncertain', categoryId: null})).then(result => {
+          timerTopicCache.set(prepared.cacheKey, result);
+          while (timerTopicCache.size > 128) timerTopicCache.delete(timerTopicCache.keys().next().value);
+          return result;
+        }).finally(() => timerTopicJobs.delete(prepared.cacheKey));
+        timerTopicJobs.set(prepared.cacheKey, job);
+      }
+    }
+    if (job) estimate = await job;
+  }
+  return serial(async () => {
+    await initialize();
+    // Refresh real navigation and accounting before applying a late model result.
+    await tick({}, sender);
+    if (timerReviews.get(sender.tab.id) !== prepared.review || pausedTabs[sender.tab.id] || T.videoId(timerURLs.get(sender.tab.id)) !== videoId || T.key(effectiveSettings(sender.tab.id)) !== prepared.key) return {ok: true, stale: true};
+    Object.assign(prepared.review, estimate); await persistReviews();
+    return {ok: true, ...await tick({}, sender)};
+  });
+}
 async function feedRequest(message, sender) {
   const url = new URL(sender.url || 'https://invalid.test/');
   const currentVideo = url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '') ? url.searchParams.get('v') : '';
@@ -321,7 +390,7 @@ chrome.tabs.onRemoved.addListener(id => {
     await initialize();
     actionStates.delete(id);
     if (!associatedTab(id)) return;
-    reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.delete(id);
+    reports.delete(id); timerReviews.delete(id); timerURLs.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.delete(id);
     await tick();
   }).catch(() => {});
 });
@@ -331,7 +400,7 @@ chrome.tabs.onUpdated.addListener((id, info, tab = {}) => {
       serial(async () => {
         await initialize();
         if (!associatedTab(id)) return;
-        reports.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1);
+        reports.delete(id); timerReviews.delete(id); timerURLs.delete(id); delete tabModes[id]; delete pausedTabs[id]; tabFeedRevisions.set(id, (tabFeedRevisions.get(id) || 0) + 1);
         actionStates.delete(id);
         await paintAction(id);
         actionStates.delete(id);
@@ -345,7 +414,7 @@ chrome.tabs.onUpdated.addListener((id, info, tab = {}) => {
   if (!navigation && !(supported && (status || info.audible !== undefined))) return;
   serial(async () => {
     await initialize();
-    if (navigation) reports.delete(id);
+    if (navigation) {reports.delete(id); if (!info.url.startsWith(blockedURL())) timerReviews.delete(id); timerURLs.set(id, info.url);}
     if (navigation || isYouTubeTab(tab)) ensureMode(id);
     // Chrome can clear tab-specific action appearance during navigation even
     // though the saved mode is unchanged. Invalidate inside the queue so an

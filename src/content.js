@@ -8,6 +8,153 @@
     onPaused: value => { settingsRevision++; setTabPaused(value); schedule(); },
     onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
   }) : null;
+  let topicBadge, topicContext, topicSignature = '', topicGeneration = 0, topicTimer, topicNavigationTimer, topicNavigating = false, topicScriptRevision = 0;
+  const topicResults = new Map(), topicInlineScripts = new WeakMap(), topicInlineVideos = new Map(), topicInlineMisses = new Map();
+  function currentTopicVideoId() {
+    if (location.hostname.startsWith('music.')) return '';
+    const url = new URL(location.href);
+    const id = url.pathname === '/watch' ? url.searchParams.get('v') : url.pathname.match(/^\/shorts\/([\w-]{11})(?:\/|$)/)?.[1];
+    return /^[\w-]{11}$/.test(id || '') ? id : '';
+  }
+  function topicConfig() {
+    return JSON.stringify([settings?.mode, settings?.intentDescriptions, settings?.customIntents, settings?.customTopics, settings?.channels, settings?.intentNames, settings?.countModes, settings?.matchOnlyModes]);
+  }
+  function clearVideoTopic() {
+    clearTimeout(topicTimer); topicTimer = null; topicGeneration++; topicSignature = ''; topicContext = null;
+    topicBadge?.remove(); topicBadge = null;
+  }
+  function startTopicNavigation() {
+    topicNavigating = true; clearVideoTopic(); clearTimeout(topicNavigationTimer);
+    // A cancelled YouTube navigation must not leave its previous title unlabelled forever.
+    topicNavigationTimer = setTimeout(() => {topicNavigating = false; schedule();}, 5000);
+  }
+  function visibleTopicRoot(selector) {
+    return [...document.querySelectorAll(selector)].filter(node => !node.closest('[hidden]') && getComputedStyle(node).display !== 'none');
+  }
+  function inlineTopicVideo(id) {
+    const feed = globalThis.IntentFeed;
+    if (!feed?.initialData) return null;
+    if (topicInlineVideos.has(id)) return topicInlineVideos.get(id);
+    if (topicInlineMisses.get(id) === topicScriptRevision) return null;
+    // Parse only bootstrap player JSON already present in the page. Repeated
+    // DOM scans reuse each unchanged script instead of reparsing large pages.
+    for (const script of [...document.scripts].slice(0, 200)) {
+      const source = script.textContent || '';
+      if (!source || source.length > 8000000 || topicInlineScripts.get(script) === source) continue;
+      topicInlineScripts.set(script, source);
+      if (!source.includes('ytInitialPlayerResponse')) continue;
+      try {
+        const details = feed.initialData(source, true)?.videoDetails;
+        if (!/^[\w-]{11}$/.test(details?.videoId || '')) continue;
+        topicInlineVideos.set(details.videoId, details);
+        if (topicInlineVideos.size > 12) topicInlineVideos.delete(topicInlineVideos.keys().next().value);
+      } catch { /* An unrelated or unfinished inline script is not video metadata. */ }
+    }
+    const result = topicInlineVideos.get(id) || null;
+    if (!result) {
+      topicInlineMisses.set(id, topicScriptRevision);
+      if (topicInlineMisses.size > 24) topicInlineMisses.delete(topicInlineMisses.keys().next().value);
+    }
+    return result;
+  }
+  function changedTopicScripts(records) {
+    const scriptTree = node => node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'SCRIPT' || node.querySelector('script'));
+    return records.some(record => record.type === 'characterData' ? record.target.parentElement?.tagName === 'SCRIPT'
+      : record.type === 'childList' && (record.target.nodeName === 'SCRIPT' || [...record.addedNodes, ...record.removedNodes].some(scriptTree)));
+  }
+  function readTopicVideo(id) {
+    const short = location.pathname.startsWith('/shorts/');
+    const roots = visibleTopicRoot(short ? 'ytd-reel-video-renderer,ytm-reel-video-renderer' : 'ytd-watch-flexy');
+    let root = roots.find(node => node.getAttribute('video-id') === id || node.getAttribute('data-video-id') === id);
+    if (!root && short) root = roots.find(node => node.hasAttribute('is-active') || node.hasAttribute('active'));
+    if (!root) root = roots.find(node => !node.hasAttribute('video-id') && !node.hasAttribute('data-video-id'));
+    if (!root && short) root = visibleTopicRoot('ytd-shorts,ytm-shorts')[0];
+    if (!root) return null;
+    const declared = root.getAttribute('video-id') || root.getAttribute('data-video-id');
+    if (declared && declared !== id) return null;
+    const selectors = short ? 'h2,#title,.yt-reel-metapanel-view-model__title,.reel-player-header-title' : '#above-the-fold #title h1,ytd-watch-metadata h1,#info-contents h1,h1,h2';
+    const title = [...root.querySelectorAll(selectors)].find(node => !node.closest('#related,#secondary,ytd-player,#player,.html5-video-player,[hidden]') && node.textContent.trim());
+    if (!title) return null;
+    const player = inlineTopicVideo(id);
+    // An explicit identity takes precedence during SPA transitions; otherwise a
+    // stale canonical link is evidence that the old title is still on screen.
+    if (!declared && !player) {
+      const canonical = document.querySelector('link[rel="canonical"]')?.href;
+      if (canonical) {try {const prior = new URL(canonical); const oldId = prior.pathname === '/watch' ? prior.searchParams.get('v') : prior.pathname.split('/shorts/')[1]; if (oldId && oldId !== id) return null;} catch {}}
+    }
+    const currentText = selector => [...root.querySelectorAll(selector)].find(node => !node.closest('#related,#secondary,ytd-player,#player,.html5-video-player,[hidden]'))?.textContent?.trim() || '';
+    const description = player?.shortDescription || currentText('#description-inline-expander #attributed-snippet-text,#description-inline-expander,#description ytd-text-inline-expander,#description,.yt-reel-metapanel-view-model__description');
+    const titleText = player?.title || title.textContent.trim();
+    const tags = globalThis.IntentFeed?.hashtags?.(titleText + ' ' + description) || [];
+    return {title: title.closest('h1,h2') || title, video: {id, title: String(titleText).slice(0, 500), description: String(description).slice(0, 1800), channel: String(player?.author || currentText('#owner #channel-name a,#channel-name a,ytd-channel-name a,a[href^="/@"]')).slice(0, 200), hashtags: tags.slice(0, 30), keywords: (Array.isArray(player?.keywords) ? player.keywords : []).filter(value => typeof value === 'string').slice(0, 30).map(value => value.slice(0, 100))}};
+  }
+  function renderVideoTopic(result) {
+    if (!topicContext?.title?.isConnected) return;
+    if (!topicBadge) {
+      topicBadge = document.createElement('span'); topicBadge.id = 'intent-video-topic'; topicBadge.setAttribute('role', 'note');
+    }
+    const status = ['checking', 'matching', 'unrelated', 'uncertain'].includes(result?.status) ? result.status : 'uncertain';
+    const modes = C.modes(settings), intent = modes[settings.mode]?.name || 'your intent', category = modes[result?.categoryId]?.name;
+    const label = status === 'checking' ? 'Checking topic…' : !category ? 'Topic uncertain' : status === 'uncertain' ? `Likely ${category} · uncertain` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
+    const relation = status === 'checking' ? `Checking this video's metadata against ${intent}.` : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
+    const detail = relation + ' Local metadata estimate; the video itself is not watched or listened to.';
+    if (topicBadge.textContent !== label) topicBadge.textContent = label;
+    if (topicBadge.title !== detail) topicBadge.title = detail;
+    if (topicBadge.getAttribute('aria-label') !== label + '. ' + detail) topicBadge.setAttribute('aria-label', label + '. ' + detail);
+    topicBadge.dataset.state = status; topicBadge.dataset.videoId = topicContext.video.id; topicBadge.dataset.theme = IntentHome.theme();
+    if (topicBadge.previousElementSibling !== topicContext.title) topicContext.title.insertAdjacentElement('afterend', topicBadge);
+  }
+  function acceptVideoTopic(state) {
+    const result = state?.videoTopic;
+    if (!topicContext || topicNavigating || tabPaused || settings?.mode === 'off' || result?.videoId !== topicContext.video.id || result.videoId !== currentTopicVideoId()) return;
+    if (!['checking', 'matching', 'unrelated', 'uncertain'].includes(result.status)) return;
+    topicContext.result = result; renderVideoTopic(result);
+    if (result.status !== 'checking') {
+      topicResults.set(topicSignature, {at: Date.now(), result: {...result}});
+      if (topicResults.size > 24) topicResults.delete(topicResults.keys().next().value);
+    }
+  }
+  function syncVideoTopic() {
+    const id = currentTopicVideoId();
+    if (window.top !== window || !settings || settings.mode === 'off' || tabPaused || topicNavigating || !id || settings.hideShorts && location.pathname.startsWith('/shorts/')) {
+      if (topicContext || topicBadge || topicTimer) clearVideoTopic();
+      return;
+    }
+    const current = readTopicVideo(id);
+    if (!current) {if (topicContext || topicBadge || topicTimer) clearVideoTopic(); return;}
+    const config = topicConfig(), signature = JSON.stringify([config, current.video]);
+    if (signature === topicSignature) {
+      const previousResult = topicContext?.result;
+      topicContext = current; topicContext.result = previousResult;
+      const cached = topicResults.get(signature);
+      renderVideoTopic(cached?.result || topicContext.result || {status: 'checking'});
+      return;
+    }
+    clearVideoTopic(); topicSignature = signature; topicContext = current;
+    const generation = topicGeneration, cached = topicResults.get(signature);
+    if (cached && Date.now() - cached.at < 600000) renderVideoTopic(cached.result);
+    else renderVideoTopic({status: 'checking'});
+    topicTimer = setTimeout(async () => {
+      topicTimer = null;
+      const revision = settingsRevision;
+      try {
+        const state = await chrome.runtime.sendMessage({type: 'CHECK_TIMER_VIDEO', video: current.video});
+        if (generation !== topicGeneration || signature !== topicSignature || config !== topicConfig() || id !== currentTopicVideoId() || topicNavigating || tabPaused || settings?.mode === 'off') return;
+        if (state?.paused || state?.tabPaused) {setTabPaused(true); clearVideoTopic(); return;}
+        if (state?.stale) {clearVideoTopic(); if (state.settings && revision === settingsRevision) applySettings(state.settings); return;}
+        if (!state?.ok) throw new Error('Topic check unavailable');
+        if (revision === settingsRevision) toolbar?.updateTimer?.(state);
+        if (state.blocked && revision === settingsRevision) {document.querySelectorAll('video,audio').forEach(media => media.pause()); location.replace(chrome.runtime.getURL('blocked.html')); return;}
+        if (state.videoTopic?.videoId !== id) throw new Error('Topic check unavailable');
+        acceptVideoTopic(state);
+      } catch {
+        if (generation === topicGeneration && signature === topicSignature && id === currentTopicVideoId()) {
+          const uncertain = {videoId: id, status: 'uncertain', categoryId: null};
+          topicContext.result = uncertain; renderVideoTopic(uncertain);
+        }
+      }
+    }, 350);
+  }
   const SHORT_ITEMS = 'ytd-reel-item-renderer,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2';
   const CARDS = 'ytd-rich-item-renderer,ytd-rich-section-renderer,ytd-video-renderer,ytd-grid-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytm-rich-item-renderer,' + SHORT_ITEMS;
   const SHELVES = 'ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytm-reel-shelf-renderer';
@@ -44,7 +191,9 @@
     homePendingTimer = setTimeout(clearHomePending, 15000);
   }
   function applySettings(value) {
+    const previousTopic = topicConfig();
     settings = C.sanitize(value);
+    if (previousTopic !== topicConfig() || settings.mode === 'off' || tabPaused || settings.hideShorts && location.pathname.startsWith('/shorts/')) clearVideoTopic();
     syncTopicGuard();
     if (settings.mode === 'off' || tabPaused) {
       clearHomePending();
@@ -102,6 +251,7 @@
     tabPaused = paused;
     syncTopicGuard();
     if (paused) {
+      clearVideoTopic();
       clearHomePending(); homeFeed?.destroy(); watchFeed?.destroy();
       for (const element of markedHiddenElements) element.removeAttribute('data-intent-hidden');
       markedHiddenElements.clear();
@@ -161,6 +311,7 @@
     homeFeed?.updateTheme(); watchFeed?.updateTheme(); toolbar?.updateTheme();
     const gate = document.getElementById('intent-shorts-gate');
     if (gate) gate.dataset.theme = IntentHome.theme();
+    if (topicBadge) topicBadge.dataset.theme = IntentHome.theme();
     if (window.top === window) heartbeat();
   }
   function observeTheme() {
@@ -214,6 +365,7 @@
     syncTopicGuard();
     observeTheme();
     const home = isHome(), watch = isWatch();
+    syncVideoTopic();
     if (tabPaused) {
       clearHomePending(); restoreShortsGate();
       toolbar?.sync(settings, !location.hostname.startsWith('music.'), intentCoverage(home, watch));
@@ -255,7 +407,7 @@
         // A popup/toolbar change can arrive while an earlier snapshot is in flight.
         // Never let that older response undo a newer pause or intent selection.
         if (revision !== settingsRevision) return;
-        toolbar?.updateTimer?.(state);
+        toolbar?.updateTimer?.(state); acceptVideoTopic(state);
         if (tabPaused !== (state.tabPaused === true)) {setTabPaused(state.tabPaused); schedule();}
         if (JSON.stringify(settings) !== JSON.stringify(state.settings)) { applySettings(state.settings); schedule(); }
         if (state.blocked) {
@@ -277,7 +429,9 @@
       schedule();
     }
   });
-  new MutationObserver(() => {
+  new MutationObserver(records => {
+    if (changedTopicScripts(records)) topicScriptRevision++;
+    if (topicContext && topicContext.video.id !== currentTopicVideoId()) clearVideoTopic();
     syncTopicGuard();
     // document_start can run before <html> exists. Arm the initial Home guard
     // as soon as the parser creates it, before native cards can paint.
@@ -298,18 +452,21 @@
     try { const url = new URL(link.href); if (url.origin === location.origin && url.pathname === '/') armHomePending(); } catch {}
   }, true);
   document.addEventListener('yt-navigate-start', event => {
+    startTopicNavigation();
     const url = navigationDestination(event);
     if (!url || url.origin === location.origin && url.pathname === '/') armHomePending();
     else clearHomePending();
   });
   document.addEventListener('yt-navigate-finish', () => {
+    lastURL = location.href;
+    clearTimeout(topicNavigationTimer); topicNavigating = false;
     syncTopicGuard();
     if (pending) {clearTimeout(pending); pending = null;}
     scan();
     // Navigation has settled: unsupported layouts keep their native content.
     if (settings && (!isHome() || !homeFeed?.host?.isConnected)) clearHomePending();
   });
-  window.addEventListener('popstate', () => {syncTopicGuard(); if (isHome()) armHomePending(); else clearHomePending(); schedule();});
+  window.addEventListener('popstate', () => {startTopicNavigation(); syncTopicGuard(); if (isHome()) armHomePending(); else clearHomePending(); schedule();});
   if (isHome()) armHomePending(true);
   document.addEventListener('intent-feed-state-change', schedule);
   window.addEventListener('resize', schedule, {passive: true});
@@ -321,7 +478,7 @@
   document.addEventListener('visibilitychange', heartbeat);
   function shortsGateIfReady() { if (settings) shortsGate(); }
   setInterval(() => {
-    if (location.href !== lastURL) { lastURL = location.href; schedule(); }
+    if (location.href !== lastURL) {const changed = Boolean(lastURL); lastURL = location.href; if (changed) clearVideoTopic(); schedule();}
     heartbeat();
   }, 5000);
   heartbeat();

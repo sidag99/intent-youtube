@@ -21,10 +21,11 @@
   function dot(a, b) { let sum = 0; for (let i = 0; i < a.length; i++) sum += a[i] * b[i]; return sum; }
   function decide(vector, modeVectors, mode, customized = false) {
     const scores = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, Math.max(...refs.map(ref => dot(vector, ref)))]));
+    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const selected = scores[mode] || 0;
     const other = Math.max(0, ...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
     // Similarities are not calibrated probabilities. Overlapping intents can both qualify.
-    return {accepted: customized ? selected >= .30 : selected >= .26 && selected >= other - .07, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other};
+    return {accepted: customized ? selected >= .30 : selected >= .26 && selected >= other - .07, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other, categoryId: ranked[0]?.[0] || null, categorySimilarity: ranked[0]?.[1] || 0, categoryMargin: (ranked[0]?.[1] || 0) - (ranked[1]?.[1] || 0)};
   }
   globalThis.IntentSemantic = {PROFILES, text, profiles, dot, decide};
 })();

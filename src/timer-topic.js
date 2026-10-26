@@ -1,0 +1,31 @@
+/* Conservative, local topic estimates for the current video and optional timer rules. */
+(() => {
+  const C = IntentCore;
+  function videoId(value) {
+    try {
+      const url = new URL(value);
+      if (!C.isYouTube(value) || !['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname)) return '';
+      const id = url.pathname === '/watch' ? url.searchParams.get('v') : url.pathname.match(/^\/shorts\/([\w-]{11})(?:\/|$)/)?.[1];
+      return /^[\w-]{11}$/.test(id || '') ? id : '';
+    } catch {return '';}
+  }
+  function metadata(input = {}, id) {
+    const strings = value => Array.isArray(value) ? value.slice(0, 30).filter(v => typeof v === 'string').map(v => v.slice(0, 80)) : [];
+    return {id, title: String(input.title || '').slice(0, 500), channel: String(input.channel || '').slice(0, 160), description: String(input.description || '').slice(0, 1800), hashtags: strings(input.hashtags), keywords: strings(input.keywords)};
+  }
+  function key(settings) {
+    const s = C.sanitize(settings);
+    return JSON.stringify([s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
+  }
+  function estimate(decision, settings) {
+    if (!decision || typeof decision !== 'object') return {status: 'uncertain', categoryId: null};
+    const definitions = C.modes(settings);
+    const categoryId = Object.hasOwn(definitions, decision.categoryId) && Number.isFinite(decision.categorySimilarity) && decision.categorySimilarity >= .35 && Number.isFinite(decision.categoryMargin) && decision.categoryMargin >= .05 ? decision.categoryId : null;
+    // Similarity is not a calibrated probability. Require strong evidence of a
+    // different category before turning an exemption into counted time.
+    const unrelated = decision.accepted === false && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity <= .18 && categoryId && categoryId !== settings.mode && decision.categorySimilarity >= .40;
+    const matching = decision.accepted === true && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity >= .30;
+    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId};
+  }
+  globalThis.IntentTimerTopic = {videoId, metadata, key, estimate};
+})();

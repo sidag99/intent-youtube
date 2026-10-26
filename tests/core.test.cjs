@@ -249,3 +249,11 @@ test('retired reminder preferences are discarded without changing timer policy',
     assert.equal(settings.countModes.music, true); assert.equal(settings.countModes.work, false);
   }
 });
+
+test('matching-only exemptions are strictly opt-in per valid intent and do not change ordinary count rules', () => {
+  const s = C.sanitize({customIntents: {'custom-law': {name: 'Law', description: 'Legal lectures'}}, matchOnlyModes: {work: true, study: 'true', music: 1, off: true, 'custom-law': true, invalid: true}, countModes: {work: false}});
+  assert.equal(s.matchOnlyModes.work, true); assert.equal(s.matchOnlyModes.study, false); assert.equal(s.matchOnlyModes.music, false);
+  assert.equal(s.matchOnlyModes['custom-law'], true); assert.equal(s.matchOnlyModes.off, undefined); assert.equal(s.matchOnlyModes.invalid, undefined);
+  assert.equal(C.countsMode(s, 'work'), false); assert.equal(C.countsMode(s, 'study'), true);
+  assert.ok(Object.values(C.defaults().matchOnlyModes).every(value => value === false));
+});

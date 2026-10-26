@@ -1,7 +1,7 @@
 const {chromium}=require('playwright');
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..');
-require('../src/core.js');
+require('../src/core.js'); require('../src/timer-topic.js');
 const examples=[
  {title:'Ship a tiny app this weekend',channel:'Maker Notes',description:'Turn an idea into a working tool for your clients, from the first screen to a finished release.'},
  {title:'Blue notes after midnight',channel:'Evening Sessions',description:'A mellow trio with double bass, brushed drums, and saxophone.'},
@@ -37,6 +37,13 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.deepEqual(Object.keys(result),['work','study','music'],'the default model profiles match the three installed built-in intents');
   assert.equal(result.study[4].accepted,true,'hashtags and tags identify an opaque title');
   assert.equal(result.work[1].accepted,false,'music excluded from work');
+  console.log('Topic examples',JSON.stringify({musicMatch:result.music[1],musicMismatch:result.music[0]}));
+  const musicTopic=IntentTimerTopic.estimate(result.study[1],{...IntentCore.defaults(),mode:'study'});
+  assert.equal(musicTopic.categoryId,'music','the current-video label can identify an alternative configured category');
+  assert.equal(musicTopic.status,'unrelated','a clear music distractor counts under matching-only Study exemptions');
+  assert.notEqual(IntentTimerTopic.estimate(result.study[2],{...IntentCore.defaults(),mode:'study'}).status,'unrelated','an educational candidate remains exempt even when the estimate is uncertain');
+  const clearLesson=await page.evaluate(settings=>runModel([{id:'L0000000000',title:'Academic lessons, university lectures and studying for exams.',description:'Learning mathematics, physics, chemistry, biology and other sciences.'}],settings),{...IntentCore.defaults(),mode:'study'});
+  assert.equal(IntentTimerTopic.estimate(clearLesson[0],{...IntentCore.defaults(),mode:'study'}).status,'matching','a confidently matched lesson stays exempt');
   assert.equal(result.music[0].accepted,false,'app building excluded from music');
   const focusedExamples=[
    {title:'Convert an extra pawn into a win',channel:'Board Lessons',description:'King and pawn endgame techniques, opposition and promotion in chess.'},

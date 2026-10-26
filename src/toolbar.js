@@ -1,31 +1,32 @@
 /* Explicit intent controls to the left of YouTube's search field. */
 (() => {
   const CSS = `
-:host{position:relative;display:block;flex:0 0 250px;width:250px;min-width:250px;max-width:250px;margin-right:12px;font:14px Roboto,Arial,sans-serif;color:var(--yt-spec-text-primary,#0f0f0f);color-scheme:light;--intent-chip:#f2f2f2;--intent-hover:#e5e5e5;--intent-ink:#0f0f0f;--intent-menu:#fff;--intent-muted:#606060;--intent-line:#e5e5e5;--intent-accent:#365e4b;--intent-warning:#8a5a00;--intent-critical:#b3261e}
+:host{position:relative;display:block;flex:0 0 360px;width:360px;min-width:360px;max-width:360px;margin-right:12px;font:14px Roboto,Arial,sans-serif;color:var(--yt-spec-text-primary,#0f0f0f);color-scheme:light;--intent-chip:#f2f2f2;--intent-hover:#e5e5e5;--intent-ink:#0f0f0f;--intent-menu:#fff;--intent-muted:#606060;--intent-line:#e5e5e5;--intent-accent:#365e4b;--intent-warning:#8a5a00;--intent-critical:#b3261e}
 :host([data-theme=dark]){color-scheme:dark;--intent-chip:#272727;--intent-hover:#3f3f3f;--intent-ink:#f1f1f1;--intent-menu:#282828;--intent-muted:#aaa;--intent-line:#3f3f3f;--intent-accent:#9cc7ab;--intent-warning:#e9c46a;--intent-critical:#ffb4ab;color:var(--yt-spec-text-primary,var(--intent-ink))}
 *{box-sizing:border-box}.controls{width:100%;display:flex;align-items:center;gap:0;white-space:nowrap;background:var(--yt-spec-badge-chip-background,var(--intent-chip));border:0;border-radius:20px;padding:0 3px;height:36px}button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}button:hover{background:var(--intent-hover)}button:disabled{opacity:.5;cursor:wait}button:focus-visible{outline:2px solid var(--intent-accent);outline-offset:2px}.trigger{height:36px;flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px 0 6px;border-radius:20px;font-size:14px;font-weight:500}.logo{display:block;width:20px;height:20px;flex:0 0 20px}.compact-state{display:none}.selected-symbol{display:block;flex:0 0 14px;width:14px;font-size:14px;line-height:1;text-align:center}.mode-name{display:block;flex:1 1 0;min-width:0;text-align:left;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chevron{width:12px;height:12px;flex:0 0 12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.8}.trigger[aria-expanded=true] .chevron{transform:rotate(180deg)}.coverage-badge{display:inline-flex;flex:0 0 auto;align-items:center;max-width:90px;border:1px solid var(--intent-line);border-radius:5px;padding:2px 5px;font-size:10px;font-weight:500;line-height:1.2;color:var(--intent-muted);white-space:nowrap}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}[hidden]{display:none!important}.icon-button{flex:0 0 30px;border-radius:50%;width:30px;height:30px;display:grid;place-items:center;padding:6px}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:hidden;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-ink);padding:6px 16px 4px;margin:0}.coverage-detail{font-size:12px;line-height:16px;color:var(--intent-muted);padding:0 16px 8px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-symbol svg{width:20px;height:20px}.option-symbol{display:inline-grid;place-items:center;width:20px;height:24px;flex:0 0 20px;font-size:19px;line-height:1}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.pause-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.pause-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
-@media(max-width:1100px){.settings{display:none}:host{width:210px;min-width:210px;max-width:210px;flex-basis:210px;margin-right:8px}}@media(max-width:700px){:host{width:170px;min-width:170px;max-width:170px;flex-basis:170px;margin-right:4px}.controls{height:34px;padding:0 2px}.trigger{height:34px;gap:5px;padding:0 6px 0 4px}.mode-name{font-size:12px}.trigger:has(.selected-symbol:not([hidden])){gap:3px;padding-right:4px}.icon-button{width:28px;height:28px;flex-basis:28px}}@media(max-width:480px){:host{width:154px;min-width:154px;max-width:154px;flex-basis:154px}.coverage-badge{max-width:65px;padding:2px 4px}.trigger{gap:4px}.trigger:has(.selected-symbol:not([hidden])){gap:2px;padding-right:2px}.selected-symbol{width:12px;flex-basis:12px;font-size:12px}.chevron{width:10px;flex-basis:10px}}
-
-
+.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-x:hidden;overflow-y:auto;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-ink);padding:6px 16px 4px;margin:0}.coverage-detail{font-size:12px;line-height:16px;color:var(--intent-muted);padding:0 16px 8px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-symbol svg{width:20px;height:20px}.option-symbol{display:inline-grid;place-items:center;width:20px;height:24px;flex:0 0 20px;font-size:19px;line-height:1}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.pause-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.pause-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
 .timer-indicator{flex:0 0 76px;display:flex;align-items:center;justify-content:center;gap:4px;width:76px;height:30px;padding:4px 6px;border-radius:15px;cursor:default;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-indicator[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-indicator[data-timer-state=low]{color:var(--intent-warning)}.timer-indicator[data-timer-state=critical]{color:var(--intent-critical)}.timer-indicator[data-timer-state=exempt],.timer-indicator[data-timer-state=paused],.timer-indicator[data-timer-state=unlimited],.timer-indicator[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{flex:0 0 auto;white-space:nowrap;line-height:16px}.timer-indicator:focus-visible{outline:2px solid var(--intent-accent);outline-offset:2px}.timer-mobile{display:none}.timer-details{padding:12px 14px;border-radius:12px;font-size:12px;white-space:normal;pointer-events:auto}.timer-detail-heading{font-size:13px;font-weight:500;margin:0}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}.timer-stats dt{color:var(--intent-muted)}.timer-stats dd{margin:0;font-variant-numeric:tabular-nums}.timer-context,.timer-reset{font-size:12px;line-height:17px;color:var(--intent-muted);margin:8px 0 0}
 :host([data-filter-state=off-here]) .trigger,:host([data-filter-state=loading]) .trigger,:host([data-filter-state=unavailable]) .trigger{padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:12px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}
-@media(max-width:700px){.timer-indicator{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}.timer-clock{flex-basis:12px;width:12px;height:12px}.timer-desktop{display:none}.timer-mobile{display:inline}.trigger{padding:0 3px;gap:2px}.trigger:has(.selected-symbol:not([hidden])){padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:10px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}}
-@media(max-width:700px){:host([data-filter-state=off]) .trigger,:host([data-filter-state=paused]) .trigger{padding:0 2px}:host([data-filter-state=off]) .mode-name,:host([data-filter-state=paused]) .mode-name{font-size:11px}}
-/* Controls occupy only unused masthead space, never the search flex row. */
-:host{position:fixed;flex:none;width:var(--intent-toolbar-width,250px);min-width:var(--intent-toolbar-width,250px);max-width:var(--intent-toolbar-width,250px);margin:0;z-index:1}
-:host([data-layout=hidden]){display:none}
+/* Spare masthead space preserves native search geometry. At higher zoom,
+   a readable fixed slot shares the search row instead of disappearing. */
+:host{position:fixed;flex:none;width:var(--intent-toolbar-width,360px);min-width:var(--intent-toolbar-width,360px);max-width:var(--intent-toolbar-width,360px);margin:0;z-index:1}
+:host([data-placement=flow]){position:relative;flex:0 0 var(--intent-toolbar-width);margin-right:var(--intent-toolbar-gap,8px);align-self:center}
 :host([data-layout=full]) .controls{height:36px}
 :host([data-layout=full]) .settings{display:grid}
-:host([data-layout=compact]) .controls{height:34px;padding:0 2px}
-:host([data-layout=launcher]) .controls{height:32px;padding:0}
-:host([data-layout=compact]) .trigger,:host([data-layout=launcher]) .trigger{height:32px;padding:0;gap:2px;justify-content:center}
-:host([data-layout=compact]) .chevron,:host([data-layout=launcher]) .chevron{width:8px;flex-basis:8px}
-:host([data-layout=compact]) .mode-name,:host([data-layout=compact]) .compact-state,:host([data-layout=compact]) .selected-symbol,:host([data-layout=compact]) .coverage-badge,:host([data-layout=compact]) .icon-button,:host([data-layout=launcher]) .mode-name,:host([data-layout=launcher]) .compact-state,:host([data-layout=launcher]) .selected-symbol,:host([data-layout=launcher]) .coverage-badge,:host([data-layout=launcher]) .icon-button,:host([data-layout=launcher]) .timer-indicator{display:none!important}
-:host([data-layout=compact]) .timer-indicator{flex-basis:42px;width:42px;height:28px;padding:2px;gap:2px;font-size:10px}
-:host([data-layout=compact]) .timer-clock{flex-basis:12px;width:12px;height:12px}
+:host([data-layout=compact]) .controls,:host([data-layout=launcher]) .controls{height:44px;padding:0 2px}
+:host([data-layout=compact]) .trigger{height:44px;padding:0 6px;gap:4px;font-size:13px}
+:host([data-layout=compact]) .mode-name,:host([data-layout=compact]) .compact-state{font-size:13px}
+:host([data-layout=compact]) .chevron{width:10px;flex-basis:10px}
+:host([data-layout=compact]) .coverage-badge,:host([data-layout=compact]) .icon-button,:host([data-layout=launcher]) .mode-name,:host([data-layout=launcher]) .compact-state,:host([data-layout=launcher]) .selected-symbol,:host([data-layout=launcher]) .coverage-badge,:host([data-layout=launcher]) .icon-button,:host([data-layout=launcher]) .timer-indicator{display:none!important}
+:host([data-layout=compact]) .timer-indicator{flex-basis:64px;width:64px;height:44px;padding:4px;gap:4px;font-size:12px}
+:host([data-layout=compact]) .timer-clock{flex-basis:16px;width:16px;height:16px}
 :host([data-layout=compact]) .timer-desktop{display:none}
 :host([data-layout=compact]) .timer-mobile{display:inline}
+:host([data-layout=launcher]) .trigger{height:44px;padding:0;gap:3px;justify-content:center}
+:host([data-layout=launcher]) .logo{width:24px;height:24px;flex-basis:24px}
+:host([data-layout=launcher]) .chevron{width:10px;flex-basis:10px}
+.option,.pause-button{min-height:44px}
+.menu-budget{margin:0;padding:2px 16px 8px;font-size:12px;line-height:16px;color:var(--intent-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 `;
   const svg = (path, className = '') => {
@@ -37,7 +38,7 @@
   class Toolbar {
     constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}, onPaused = () => {}} = {}) {
       this.runtime = runtime; this.onSettings = onSettings; this.onRefresh = onRefresh; this.onPaused = onPaused;
-      this.open = false; this.timerOpen = false;
+      this.open = false; this.timerOpen = false; this.flowStyles = new Map();
       this.outside = event => { if (!event.composedPath().includes(this.host)) {this.closeMenu(false); this.closeTimer();} };
       this.reposition = () => { if (this.open) this.positionMenu(); if (this.timerOpen) this.positionTimer(); };
       this.layoutReposition = () => {this.positionControls(); this.reposition();};
@@ -56,33 +57,70 @@
       if (!center || !start) { this.destroy(); return; }
       if (!this.host) this.create();
       this.updateOptions(settings); this.paintSelection();
-      if (this.host.parentElement !== container) {
+      if (!masthead.contains(this.host)) {
         this.closeMenu(false); this.closeTimer();
         if (this.masthead !== masthead) this.masthead?.removeAttribute('data-intent-toolbar');
-        container.append(this.host);
+        this.restoreFlowStyles(); container.append(this.host);
       }
       if (this.masthead !== masthead || this.center !== center || this.start !== start) {
         this.layoutObserver?.disconnect();
         this.layoutObserver = new ResizeObserver(this.layoutReposition);
         for (const element of [masthead, center, start]) this.layoutObserver.observe(element);
       }
-      this.center = center; this.start = start;
+      this.center = center; this.start = start; this.container = container;
       this.masthead = masthead; masthead.setAttribute('data-intent-toolbar', '');
       window.addEventListener('resize', this.layoutReposition); window.addEventListener('scroll', this.layoutReposition, true);
       this.positionControls(); this.updateTheme(); this.paintTimer();
       if (this.open) this.positionMenu();
     }
+    ownFlowStyle(element, property, value) {
+      let properties = this.flowStyles.get(element);
+      if (!properties) {properties = new Map(); properties.hadStyleAttribute = element.hasAttribute('style'); this.flowStyles.set(element, properties);}
+      if (!properties.has(property)) properties.set(property, {value: element.style.getPropertyValue(property), priority: element.style.getPropertyPriority(property)});
+      if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
+    }
+    restoreFlowStyles() {
+      for (const [element, properties] of this.flowStyles) for (const [property, original] of properties) {
+        if (original.value) element.style.setProperty(property, original.value, original.priority); else element.style.removeProperty(property);
+      }
+      for (const [element, properties] of this.flowStyles) if (!properties.hadStyleAttribute && !element.getAttribute('style')?.trim()) element.removeAttribute('style');
+      this.flowStyles.clear();
+    }
     positionControls() {
       if (!this.host?.isConnected || !this.masthead || !this.center || !this.start) return;
       const masthead = this.masthead.getBoundingClientRect(), start = this.start.getBoundingClientRect(), center = this.center.getBoundingClientRect();
-      const logoGap = innerWidth > 700 ? 28 : 12;
-      const left = Math.max(8, start.right + logoGap), available = Math.min(center.left, innerWidth - 8) - left - 12;
-      const layout = masthead.height <= 0 || center.width <= 0 ? 'hidden' : available >= 250 ? 'full' : available >= 76 ? 'compact' : available >= 32 ? 'launcher' : 'hidden';
-      const width = layout === 'full' ? 250 : layout === 'compact' ? 76 : 32;
-      this.host.dataset.layout = layout; this.host.style.setProperty('--intent-toolbar-width', `${width}px`);
-      this.host.style.left = `${Math.round(left)}px`; this.host.style.top = `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : layout === 'compact' ? 34 : 32)) / 2)}px`;
+      const search = this.center.querySelector('yt-searchbox,ytd-searchbox') || this.center.querySelector('form[role=search],#search');
+      let searchRoot = search;
+      while (searchRoot?.parentElement && searchRoot.parentElement !== this.center) searchRoot = searchRoot.parentElement;
+      const logoGap = innerWidth > 700 ? 28 : 12, left = Math.max(8, start.right + logoGap);
+      const available = Math.min(center.left, innerWidth - 8) - left - 12;
+      const overlay = available >= 180 && masthead.height > 0 && center.width > 0;
+      const footprint = this.host.parentElement === this.center && this.host.dataset.placement === 'flow' ? this.host.getBoundingClientRect().width + (parseFloat(getComputedStyle(this.host).marginRight) || 0) : 0;
+      const otherWidth = Math.max(0, center.width - (search?.getBoundingClientRect().width || center.width) - footprint);
+      // The center's native flex width is stable even after its search shrinks.
+      // Subtract our existing footprint so repeated scans never shrink it again.
+      const searchSpace = center.width - otherWidth;
+      const width = overlay ? available >= 360 ? 360 : available >= 200 ? 200 : 180 : searchSpace >= 448 ? 200 : searchSpace >= 428 ? 180 : 44;
+      const layout = width === 360 ? 'full' : width === 44 ? 'launcher' : 'compact';
+      const placement = overlay ? 'overlay' : 'flow';
+      const useCenter = !overlay && center.width > 44 && getComputedStyle(this.center).display !== 'none';
+      const parent = overlay ? this.container : useCenter ? this.center : this.start.parentElement;
+      if (overlay || !useCenter) this.restoreFlowStyles();
+      if (useCenter) {
+        this.ownFlowStyle(this.center, 'min-width', '0px');
+        if (searchRoot && searchRoot !== this.center) {this.ownFlowStyle(searchRoot, 'min-width', '0px'); this.ownFlowStyle(searchRoot, 'flex', '1 1 0px');}
+      }
+      if (this.host.parentElement !== parent) {
+        this.closeMenu(false); this.closeTimer();
+        if (overlay) parent.append(this.host); else if (useCenter) parent.prepend(this.host); else this.start.after(this.host);
+      }
+      this.host.dataset.placement = placement; this.host.dataset.layout = layout;
+      this.host.style.setProperty('--intent-toolbar-width', `${width}px`); this.host.style.setProperty('--intent-toolbar-gap', width === 44 ? '4px' : '8px');
+      this.host.style.left = overlay ? `${Math.round(left)}px` : 'auto';
+      this.host.style.top = overlay ? `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : 44)) / 2)}px` : 'auto';
+      this.menuRefreshButton.hidden = this.menuSettingsButton.hidden = layout === 'full'; this.menuBudget.hidden = layout !== 'launcher';
       if (layout === 'launcher') this.closeTimer();
-      if (layout === 'hidden') {this.closeMenu(false); this.closeTimer();}
+      if (this.open) this.positionMenu();
     }
     create() {
       this.host = document.createElement('div'); this.host.id = 'intent-toolbar';
@@ -110,13 +148,9 @@
       });
       const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'icon-button refresh'; refresh.append(svg('M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 11.5-1L20 9M4 15l2.5 3A7 7 0 0 0 18 17')); refresh.title = 'Refresh feed'; refresh.setAttribute('aria-label', 'Refresh feed');
       this.refreshButton = refresh;
-      refresh.addEventListener('click', async () => {
-        this.refreshPending = true; this.paintCoverage(); this.error.textContent = '';
-        try { await this.onRefresh(); } catch (error) { this.error.textContent = error.message; }
-        finally { this.refreshPending = false; this.paintCoverage(); }
-      });
+      refresh.addEventListener('click', () => this.refreshFeed());
       const settings = document.createElement('button'); settings.type = 'button'; settings.className = 'icon-button settings'; settings.append(svg('m9 3-.7 2.3-2.4 1.4L3.5 6l-2 3.5 1.8 1.6v2.8l-1.8 1.6L3.5 19l2.4-.7 2.4 1.4L9 22h4l.7-2.3 2.4-1.4 2.4.7 2-3.5-1.8-1.6v-2.8l1.8-1.6-2-3.5-2.4.7-2.4-1.4L13 3z M15 12.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0')); settings.title = 'Intent settings'; settings.setAttribute('aria-label', 'Intent settings');
-      settings.addEventListener('click', () => this.runtime.sendMessage({type: 'OPEN_SETTINGS'}).catch(error => { this.error.textContent = error.message; }));
+      settings.addEventListener('click', () => this.openSettings());
       this.error = document.createElement('div'); this.error.className = 'error'; this.error.setAttribute('role', 'status');
       this.menu = document.createElement('div'); this.menu.className = 'menu'; this.menu.id = 'intent-mode-popover'; this.menu.setAttribute('popover', 'manual');
       const heading = this.menuHeading = document.createElement('h2'); heading.id = 'intent-mode-heading'; heading.className = 'menu-heading'; heading.textContent = 'Intent for this tab';
@@ -127,15 +161,27 @@
       this.pauseButton = document.createElement('button'); this.pauseButton.type = 'button'; this.pauseButton.id = 'intent-tab-pause'; this.pauseButton.className = 'pause-button'; this.pauseButton.setAttribute('aria-describedby', this.coverageStatus.id);
       this.pauseIcon = svg('M8 5v14M16 5v14'); this.pauseLabel = document.createElement('span'); this.pauseButton.append(this.pauseIcon, this.pauseLabel);
       this.pauseButton.addEventListener('click', () => this.togglePaused());
-      this.pauseButton.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); this.closeMenu(true); }
-        else if (event.key === 'Tab') this.closeMenu(false);
+      this.menuRefreshButton = document.createElement('button'); this.menuRefreshButton.type = 'button'; this.menuRefreshButton.className = 'pause-button'; this.menuRefreshButton.textContent = 'Refresh feed'; this.menuRefreshButton.addEventListener('click', () => this.refreshFeed());
+      this.menuSettingsButton = document.createElement('button'); this.menuSettingsButton.type = 'button'; this.menuSettingsButton.className = 'pause-button'; this.menuSettingsButton.textContent = 'Settings'; this.menuSettingsButton.setAttribute('aria-label', 'Intent settings'); this.menuSettingsButton.addEventListener('click', () => this.openSettings());
+      this.pauseFooter.append(this.pauseButton, this.menuRefreshButton, this.menuSettingsButton);
+      this.pauseFooter.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {event.preventDefault(); this.closeMenu(true);}
+        else if (event.key === 'Tab') {const buttons = [...this.pauseFooter.querySelectorAll('button')].filter(button => !button.hidden && !button.disabled); if (event.shiftKey && event.target === buttons[0] || !event.shiftKey && event.target === buttons.at(-1)) this.closeMenu(false);}
       });
-      this.pauseFooter.append(this.pauseButton);
-      this.menu.append(heading, this.coverageDetail, this.list, this.pauseFooter);
+      this.menuBudget = document.createElement('p'); this.menuBudget.id = 'intent-menu-budget'; this.menuBudget.className = 'menu-budget'; this.menuBudget.hidden = true;
+      this.menu.append(heading, this.coverageDetail, this.menuBudget, this.list, this.pauseFooter);
       this.menu.addEventListener('toggle', event => { if (event.newState === 'closed' && this.open) this.closeMenu(false); });
       controls.append(this.trigger, refresh, settings); root.append(style, controls, this.coverageStatus, this.error, this.menu);
       this.createTimer(root, controls, refresh);
+    }
+    async refreshFeed() {
+      if (this.refreshButton.disabled) return;
+      this.refreshPending = true; this.paintCoverage(); this.error.textContent = '';
+      try {await this.onRefresh();} catch (error) {this.error.textContent = error.message;}
+      finally {this.refreshPending = false; this.paintCoverage();}
+    }
+    async openSettings() {
+      try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.error.textContent = error.message;}
     }
     updateOptions(settings) {
       const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒']), ['off', 'Off', '○']];
@@ -196,7 +242,7 @@
       this.pauseLabel.textContent = paused ? 'Resume on this tab' : 'Pause on this tab'; this.pauseButton.dataset.paused = String(paused); this.pauseButton.disabled = Boolean(this.pausePending);
       this.pauseIcon.firstElementChild.setAttribute('d', paused ? 'm8 5 11 7-11 7z' : 'M8 5v14M16 5v14');
       this.trigger.title = state === 'off' ? `Intent is off. ${detail}` : `Saved intent: ${this.savedModeName}. ${detail}`;
-      this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused';
+      this.menuRefreshButton.disabled = this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused';
     }
     selectedIndex() { return Math.max(0, this.options.findIndex(option => option.dataset.mode === this.settings.mode)); }
     focusOption(index) {
@@ -220,8 +266,8 @@
       this.menu.style.left = `${Math.max(edge, Math.min(rect.left, innerWidth - width - edge))}px`;
       const availableBelow = innerHeight - rect.bottom - 8, availableAbove = rect.top - 8;
       const above = availableBelow < 180 && availableAbove > availableBelow;
-      const detailHeight = this.menuHeading.getBoundingClientRect().height + this.coverageDetail.getBoundingClientRect().height + this.pauseFooter.getBoundingClientRect().height + 16;
-      this.list.style.maxHeight = `${Math.max(40, Math.min(320, (above ? availableAbove : availableBelow) - detailHeight))}px`;
+      const detailHeight = this.menuHeading.getBoundingClientRect().height + this.coverageDetail.getBoundingClientRect().height + this.menuBudget.getBoundingClientRect().height + this.pauseFooter.getBoundingClientRect().height + 16;
+      this.list.style.maxHeight = `${Math.max(44, Math.min(320, (above ? availableAbove : availableBelow) - detailHeight))}px`;
       const height = this.menu.getBoundingClientRect().height;
       this.menu.style.top = `${Math.max(edge, Math.min(above ? rect.top - height - 6 : rect.bottom + 6, innerHeight - height - edge))}px`;
     }
@@ -331,7 +377,7 @@
       if (valid && !paused && !exempt) {
         const minutes = Math.max(0, unlimited ? Math.floor(used / 60000) : Math.ceil(remaining / 60000));
         const compact = minutes > 99 ? `${Math.floor(minutes / 60)}h` : null;
-        desktop = compact || `${minutes}m`; mobile = compact || String(minutes);
+        desktop = compact || `${minutes}m`; mobile = compact || `${minutes}m`;
       } else if (exempt && !paused) desktop = 'Exempt';
       this.timerDesktop.textContent = desktop; this.timerMobile.textContent = mobile;
       this.timerHands.setAttribute('d', paused ? 'M11 9v10M17 9v10' : 'M14 8v6l4 3');
@@ -343,12 +389,18 @@
       let context = 'Timer status is loading.';
       if (valid) {
         if (paused) context = 'This tab is paused. Other tabs can still use the shared timer.';
+        else if (state.timerTopicState === 'unrelated') context = 'This video is outside your selected intent. Its time counts toward the daily budget.';
+        else if (exempt && state.timerTopicState === 'checking') context = 'Checking this video’s topic. Time stays exempt while checking.';
+        else if (exempt && state.timerTopicState === 'matching') context = 'This video matches your selected intent. Its time is exempt.';
+        else if (exempt && state.timerTopicState === 'uncertain') context = 'Topic uncertain. Your intent’s timer exemption still applies.';
+        else if (exempt && state.timerTopicState === 'not-video') context = 'Browsing and searches follow your selected intent’s timer exemption.';
         else if (exempt) context = unlimited ? 'This intent is timer-exempt. The daily limit is off.' : 'This intent is timer-exempt. Other counted tabs can still use today’s budget.';
         else if (counting) context = unlimited ? 'This tab is tracking usage. The daily limit is off.' : 'This tab is currently counting toward the daily budget.';
         else if (running) context = 'Another YouTube tab is currently using the shared timer.';
         else context = unlimited ? 'The daily limit is off. Counted usage is still tracked.' : 'The timer is not currently counting.';
       }
       this.timerContext.textContent = context;
+      this.menuBudget.textContent = !valid ? 'Daily budget · loading' : paused ? 'Daily budget · paused' : exempt ? 'Daily budget · exempt' : unlimited ? `${this.timerDuration(used)} used · no limit` : `${this.timerDuration(remaining, true)} left · ${this.timerDuration(used)} used`; this.menuBudget.title = context;
       this.timerIndicator.setAttribute('aria-label', valid ? `Daily YouTube timer: ${unlimited ? 'no limit' : this.timerDuration(remaining, true) + ' remaining'}` : 'Daily YouTube timer: loading');
       if (this.timerOpen) this.positionTimer();
     }
@@ -383,7 +435,7 @@
     destroy() {
       this.closeMenu(false); this.closeTimer(); this.layoutObserver?.disconnect();
       window.removeEventListener('resize', this.layoutReposition); window.removeEventListener('scroll', this.layoutReposition, true);
-      this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
+      this.restoreFlowStyles(); this.host?.remove(); this.masthead?.removeAttribute('data-intent-toolbar'); this.masthead = null;
     }
   }
   globalThis.IntentToolbar = Toolbar;

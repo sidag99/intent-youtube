@@ -60,7 +60,7 @@ async function chooseMode(toolbar, mode, customName) {
 (async()=>{
  const b=await chromium.launch({channel:'chromium',headless:true});const errors=[];
  try{
-  const context=await b.newContext({viewport:{width:1660,height:1100}});context.setDefaultTimeout(10000);
+  const context=await b.newContext({viewport:{width:1920,height:1100}});context.setDefaultTimeout(10000);
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto('file://'+root+'/settings.html');
   await page.getByRole('heading',{name:'What are you here for?'}).waitFor();
@@ -220,7 +220,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForFunction(()=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.shorts-grid').scrollLeft>50);
   await feed.locator('.shorts-grid').evaluate(el=>el.blur());
   await yt.screenshot({path:path.join(shots,'intent-home-shorts-mobile.png'),fullPage:true});
-  await yt.setViewportSize({width:1660,height:1100});
+  await yt.setViewportSize({width:1920,height:1100});
   await yt.waitForFunction(count=>document.querySelector('#intent-home-feed').shadowRoot.querySelector('.first-grid').children.length===count,firstRow.length);
   assert.equal(await feed.locator('.card').count(),20,'responsive splitting never duplicates cards');
   await feed.locator('.shorts-grid').evaluate(el=>{el.blur();el.scrollLeft=0;});
@@ -253,7 +253,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.waitForTimeout(200);assert.equal(await yt.evaluate(()=>testRequests.length),calls,'budget changes do not rebuild the feed');
   await yt.setViewportSize({width:390,height:844});
   assert.equal(await yt.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'home grid fits a narrow viewport');
-  await yt.setViewportSize({width:1660,height:1100});
+  await yt.setViewportSize({width:1920,height:1100});
   await yt.screenshot({path:path.join(shots,'intent-home-feed.png'),fullPage:true});
   await yt.evaluate(()=>{testFail=true;});await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();
   await feed.getByRole('heading',{name:'Your feed couldn’t load.'}).waitFor();
@@ -336,7 +336,7 @@ async function chooseMode(toolbar, mode, customName) {
   await yt.locator('#late-native[data-intent-native-watch]').waitFor({state:'attached'});
   assert.equal(await yt.locator('#late-native').isVisible(),false,'new native recommendations cannot leak through the intent feed');
   assert.equal(await yt.evaluate(()=>document.querySelector('#below #intent-watch-feed')!==null),true);
-  await yt.setViewportSize({width:1660,height:1100});
+  await yt.setViewportSize({width:1920,height:1100});
   await yt.evaluate(()=>{testDelayWork=true;setTestMode('work');});
   await yt.waitForFunction(()=>testRequests.at(-1).key.includes('work'));
   await yt.evaluate(()=>setTestMode('study'));

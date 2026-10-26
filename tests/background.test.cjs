@@ -772,3 +772,244 @@ test('a counted background tab can run the global timer while the visible exempt
   await h.send({type: 'UPDATE_SETTINGS', patch: {countPlayback: false}});
   state = await tabState(h, 2); assert.equal(state.timerRunning, false); assert.equal(state.tabCounting, false, 'a background tab without counted playback does not contribute');
 });
+
+const topicID = 'aaaaaaaaaaa', nextTopicID = 'bbbbbbbbbbb';
+const topicURL = id => `https://www.youtube.com/watch?v=${id}`;
+const topicSender = (id = 1, videoId = topicID) => ({url: topicURL(videoId), frameId: 0, tab: {id, windowId: 1, active: true, url: topicURL(videoId)}});
+const topicVideo = (id = topicID, title = 'An opaque video title') => ({id, title, description: 'Description and #metadata explain the topic.', channel: 'Independent creator', hashtags: ['#metadata'], keywords: ['topic']});
+const matchingTopic = () => ({accepted: true, uncertain: false, similarity: .65, categoryId: 'music', categorySimilarity: .65, categoryMargin: .20});
+const unrelatedTopic = () => ({accepted: false, uncertain: false, similarity: .08, categoryId: 'study', categorySimilarity: .62, categoryMargin: .20});
+function topicHarness(judge, settings = {}) {
+  const h = harness({settings: {mode: 'music', matchOnlyModes: {music: true}, ...settings}}, undefined, undefined, judge);
+  h.setTabs([{id: 1, windowId: 1, active: true, url: topicURL(topicID)}]);
+  return h;
+}
+const checkTopic = (h, video = topicVideo(), sender = topicSender()) => h.send({type: 'CHECK_TIMER_VIDEO', video}, sender);
+
+test('matching-only exemptions are opt-in while video categorization also works for counted intents', async () => {
+  let calls = 0;
+  const h = topicHarness(async () => {calls++; return [unrelatedTopic()];}, {matchOnlyModes: {music: false}});
+  let state = await checkTopic(h);
+  assert.equal(state.ok, true); assert.equal(state.videoTopic.status, 'unrelated');
+  assert.equal(state.timerTopicState, 'off'); assert.equal(state.timerExempt, true);
+  h.advance(10000); assert.equal((await tabState(h, 1)).usedMs, 0, 'the existing whole-intent exemption stays the default');
+  state = await h.send({type: 'UPDATE_SETTINGS', patch: {matchOnlyModes: {music: true}}});
+  state = await tabState(h, 1);
+  assert.equal(state.timerTopicState, 'unrelated'); assert.equal(state.timerExempt, false); assert.equal(state.tabCounting, true);
+  assert.equal(calls, 1, 'a timer policy change can use the existing topic estimate');
+
+  const counted = topicHarness(async () => [matchingTopic()], {mode: 'work'});
+  state = await checkTopic(counted);
+  assert.equal(state.videoTopic.status, 'matching'); assert.equal(state.timerTopicState, 'off');
+  assert.equal(state.timerExempt, false); assert.equal(state.tabCounting, true, 'a matching badge does not exempt a counted intent');
+});
+
+test('matching videos stay exempt and clearly unrelated videos start charging without backcharging model time', async () => {
+  let release, started;
+  const gate = new Promise(resolve => {release = resolve;}), began = new Promise(resolve => {started = resolve;});
+  const h = topicHarness(async () => {started(); await gate; return [unrelatedTopic()];});
+  const pending = checkTopic(h); await began;
+  let state = await tabState(h, 1);
+  assert.equal(state.timerTopicState, 'checking'); assert.equal(state.timerExempt, true); assert.equal(state.tabCounting, false);
+  h.advance(10000); assert.equal((await tabState(h, 1)).usedMs, 0);
+  release(); state = await pending;
+  assert.equal(state.timerTopicState, 'unrelated'); assert.equal(state.timerExempt, false); assert.equal(state.usedMs, 0);
+  h.advance(5000); state = await tabState(h, 1); assert.equal(state.usedMs, 5000);
+  await h.updateTab(1, {url: topicURL(nextTopicID)});
+  state = await tabState(h, 1); assert.equal(state.timerExempt, true, 'a newly opened video is not charged using the previous video estimate');
+  h.advance(5000); assert.equal((await tabState(h, 1)).usedMs, 5000);
+
+  const matching = topicHarness(async () => [matchingTopic()]);
+  state = await checkTopic(matching); assert.equal(state.timerTopicState, 'matching'); assert.equal(state.timerExempt, true);
+  matching.advance(5000); assert.equal((await tabState(matching, 1)).usedMs, 0);
+});
+
+test('weak, uncertain, malformed and failed topic decisions preserve the exemption', async () => {
+  const decisions = [
+    {...unrelatedTopic(), uncertain: true}, {...unrelatedTopic(), similarity: .25},
+    {...unrelatedTopic(), categorySimilarity: .39}, {...unrelatedTopic(), categoryMargin: .01},
+    {...unrelatedTopic(), categoryId: 'music'}, {...unrelatedTopic(), categoryId: 'not-a-saved-intent'},
+    {...matchingTopic(), similarity: .29}, {}, {accepted: 'false', uncertain: false}
+  ];
+  for (const decision of decisions) {
+    const h = topicHarness(async () => [decision]);
+    const state = await checkTopic(h);
+    assert.equal(state.timerTopicState, 'uncertain', JSON.stringify(decision));
+    assert.equal(state.timerExempt, true); assert.equal(state.tabCounting, false);
+    h.advance(10000); assert.equal((await tabState(h, 1)).usedMs, 0);
+  }
+  const failed = topicHarness(async () => {throw new Error('The model could not load');});
+  const state = await checkTopic(failed); assert.equal(state.ok, true); assert.equal(state.timerTopicState, 'uncertain'); assert.equal(state.timerExempt, true);
+});
+
+test('topic requests require the real top-level current YouTube video and never trust a page verdict', async () => {
+  let calls = 0, inspected;
+  const h = topicHarness(async videos => {calls++; inspected = videos[0]; return [unrelatedTopic()];});
+  const invalid = [
+    {sender: {...topicSender(), frameId: 2}},
+    {sender: {url: topicURL(topicID), frameId: 0}},
+    {sender: {...topicSender(), url: 'https://example.com/watch?v=' + topicID}},
+    {sender: {...topicSender(), url: 'https://music.youtube.com/watch?v=' + topicID}},
+    {sender: {...topicSender(), url: 'https://www.youtube.com.evil.test/watch?v=' + topicID}},
+    {sender: {...topicSender(), url: 'chrome-extension://intent/settings.html'}},
+    {sender: {...topicSender(), url: 'https://www.youtube.com/results?search_query=music'}},
+    {sender: topicSender(), video: topicVideo(nextTopicID)},
+    {sender: topicSender(), video: topicVideo(topicID, '')}
+  ];
+  for (const {sender, video = topicVideo()} of invalid) assert.equal((await checkTopic(h, video, sender)).ok, false);
+  assert.equal(calls, 0);
+  const stale = await checkTopic(h, topicVideo(nextTopicID), topicSender(1, nextTopicID));
+  assert.equal(stale.stale, true); assert.equal(calls, 0, 'a forged sender URL cannot replace the queried tab URL');
+  const state = await checkTopic(h, {...topicVideo(), accepted: true, status: 'matching', categoryId: 'music'});
+  assert.equal(state.timerTopicState, 'unrelated'); assert.equal(state.timerExempt, false);
+  assert.equal(Object.hasOwn(inspected, 'accepted'), false); assert.equal(Object.hasOwn(inspected, 'status'), false);
+  assert.equal(calls, 1, 'only the bundled model produces a topic verdict');
+});
+
+test('topic metadata is bounded, uses descriptions and tags, and does not apply recommendation distractions', async () => {
+  let inspected, config;
+  const h = topicHarness(async (videos, settings) => {inspected = videos[0]; config = settings; return [matchingTopic()];}, {hideClickbait: true, blockedTerms: 'forbidden', channels: {music: 'Only this channel'}});
+  const state = await checkTopic(h, {...topicVideo(), title: 'T'.repeat(600), description: 'D'.repeat(2000), channel: 'C'.repeat(200), hashtags: Array(40).fill('#' + 'h'.repeat(100)), keywords: ['opaque', 9, 'music']});
+  assert.equal(state.videoTopic.status, 'matching');
+  assert.equal(inspected.title.length, 500); assert.equal(inspected.description.length, 1800); assert.equal(inspected.channel.length, 160);
+  assert.equal(inspected.hashtags.length, 30); assert.ok(inspected.hashtags.every(tag => tag.length === 80));
+  assert.deepEqual(Array.from(inspected.keywords), ['opaque', 'music']);
+  assert.equal(config.hideClickbait, false); assert.equal(config.hideShorts, false); assert.equal(config.blockedTerms, '');
+  assert.ok(Object.values(config.channels).every(value => value === ''), 'a channel allowlist is not evidence of the current video topic');
+});
+
+test('Off, paused tabs and hidden Shorts skip topic model work', async () => {
+  let calls = 0;
+  const h = topicHarness(async () => {calls++; return [matchingTopic()];});
+  await h.send({type: 'SET_MODE', mode: 'off'}, topicSender());
+  let state = await checkTopic(h); assert.equal(state.timerTopicState, 'off'); assert.equal(calls, 0);
+  await h.send({type: 'SET_MODE', mode: 'music'}, topicSender());
+  await h.send({type: 'SET_TAB_PAUSED', paused: true}, topicSender());
+  state = await checkTopic(h); assert.equal(state.tabPaused, true); assert.equal(calls, 0);
+  await h.send({type: 'SET_TAB_PAUSED', paused: false}, topicSender());
+  const shortsURL = 'https://www.youtube.com/shorts/' + topicID;
+  await h.updateTab(1, {url: shortsURL});
+  const shortsSender = {...topicSender(), url: shortsURL, tab: {...topicSender().tab, url: shortsURL}};
+  await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 0);
+  await h.send({type: 'UPDATE_SETTINGS', patch: {hideShorts: false}});
+  state = await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 1); assert.equal(state.videoTopic.status, 'matching');
+});
+
+test('concurrent topic checks share one model job and completed estimates survive a worker restart', async () => {
+  let release, started, calls = 0;
+  const gate = new Promise(resolve => {release = resolve;}), began = new Promise(resolve => {started = resolve;});
+  const h = topicHarness(async () => {calls++; started(); await gate; return [unrelatedTopic()];});
+  const first = checkTopic(h); await began; const second = checkTopic(h);
+  await h.send({type: 'GET_STATE'}); release();
+  const results = await Promise.all([first, second]);
+  assert.equal(calls, 1); assert.ok(results.some(state => state.videoTopic?.status === 'unrelated'));
+  assert.equal((await checkTopic(h)).videoTopic.status, 'unrelated'); assert.equal(calls, 1, 'unchanged metadata is not reclassified');
+  const resumed = harness(h.local, undefined, undefined, async () => {throw new Error('A persisted estimate should be reused');}, h.session);
+  resumed.setTabs([{id: 1, windowId: 1, active: true, url: topicURL(topicID)}]);
+  const state = await checkTopic(resumed); assert.equal(state.timerTopicState, 'unrelated'); assert.equal(state.timerExempt, false);
+});
+
+test('an in-flight topic estimate does not block mode changes and cannot exempt the replacement mode', async () => {
+  let release, started;
+  const gate = new Promise(resolve => {release = resolve;}), began = new Promise(resolve => {started = resolve;});
+  const h = topicHarness(async () => {started(); await gate; return [matchingTopic()];});
+  const pending = checkTopic(h); await began;
+  const changed = await h.send({type: 'SET_MODE', mode: 'work'}, topicSender());
+  assert.equal(changed.settings.mode, 'work'); assert.equal(changed.timerExempt, false);
+  h.advance(2000); assert.equal((await tabState(h, 1)).usedMs, 2000);
+  release(); assert.equal((await pending).stale, true);
+  const state = await tabState(h, 1); assert.equal(state.settings.mode, 'work'); assert.equal(state.timerExempt, false);
+});
+
+test('new navigation wins over an old topic response and tab removal cannot resurrect its review', async () => {
+  let release, started;
+  const gate = new Promise(resolve => {release = resolve;}), began = new Promise(resolve => {started = resolve;});
+  const h = topicHarness(async videos => {if (videos[0].id === topicID) {started(); await gate; return [unrelatedTopic()];} return [matchingTopic()];});
+  const old = checkTopic(h); await began;
+  await h.updateTab(1, {url: topicURL(nextTopicID)});
+  const fresh = await checkTopic(h, topicVideo(nextTopicID), topicSender(1, nextTopicID));
+  assert.equal(fresh.videoTopic.videoId, nextTopicID); assert.equal(fresh.videoTopic.status, 'matching');
+  release(); assert.equal((await old).stale, true);
+  const state = await tabState(h, 1); assert.equal(state.videoTopic.videoId, nextTopicID); assert.equal(state.timerExempt, true);
+
+  let finish, announce;
+  const held = new Promise(resolve => {finish = resolve;}), notified = new Promise(resolve => {announce = resolve;});
+  const removed = topicHarness(async () => {announce(); await held; return [unrelatedTopic()];});
+  const pending = checkTopic(removed); await notified; await removed.removeTab(1); finish();
+  assert.equal((await pending).stale, true); assert.equal(Object.hasOwn(removed.session.timerReviews, '1'), false);
+  assert.equal(Object.hasOwn(removed.session.tabModes, '1'), false);
+});
+
+test('pausing or editing intent meaning invalidates an in-flight video estimate', async () => {
+  for (const mutation of [{type: 'SET_TAB_PAUSED', paused: true}, {type: 'UPDATE_SETTINGS', patch: {intentDescriptions: {music: 'Only classical piano practice'}}}]) {
+    let release, started;
+    const gate = new Promise(resolve => {release = resolve;}), began = new Promise(resolve => {started = resolve;});
+    const h = topicHarness(async () => {started(); await gate; return [unrelatedTopic()];});
+    const pending = checkTopic(h); await began;
+    await h.send(mutation, mutation.type === 'SET_TAB_PAUSED' ? topicSender() : undefined);
+    release(); assert.equal((await pending).stale, true);
+    const state = await tabState(h, 1); assert.equal(state.timerExempt, true); assert.equal(state.tabCounting, false);
+  }
+});
+
+test('non-video pages restore the whole-intent exemption and Off follows its own timer policy', async () => {
+  const h = topicHarness(async () => [unrelatedTopic()]);
+  await checkTopic(h); h.advance(1000); assert.equal((await tabState(h, 1)).usedMs, 1000);
+  await h.updateTab(1, {url: 'https://www.youtube.com/results?search_query=piano'});
+  let state = await tabState(h, 1); assert.equal(state.timerTopicState, 'not-video'); assert.equal(state.timerExempt, true); assert.equal(state.videoTopic, null);
+  h.advance(3000); assert.equal((await tabState(h, 1)).usedMs, 1000);
+  await h.updateTab(1, {url: 'https://www.youtube.com/'});
+  state = await tabState(h, 1); assert.equal(state.timerTopicState, 'not-video'); assert.equal(state.timerExempt, true);
+  await h.send({type: 'SET_MODE', mode: 'off'}, fromTab(1));
+  h.advance(2000); state = await tabState(h, 1); assert.equal(state.usedMs, 3000); assert.equal(state.timerTopicState, 'off'); assert.equal(state.timerExempt, false);
+  await h.send({type: 'UPDATE_SETTINGS', patch: {countModes: {off: false}}});
+  h.advance(2000); assert.equal((await tabState(h, 1)).usedMs, 3000);
+});
+
+test('unrelated exempt-mode videos reach the daily block without denying navigation to exempt videos', async () => {
+  const h = harness({settings: {mode: 'music', dailyMinutes: 1, matchOnlyModes: {music: true}}, days: {'2026-10-24': 59000}}, undefined, undefined, async videos => [videos[0].id === topicID ? unrelatedTopic() : matchingTopic()]);
+  h.setTabs([{id: 1, windowId: 1, active: true, url: topicURL(topicID)}, {id: 2, windowId: 1, active: false, url: topicURL(nextTopicID)}]);
+  await checkTopic(h); await checkTopic(h, topicVideo(nextTopicID), topicSender(2, nextTopicID));
+  h.advance(1000); const unrelated = await tabState(h, 1), matching = await tabState(h, 2);
+  assert.equal(unrelated.usedMs, 60000); assert.equal(unrelated.blocked, true); assert.equal(matching.blocked, false); assert.equal(matching.timerExempt, true);
+  assert.ok(h.redirects.some(change => change.id === 1 && change.url === 'chrome-extension://intent/blocked.html'));
+  assert.equal(h.redirects.some(change => change.id === 2), false);
+  assert.equal(h.perTabRules.get(2), undefined, 'a conditional exemption does not ban all navigation in its tab');
+  assert.deepEqual(h.perTabRules.get(3).condition.tabIds, [1, 2], 'mode-based allow rules let the user leave for Home/search or a matching video');
+  await h.updateTab(1, {url: 'https://www.youtube.com/'});
+  const home = await tabState(h, 1); assert.equal(home.blocked, false); assert.equal(home.timerExempt, true); assert.equal(home.videoTopic, null);
+});
+
+test('clearly unrelated playback counts in the background while matching foreground videos stay exempt', async () => {
+  const h = topicHarness(async videos => [videos[0].id === topicID ? unrelatedTopic() : matchingTopic()]);
+  h.setTabs([{id: 1, windowId: 1, active: false, audible: true, url: topicURL(topicID)}, {id: 2, windowId: 1, active: true, url: topicURL(nextTopicID)}]);
+  await checkTopic(h); await checkTopic(h, topicVideo(nextTopicID), topicSender(2, nextTopicID));
+  let foreground = await tabState(h, 2);
+  assert.equal(foreground.timerExempt, true); assert.equal(foreground.tabCounting, false); assert.equal(foreground.timerRunning, true);
+  assert.equal((await tabState(h, 1)).tabCounting, true);
+  h.advance(5000); assert.equal((await tabState(h, 2)).usedMs, 5000);
+  await h.send({type: 'SET_TAB_PAUSED', paused: true}, topicSender());
+  foreground = await tabState(h, 2); assert.equal(foreground.timerRunning, false);
+  h.advance(5000); assert.equal((await tabState(h, 2)).usedMs, 5000, 'pausing unrelated background playback stops its contribution');
+});
+
+test('pending navigation from a conditional break page can reach Home, search and a new matching video', async () => {
+  for (const destination of ['https://www.youtube.com/', 'https://www.youtube.com/results?search_query=piano', topicURL(nextTopicID)]) {
+    const h = harness({settings: {mode: 'music', dailyMinutes: 1, matchOnlyModes: {music: true}}, days: {'2026-10-24': 60000}}, undefined, undefined, async videos => [videos[0].id === topicID ? unrelatedTopic() : matchingTopic()]);
+    h.setTabs([{id: 1, windowId: 1, active: true, url: topicURL(topicID)}]);
+    const blocked = await checkTopic(h); assert.equal(blocked.blocked, true);
+    const redirectsBefore = h.redirects.length;
+    // Chrome retains the old extension URL while the destination is pending.
+    h.setTabs([{id: 1, windowId: 1, active: true, url: 'chrome-extension://intent/blocked.html', pendingUrl: destination}]);
+    const pending = await tabState(h, 1);
+    assert.equal(pending.blocked, false, destination); assert.equal(pending.timerExempt, true);
+    assert.equal(pending.videoTopic, null, 'the old unrelated video cannot own a pending destination');
+    assert.equal(pending.timerTopicState, destination.includes('/watch?') ? 'checking' : 'not-video');
+    assert.equal(h.redirects.length, redirectsBefore, 'the old review cannot cancel the pending navigation by redirecting again');
+    if (destination.includes('/watch?')) {
+      h.setTabs([{id: 1, windowId: 1, active: true, url: destination}]);
+      const matched = await checkTopic(h, topicVideo(nextTopicID), topicSender(1, nextTopicID));
+      assert.equal(matched.videoTopic.status, 'matching'); assert.equal(matched.blocked, false);
+    }
+  }
+});
