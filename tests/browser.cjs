@@ -373,13 +373,13 @@ async function chooseMode(toolbar, mode, customName) {
     document.querySelector('#logo').addEventListener('click',event=>{
       event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{url:'/'}}));history.pushState({},'', '/');
       document.dispatchEvent(new Event('yt-navigate-finish'));
-      window.outgoingWatchDisplay=getComputedStyle(document.querySelector('#native-related')).display;
+      const style=getComputedStyle(document.querySelector('#native-related'));window.outgoingWatchVisible=style.display!=='none'&&style.visibility!=='hidden';
     });
   });
   await yt.locator('#logo').click();
-  assert.equal(await yt.evaluate(()=>outgoingWatchDisplay),'none','navigation finish never reveals outgoing native watch recommendations');
+  assert.equal(await yt.evaluate(()=>outgoingWatchVisible),false,'navigation finish never reveals outgoing native watch recommendations');
   await yt.waitForTimeout(180); // Let the normal coalesced DOM scan run with the outgoing renderer still visible.
-  assert.equal(await yt.locator('#native-related').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal(await yt.locator('#native-related').isVisible(),false);
   assert.equal(await yt.locator('#playing-video').isVisible(),true,'the player remains visible while YouTube has not replaced its watch renderer');
   assert.equal(await yt.evaluate(()=>testPlayer===document.querySelector('#playing-video')&&testPlayer.currentTime===37&&playerPauses===0),true);
   const incomingHome=await yt.evaluate(()=>{

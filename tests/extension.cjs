@@ -367,12 +367,12 @@ async function chooseMode(toolbar, mode, customName) {
     document.querySelector('#logo').addEventListener('click',event=>{
       event.preventDefault();document.dispatchEvent(new CustomEvent('yt-navigate-start',{detail:{endpoint:{commandMetadata:{webCommandMetadata:{url:'/'}}}}}));history.pushState({},'', '/');
       document.dispatchEvent(new Event('yt-navigate-finish'));
-      window.outgoingWatchDisplay=getComputedStyle(document.querySelector('#native-related')).display;
+      const style=getComputedStyle(document.querySelector('#native-related'));window.outgoingWatchVisible=style.display!=='none'&&style.visibility!=='hidden';
     });
   });
-  await yt.locator('#logo').click();assert.equal(await yt.evaluate(()=>outgoingWatchDisplay),'none','the outgoing native watch recommendations remain hidden at navigation finish');
+  await yt.locator('#logo').click();assert.equal(await yt.evaluate(()=>outgoingWatchVisible),false,'the outgoing native watch recommendations remain hidden at navigation finish');
   await yt.waitForTimeout(180); // Exercise the coalesced scan while the old visible watch renderer remains.
-  assert.equal(await yt.locator('#native-related').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal(await yt.locator('#native-related').isVisible(),false);
   assert.equal(await yt.locator('#playing-video').isVisible(),true);
   assert.equal(await yt.evaluate(()=>transitionPlayer===document.querySelector('#playing-video')&&transitionPlayer.currentTime===transitionTime&&playerPauses===0),true,'protecting outgoing recommendations leaves the player untouched');
   const incomingHome=await yt.evaluate(()=>{

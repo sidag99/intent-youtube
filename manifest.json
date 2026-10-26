@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Intent — YouTube with purpose",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A focused YouTube: customizable intents, local topic filtering, fewer distractions, and a daily time budget.",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "alarms", "idle", "offscreen", "scripting", "declarativeNetRequestWithHostAccess"],

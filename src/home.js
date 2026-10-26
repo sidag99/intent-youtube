@@ -6,7 +6,7 @@
       this.runtime = runtime; this.surface = surface === 'watch' ? 'watch' : 'home';
       this.nativeMarker = `data-intent-native-${this.surface}`;
       this.pageMarker = this.surface === 'watch' ? 'data-intent-watch-feed' : 'data-intent-feed';
-      this.generation = 0; this.signature = ''; this.items = []; this.round = 0; this.busy = false; this.nativeElements = new Set(); this.spacingElements = new Set(); this.regularCards = [];
+      this.generation = 0; this.signature = ''; this.items = []; this.round = 0; this.busy = false; this.nativeElements = new Set(); this.nativeSurfaces = new Map(); this.spacingElements = new Set(); this.regularCards = [];
     }
     static theme() {
       const html = document.documentElement;
@@ -40,25 +40,20 @@
         this.restoreNative();
         primary.prepend(this.host);
       }
+      this.syncNative(primary);
       this.updateTheme();
       if (this.surface === 'home') {
         if (!this.observing) {this.resizeObserver.observe(this.host); this.observing = true;}
         // Use the native grid's chosen column count, without adding an outer gutter or width cap.
         const native = primary.querySelector('ytd-rich-grid-renderer');
-        const columns = native && parseInt(getComputedStyle(native).getPropertyValue('--ytd-rich-grid-items-per-row'), 10);
-        if (columns >= 1 && columns <= 12) { this.host.style.setProperty('--intent-grid-columns', columns); this.host.dataset.nativeColumns = ''; }
-        else { this.host.style.removeProperty('--intent-grid-columns'); delete this.host.dataset.nativeColumns; }
+        const measuredWidth = native?.getBoundingClientRect().width || 0;
+        const columns = measuredWidth >= primary.getBoundingClientRect().width * .8 && measuredWidth >= 120 && parseInt(getComputedStyle(native).getPropertyValue('--ytd-rich-grid-items-per-row'), 10);
+        if (columns >= 1 && columns <= 12 && (columns > 1 || measuredWidth < 640)) { this.host.style.setProperty('--intent-grid-columns', columns); this.host.dataset.nativeColumns = ''; }
+        else if (!this.host.hasAttribute('data-native-columns')) this.host.style.removeProperty('--intent-grid-columns');
       }
       else this.matchWatchThumbnail(primary);
       document.documentElement.setAttribute(this.pageMarker, '');
       if (this.surface === 'home') this.collapseEmptySpacing(renderer, primary);
-      for (const child of this.nativeElements) if (child.parentElement !== primary) {
-        child.removeAttribute(this.nativeMarker); this.nativeElements.delete(child);
-      }
-      for (const child of primary.children) if (child !== this.host && !child.hasAttribute(this.nativeMarker)) {
-        child.setAttribute(this.nativeMarker, ''); this.nativeElements.add(child);
-        if (this.surface === 'home') child.querySelectorAll('video,audio').forEach(m => m.pause());
-      }
       // Bootstrap JSON can be large. Read it once per renderer/navigation rather
       // than reparsing it on every coalesced DOM update.
       const localeSource = `${location.href}\n${document.documentElement.lang}`;
@@ -72,6 +67,40 @@
         this.signature = signature; this.locale = locale; this.videoId = videoId; this.round = 0; this.restart(false);
       }
       this.layoutHome(); this.syncRecommendations();
+    }
+    syncNative(primary) {
+      for (const child of this.nativeElements) if (child.parentElement !== primary) {
+        this.restoreSurface(child); child.removeAttribute(this.nativeMarker); this.nativeElements.delete(child);
+      }
+      const rect = primary.getBoundingClientRect(), top = Math.max(0, document.querySelector('ytd-masthead')?.getBoundingClientRect().bottom || 56);
+      for (const child of primary.children) if (child !== this.host) {
+        if (!child.hasAttribute(this.nativeMarker)) {
+          child.setAttribute(this.nativeMarker, ''); this.nativeElements.add(child);
+          if (this.surface === 'home') child.querySelectorAll('video,audio').forEach(m => m.pause());
+        }
+        if (rect.width < 120 || !child.matches('ytd-rich-grid-renderer,ytd-watch-next-secondary-results-renderer') && !child.querySelector('ytd-rich-item-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytd-continuation-item-renderer')) continue;
+        let saved = this.nativeSurfaces.get(child);
+        if (!saved) {
+          saved = {styles: new Map(), hadStyle: child.hasAttribute('style'), inert: child.hasAttribute('inert'), aria: child.getAttribute('aria-hidden')}; this.nativeSurfaces.set(child, saved);
+        }
+        // display:none makes YouTube's responsive/virtualized renderer collapse
+        // and sometimes discard its cards. Keep its real width, out of flow and
+        // invisible/inert, so native recommendations remain available to filter.
+        const properties = {visibility:'hidden',opacity:'0','pointer-events':'none',position:'fixed',left:`${rect.left}px`,top:`${top}px`,width:`${rect.width}px`,'max-width':'none',height:`${Math.max(1, innerHeight - top)}px`,overflow:'hidden','z-index':'-1',display:'block'};
+        for (const [name, value] of Object.entries(properties)) {
+          if (!saved.styles.has(name)) saved.styles.set(name, [child.style.getPropertyValue(name), child.style.getPropertyPriority(name)]);
+          if (child.style.getPropertyValue(name) !== value || child.style.getPropertyPriority(name) !== 'important') child.style.setProperty(name, value, 'important');
+        }
+        child.setAttribute('data-intent-recommendation-source',''); child.setAttribute('inert',''); child.setAttribute('aria-hidden','true');
+      }
+    }
+    restoreSurface(child) {
+      const saved = this.nativeSurfaces.get(child); if (!saved) return;
+      for (const [name, [value, priority]] of saved.styles) {if (value) child.style.setProperty(name,value,priority); else child.style.removeProperty(name);}
+      if (!saved.hadStyle && !child.getAttribute('style')?.trim()) child.removeAttribute('style');
+      if (!saved.inert) child.removeAttribute('inert');
+      if (saved.aria === null) child.removeAttribute('aria-hidden'); else child.setAttribute('aria-hidden',saved.aria);
+      child.removeAttribute('data-intent-recommendation-source'); this.nativeSurfaces.delete(child);
     }
     create() {
       this.host = document.createElement('section'); this.host.id = `intent-${this.surface}-feed`; this.host.dataset.surface = this.surface;
@@ -186,7 +215,7 @@
     }
     restart(fresh) {
       this.nativePagination?.cancel(); this.nativePool = new Map(); this.nativeChecked = new Map(); this.recommendedItems = []; this.nativeLimit = 96; this.nativeJob = null; this.nativeMoreBusy = false; this.nativeRetryAt = 0;
-      this.recommendedSection.hidden = true; this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedMore.disabled = false; this.recommendedMessage.textContent = ''; this.recommendedMore.textContent = 'Find more recommendations'; this.discoveryActions.append(this.recommendedMore);
+      this.recommendedSection.hidden = true; this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedMore.disabled = false; this.recommendedMessage.textContent = 'No matching recommendations yet.'; this.recommendedMore.textContent = 'Find more recommendations'; this.discoveryActions.append(this.recommendedMore);
       this.generation++; this.items = []; this.cursor = 0; this.pageCursor = null; this.hasMore = true; this.busy = false; this.autoBatches = 0; this.loadFailed = false; this.restartRequired = false; this.endReason = '';
       this.endState.hidden = true; this.more.textContent = 'Find more videos';
       this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
@@ -281,6 +310,7 @@
       const current = () => generation === this.generation && signature === this.signature && this.host?.isConnected;
       const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeChecked.size));
       if (!pending().length) return Promise.resolve();
+      if (!this.recommendedItems.length) this.recommendedMessage.textContent = 'Checking your YouTube recommendations…';
       const job = (async () => {
         while (current()) {
           const videos = pending().slice(0, 48); if (!videos.length) break;
@@ -304,6 +334,8 @@
       this.recommendedShorts.hidden = !this.recommendedShortGrid.childElementCount;
       if (focusedVideo) [...this.recommendedSection.querySelectorAll('.card')].find(node => node.dataset.videoId === focusedVideo)?.querySelector(focusedClass === 'cover' ? '.cover' : '.title')?.focus({preventScroll: true});
       this.recommendedSection.hidden = !this.recommendedItems.length;
+      if (!this.recommendedItems.length) this.recommendedMessage.textContent = 'No matching recommendations yet.';
+      else if (/^(Checking your YouTube recommendations|No matching recommendations yet)/.test(this.recommendedMessage.textContent)) this.recommendedMessage.textContent = '';
       if (this.recommendedItems.length) this.setFeedState('active');
       const target = this.recommendedItems.length ? this.recommendedActions : this.discoveryActions;
       if (this.recommendedMore.parentElement !== target) { const focused = this.host.shadowRoot.activeElement === this.recommendedMore; target.append(this.recommendedMore); if (focused) this.recommendedMore.focus({preventScroll: true}); }
@@ -386,7 +418,7 @@
     }
     restoreNative() {
       // Keep references so even detached nodes are restored before YouTube reuses them.
-      for (const el of this.nativeElements) el.removeAttribute(this.nativeMarker);
+      for (const el of this.nativeElements) {this.restoreSurface(el); el.removeAttribute(this.nativeMarker);}
       this.nativeElements.clear();
       for (const el of this.spacingElements) {el.removeAttribute('data-intent-empty-home-spacing'); el.removeAttribute('data-intent-home-glass'); el.style.removeProperty('--intent-masthead-glass-height');}
       this.spacingElements.clear();

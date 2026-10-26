@@ -36,13 +36,17 @@
     const button=continuation.querySelector('button:not(:disabled),[role="button"]:not([aria-disabled="true"])');
     if(button){button.click();queueMicrotask(check);return;}
     // The hidden native list cannot trigger its infinite-scroll sentinel. Give
-    // only that sentinel a 1px intersecting box, with the entire list transparent,
+    // only that sentinel a 1px intersecting box, keeping the native list full-width,
     // clipped, inert and inaccessible. Restore every owned change after one batch.
     let owner=continuation;while(owner.parentElement&&owner.parentElement!==primary)owner=owner.parentElement;
-    const top=Math.max(60,document.querySelector('ytd-masthead')?.getBoundingClientRect().bottom+4||60)+'px';
-    for(const [name,value] of Object.entries({display:'block',position:'fixed',left:'4px',top,width:'1px',height:'1px',overflow:'hidden',opacity:'0','pointer-events':'none','z-index':'-1'}))style(owner,name,value);
-    const hadInert=owner.hasAttribute('inert'),aria=owner.getAttribute('aria-hidden');owner.setAttribute('inert','');owner.setAttribute('aria-hidden','true');restore.push(()=>{if(!hadInert)owner.removeAttribute('inert');if(aria===null)owner.removeAttribute('aria-hidden');else owner.setAttribute('aria-hidden',aria);});
-    for(const [name,value] of Object.entries({display:'block',position:'fixed',left:'4px',top,width:'1px',height:'1px','min-height':'1px','max-height':'1px'}))style(continuation,name,value);
+    const top=Math.max(60,document.querySelector('ytd-masthead')?.getBoundingClientRect().bottom+4||60)+'px',rect=primary.getBoundingClientRect(),left=Math.max(0,rect.left)+'px';
+    // Home/Watch already owns a full-width hidden surface. Leave its geometry
+    // alone so live resize updates cannot be overwritten by a pagination snapshot.
+    if(!owner.hasAttribute('data-intent-recommendation-source')){
+     for(const [name,value] of Object.entries({display:'block',position:'fixed',left,top,width:Math.max(120,rect.width||innerWidth)+'px',height:Math.max(1,innerHeight-parseFloat(top))+'px',overflow:'hidden',visibility:'hidden',opacity:'0','pointer-events':'none','z-index':'-1'}))style(owner,name,value);
+     const hadInert=owner.hasAttribute('inert'),aria=owner.getAttribute('aria-hidden');owner.setAttribute('inert','');owner.setAttribute('aria-hidden','true');restore.push(()=>{if(!hadInert)owner.removeAttribute('inert');if(aria===null)owner.removeAttribute('aria-hidden');else owner.setAttribute('aria-hidden',aria);});
+    }
+    for(const [name,value] of Object.entries({display:'block',position:'fixed',left,top,width:'1px',height:'1px','min-height':'1px','max-height':'1px'}))style(continuation,name,value);
     queueMicrotask(check);
    });
   }
