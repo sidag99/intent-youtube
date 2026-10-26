@@ -89,6 +89,16 @@
     try { const u = new URL(url); if (u.protocol === 'https:' && (u.hostname === 'ytimg.com' || u.hostname.endsWith('.ytimg.com'))) return u.href; } catch {}
     return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   }
+  function channelArtwork(value) {
+    if(typeof value!=='string'||value.length>2048)return {};
+    try {const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['yt3.ggpht.com','yt3.googleusercontent.com'].includes(u.hostname))return {channelThumbnail:u.href};}catch{}
+    return {};
+  }
+  function movingArtwork(value,id) {
+    if(typeof value!=='string'||value.length>2048)return {};
+    try {const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&(u.hostname==='ytimg.com'||u.hostname.endsWith('.ytimg.com'))&&u.pathname.startsWith('/an_webp/'+id+'/'))return {movingThumbnail:u.href};}catch{}
+    return {};
+  }
   function hashtags(text) {
     return [...new Set((String(text).match(/#[\p{L}\p{N}_]+/gu) || []).slice(0, 30).map(t => t.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ')))];
   }
@@ -105,7 +115,7 @@
     const overlays = v.thumbnailOverlays || [];
     const shorts = /\/shorts\//.test(v.navigationEndpoint?.commandMetadata?.webCommandMetadata?.url || '') || overlays.some(o => o.thumbnailOverlayTimeStatusRenderer?.style === 'SHORTS');
     const sources = v.thumbnail?.thumbnails || [];
-    return {id: v.videoId, title, channel: plain(v.ownerText || v.longBylineText || v.shortBylineText).slice(0, 200), description: plain(v.detailedMetadataSnippets?.[0]?.snippetText || v.descriptionSnippet).slice(0, 600), duration: plain(v.lengthText).slice(0, 30), metadata: [plain(v.shortViewCountText || v.viewCountText), plain(v.publishedTimeText)].filter(Boolean).join(' · ').slice(0, 120), thumbnail: thumbnail(sources.at(-1)?.url, v.videoId), shorts};
+    return {...movingArtwork(v.richThumbnail?.movingThumbnailRenderer?.movingThumbnailDetails?.thumbnails?.at(-1)?.url,v.videoId), ...channelArtwork(v.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.at(-1)?.url || v.avatar?.avatarViewModel?.image?.sources?.at(-1)?.url), id: v.videoId, title, channel: plain(v.ownerText || v.longBylineText || v.shortBylineText).slice(0, 200), description: plain(v.detailedMetadataSnippets?.[0]?.snippetText || v.descriptionSnippet).slice(0, 600), duration: plain(v.lengthText).slice(0, 30), metadata: [plain(v.shortViewCountText || v.viewCountText), plain(v.publishedTimeText)].filter(Boolean).join(' · ').slice(0, 120), thumbnail: thumbnail(sources.at(-1)?.url, v.videoId), shorts};
   }
   function modern(v) {
     if (!/^[\w-]{11}$/.test(v.contentId || '') || v.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO') return null;
@@ -116,7 +126,7 @@
     const image = v.contentImage?.thumbnailViewModel;
     const sources = image?.image?.sources || [];
     const badges = (image?.overlays || []).flatMap(o => o.thumbnailOverlayBadgeViewModel?.thumbnailBadges || []);
-    return {id: v.contentId, title, channel: plain(rows[0]?.metadataParts?.[0]?.text).slice(0, 200), description: '', metadata: rows.slice(1).flatMap(r => r.metadataParts || []).map(p => plain(p.text)).filter(Boolean).join(' · ').slice(0, 120), duration: badges.map(b => plain(b.thumbnailBadgeViewModel?.text)).find(t => /^\d[\d:]*$/.test(t)) || '', thumbnail: thumbnail(sources.at(-1)?.url, v.contentId), shorts: badges.some(b => /shorts/i.test(plain(b.thumbnailBadgeViewModel?.text)))};
+    return {...channelArtwork(meta?.image?.avatarViewModel?.image?.sources?.at(-1)?.url), id: v.contentId, title, channel: plain(rows[0]?.metadataParts?.[0]?.text).slice(0, 200), description: '', metadata: rows.slice(1).flatMap(r => r.metadataParts || []).map(p => plain(p.text)).filter(Boolean).join(' · ').slice(0, 120), duration: badges.map(b => plain(b.thumbnailBadgeViewModel?.text)).find(t => /^\d[\d:]*$/.test(t)) || '', thumbnail: thumbnail(sources.at(-1)?.url, v.contentId), shorts: badges.some(b => /shorts/i.test(plain(b.thumbnailBadgeViewModel?.text)))};
   }
   function shortVideo(v) {
     const commands = [v.navigationEndpoint, v.onTap?.innertubeCommand, v.onTap, v.command?.innertubeCommand, v.command, v.inlinePlayerData?.onVisible?.innertubeCommand, v.rendererContext?.commandContext?.onTap?.innertubeCommand].filter(Boolean);

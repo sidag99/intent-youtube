@@ -6,6 +6,7 @@
     const files = entry?.js?.filter(file => typeof file === 'string' && /^src\/[a-z0-9-]+\.js$/i.test(file)) || [];
     const css = entry?.css?.filter(file => typeof file === 'string' && /^src\/[a-z0-9-]+\.css$/i.test(file)) || [];
     if (!files.includes('src/content.js') || files.length !== entry.js.length || css.length !== (entry.css || []).length) return null;
+    const mainFiles = api.runtime.getManifest().content_scripts?.filter(item=>item.world==='MAIN'&&item.all_frames!==true).flatMap(item=>item.js||[]).filter(file=>file==='src/native-renderer.js') || [];
     const jobs = new Map(), attempted = new Map();
     function trusted(tab) {
       if (!Number.isInteger(tab?.id)) return false;
@@ -34,6 +35,7 @@
         // manual page refresh upgrades those tabs without duplicating controllers.
         if (!ownership || typeof ownership.owned !== 'boolean' || typeof ownership.legacy !== 'boolean' || ownership.legacy && !ownership.owned) return false;
         if (css.length) await api.scripting.insertCSS({target, files: css});
+        if(mainFiles.length)await api.scripting.executeScript({target, files:mainFiles,world:'MAIN',injectImmediately:true});
         await api.scripting.executeScript({target, files, world: 'ISOLATED', injectImmediately: true});
         return true;
       })().catch(() => false);

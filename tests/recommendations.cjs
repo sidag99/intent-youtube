@@ -65,6 +65,63 @@ const snapshot = page => page.evaluate(() => {
     assert.equal(await page.evaluate(() => linkExecuted), false);
     console.log('PASS native recommendation parsing: legacy/modern cards, regional text, Shorts, deduplication and current/ad/hidden/owned/spoof exclusions');
 
+    // A long-lived homepage can already hold several continuation batches. Scan
+    // beyond the default batch without re-admitting unchanged native elements.
+    const manyIds = Array.from({length: 630}, (_, index) => `L${String(index).padStart(10, '0')}`);
+    await page.locator('#primary').evaluate((primary, html) => {primary.innerHTML = html;}, manyIds.map(id => legacy(id)).join(''));
+    const largeScan = await page.evaluate(() => {
+      const primary = document.querySelector('#primary'), scanned = new WeakMap(), nodes = new Map();
+      const batches = Array.from({length: 4}, () => IntentRecommendations.read(primary, '', {scanned, nodes}).map(v => v.id));
+      const expanded = IntentRecommendations.read(primary, '', {limit: 1000});
+      const excluded = IntentRecommendations.read(primary, '', {exclude: new Set(expanded.slice(0, 620).map(v => v.id)), limit: 5});
+      const reused = primary.querySelector('ytd-rich-item-renderer');
+      reused.querySelector('a[href]').setAttribute('href', '/watch?v=R0000000999');
+      reused.querySelector('#video-title').setAttribute('title', 'A newly reused native card');
+      const changed = IntentRecommendations.read(primary, '', {scanned, nodes});
+      return {batches, expanded: expanded.map(v => v.id), excluded: excluded.map(v => v.id), changed: changed.map(v => v.id), nodeCount: nodes.size, nodeIdentity: nodes.get('R0000000999') === reused};
+    });
+    assert.deepEqual(largeScan.batches, [manyIds.slice(0, 240), manyIds.slice(240, 480), manyIds.slice(480), []]);
+    assert.deepEqual(largeScan.expanded, manyIds); assert.deepEqual(largeScan.excluded, manyIds.slice(620, 625));
+    assert.deepEqual(largeScan.changed, ['R0000000999']); assert.equal(largeScan.nodeCount, 631); assert.equal(largeScan.nodeIdentity, true);
+    console.log('PASS native scans retain candidates beyond 240, resume without duplicates, exclude known IDs and detect reused native nodes');
+
+    await page.locator('#primary').evaluate((primary, html) => {
+      primary.innerHTML = `<div id="large-owner">${html}<ytd-continuation-item-renderer><button id="large-more">More</button></ytd-continuation-item-renderer></div>`;
+      window.largeSettled = false; window.largeClicks = 0;
+      const append = id => {const card = document.createElement('ytd-video-renderer'); card.innerHTML = `<a href="/watch?v=${id}"><h3>Loaded native candidate</h3></a>`; document.querySelector('#large-owner').append(card);};
+      document.querySelector('#large-more').onclick = () => {largeClicks++; append('K0000000998'); append('L0000000629');};
+      window.releaseLargeBatch = () => append('N0000000999');
+      window.largePending = new IntentRecommendations.Pagination().load(primary, '', ['K0000000998']).then(result => {largeSettled = true; return result;});
+    }, manyIds.map(id => legacy(id)).join(''));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    assert.equal(await page.evaluate(() => largeSettled), false, 'existing candidates after index 240 and previously known off-DOM IDs cannot finish pagination');
+    await page.evaluate(() => releaseLargeBatch());
+    assert.deepEqual(await page.evaluate(() => largePending), {available: true, added: true});
+    assert.equal(await page.evaluate(() => largeClicks), 1);
+
+    // Shelf continuations request different surfaces and must never be used as
+    // the homepage's next page, even when they occur after its real control.
+    const excludedContinuations = [
+      '<section hidden>', '<section data-intent-hidden>', '<section data-intent-short-shelf>',
+      '<section id="intent-home-feed">', '<section id="intent-watch-feed">',
+      '<ytd-reel-shelf-renderer>', '<ytd-rich-shelf-renderer>', '<ytd-rich-section-renderer>',
+      '<yt-shelf-view-model>', '<yt-grid-shelf-view-model>'
+    ].map((opening, index) => `${opening}<ytd-continuation-item-renderer><button data-control="excluded-${index}">Unrelated continuation</button></ytd-continuation-item-renderer></${opening.match(/^<([\w-]+)/)[1]}>`).join('');
+    await page.locator('#primary').evaluate((primary, excluded) => {
+      primary.innerHTML = `<ytd-continuation-item-renderer><button data-control="earlier">Earlier main continuation</button></ytd-continuation-item-renderer><ytd-continuation-item-renderer><button data-control="main" disabled>Disabled</button><button role="button" aria-disabled="true">Disabled role</button><button data-control="latest">Latest main continuation</button></ytd-continuation-item-renderer>${excluded}`;
+      window.continuationClicks = [];
+      for (const button of primary.querySelectorAll('button')) button.onclick = () => {
+        continuationClicks.push(button.dataset.control || 'disabled');
+        const card = document.createElement('ytd-video-renderer'); card.innerHTML = '<a href="/watch?v=P0000000999"><h3>Main continuation result</h3></a>'; primary.append(card);
+      };
+      window.filteredContinuation = new IntentRecommendations.Pagination().load(primary);
+    }, excludedContinuations);
+    assert.deepEqual(await page.evaluate(() => filteredContinuation), {available: true, added: true});
+    assert.deepEqual(await page.evaluate(() => continuationClicks), ['latest']);
+    await page.locator('#primary').evaluate((primary, html) => {primary.innerHTML = html;}, excludedContinuations);
+    assert.deepEqual(await page.evaluate(() => new IntentRecommendations.Pagination().load(document.querySelector('#primary'))), {available: false, added: false});
+    console.log('PASS pagination with more than 240 existing candidates and explicit exclusion of hidden, owned and Shorts/shelf continuations');
+
     // Native continuation buttons are used directly. Duplicate/current-video
     // mutations cannot finish a batch before a genuinely new candidate appears.
     await page.locator('#primary').evaluate((primary, {html, current, next}) => {

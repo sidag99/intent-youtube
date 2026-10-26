@@ -20,13 +20,26 @@
     }));
   }
   function dot(a, b) { let sum = 0; for (let i = 0; i < a.length; i++) sum += a[i] * b[i]; return sum; }
-  function decide(vector, modeVectors, mode, customized = false) {
-    const scores = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, Math.max(...refs.map(ref => dot(vector, ref)))]));
+  function nonMusicalAmbience(video) {
+    const content = `${String(video?.title || '').slice(0, 500)} ${String(video?.description || '').slice(0, 1800)}`;
+    const excludesMusic = /\b(?:no\s+(?:background\s+)?music|no\s+(?:talking|speech|voices?)\s+or\s+music|without\s+(?:any\s+)?music)\b/i.test(content);
+    const naturalSounds = /\b(?:rain(?:fall)?|thunder(?:storm)?|ocean|waves|waterfalls?|forest|birds?|wind|nature|natural sounds?|asmr)\b/i.test(content);
+    const performance = /\b(?:a cappella|singing|sung|vocal performance|(?:piano|guitar|violin|cello|saxophone|drum) performance)\b/i.test(content);
+    return excludesMusic && naturalSounds && !performance;
+  }
+  function decide(vector, modeVectors, mode, customized = false, video) {
+    const similarities = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, refs.map(ref => dot(vector, ref)).sort((a, b) => b - a)]));
+    const scores = Object.fromEntries(Object.entries(similarities).map(([k, values]) => [k, values[0] || 0]));
     const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const selected = scores[mode] || 0;
     const other = Math.max(0, ...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
     // Similarities are not calibrated probabilities. Each intent qualifies independently; a higher score in another intent is not a veto.
-    return {accepted: customized ? selected >= .30 : selected >= .26, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other, categoryId: ranked[0]?.[0] || null, categorySimilarity: ranked[0]?.[1] || 0, categoryMargin: (ranked[0]?.[1] || 0) - (ranked[1]?.[1] || 0)};
+    let accepted = customized ? selected >= .30 : selected >= .26;
+    // Broad Music examples can match an incidental word such as "quiet" or
+    // "live". Require a second musical reference for moderate scores, while
+    // retaining strong specific performances and cross-intent overlap.
+    if (mode === 'music' && !customized) accepted = accepted && (selected >= .40 || (similarities.music?.[1] || 0) >= .24) && !nonMusicalAmbience(video);
+    return {accepted, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other, categoryId: ranked[0]?.[0] || null, categorySimilarity: ranked[0]?.[1] || 0, categoryMargin: (ranked[0]?.[1] || 0) - (ranked[1]?.[1] || 0)};
   }
   globalThis.IntentSemantic = {PROFILES, text, profiles, dot, decide};
 })();

@@ -105,6 +105,7 @@
     create() {
       this.host = document.createElement('section'); this.host.id = `intent-${this.surface}-feed`; this.host.dataset.surface = this.surface;
       const root = this.host.attachShadow({mode: 'open'});
+      if(globalThis.IntentNativeCards)this.nativeCards=new IntentNativeCards(this.host,this.surface);
       const style = document.createElement('style'); style.textContent = globalThis.IntentFeedTheme || '';
       this.title = document.createElement('h1'); this.title.className = 'sr-only';
       this.title.id = 'feed-heading';
@@ -167,7 +168,8 @@
       adjust.addEventListener('click', () => this.runtime.sendMessage({type: 'OPEN_SETTINGS'}).catch(() => {}));
       this.endState.append(this.endMessage, this.endSearch, adjust);
       const note = document.createElement('p'); note.className = 'note'; note.textContent = 'Public YouTube searches, analysed locally using titles, available descriptions and hashtags. The topic model is bundled with Intent; this does not change your YouTube recommendation algorithm.';
-      this.discoverySection.append(discovery, this.recommendedMessage, this.status, this.grid, this.shortShelf, this.restGrid, this.more, this.endState, note);
+      this.discoveryActions.append(this.recommendedMessage);
+      this.discoverySection.append(discovery, this.status, this.grid, this.shortShelf, this.restGrid, this.more, this.endState, note);
       root.append(style, this.title, this.recommendedSection, this.discoverySection);
     }
     collapseEmptySpacing(renderer, primary) {
@@ -207,6 +209,7 @@
     matchWatchThumbnail(primary) {
       const selector = 'ytd-compact-video-renderer ytd-thumbnail,ytd-compact-video-renderer a#thumbnail,yt-lockup-view-model .yt-lockup-view-model__content-image';
       for (const thumbnail of primary.querySelectorAll(selector)) {
+        if(thumbnail.closest('#intent-home-feed,#intent-watch-feed'))continue;
         const computed = getComputedStyle(thumbnail).width;
         const width = thumbnail.getBoundingClientRect().width || (/^[\d.]+px$/.test(computed) ? parseFloat(computed) : 0);
         if (width >= 100 && width <= 320) {this.watchThumbnailWidth = width; break;}
@@ -214,8 +217,8 @@
       if (this.watchThumbnailWidth) this.host.style.setProperty('--intent-watch-thumbnail-width', `${this.watchThumbnailWidth}px`);
     }
     restart(fresh) {
-      this.nativePagination?.cancel(); this.nativePool = new Map(); this.nativeChecked = new Map(); this.recommendedItems = []; this.nativeLimit = 96; this.nativeJob = null; this.nativeMoreBusy = false; this.nativeRetryAt = 0;
-      this.recommendedSection.hidden = true; this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedMore.disabled = false; this.recommendedMessage.textContent = 'No matching recommendations yet.'; this.recommendedMore.textContent = 'Find more recommendations'; this.discoveryActions.append(this.recommendedMore);
+      this.nativePagination?.cancel(); this.nativeCards?.reset(); this.nativePool = new Map(); this.nativeChecked = new Map(); this.nativeNodes = new Map(); this.nativeScanned = new WeakMap(); this.nativeTotalChecked = 0; this.recommendedItems = []; this.nativeLimit = 96; this.nativeJob = null; this.nativeMoreBusy = false; this.nativeRetryAt = 0;
+      this.recommendedSection.hidden = true; this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedMore.disabled = false; this.recommendedMessage.textContent = 'No matching recommendations yet.'; this.recommendedMore.textContent = 'Find more recommendations'; this.discoveryActions.append(this.recommendedMore,this.recommendedMessage);
       this.generation++; this.items = []; this.cursor = 0; this.pageCursor = null; this.hasMore = true; this.busy = false; this.autoBatches = 0; this.loadFailed = false; this.restartRequired = false; this.endReason = '';
       this.endState.hidden = true; this.more.textContent = 'Find more videos';
       this.metadataStats = {requests: 0, checked: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}; this.hasMetadataStats = false;
@@ -304,11 +307,11 @@
       this.recommendedMore.hidden = false;
       const declared = this.renderer?.getAttribute('video-id');
       if (this.surface === 'watch' && declared && declared !== this.videoId) return Promise.resolve();
-      for (const video of source.read(this.primary, this.videoId)) if (this.nativePool.size < 240 || this.nativePool.has(video.id)) this.nativePool.set(video.id, video);
+      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, exclude: this.nativeChecked, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) if (this.nativePool.size < 240 || this.nativePool.has(video.id)) this.nativePool.set(video.id, video);
       if (this.nativeJob || Date.now() < this.nativeRetryAt) return this.nativeJob || Promise.resolve();
       const generation = this.generation, signature = this.signature;
       const current = () => generation === this.generation && signature === this.signature && this.host?.isConnected;
-      const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeChecked.size));
+      const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeTotalChecked));
       if (!pending().length) return Promise.resolve();
       if (!this.recommendedItems.length) this.recommendedMessage.textContent = 'Checking your YouTube recommendations…';
       const job = (async () => {
@@ -319,7 +322,14 @@
           if (result?.blocked) { location.replace(this.runtime.getURL('blocked.html')); return; }
           if (!result?.ok || result.key !== signature || !Array.isArray(result.items)) throw new Error(result?.error || 'Recommendations could not be checked.');
           const accepted = new Map(result.items.map(v => [v.id, v]));
-          for (const video of videos) this.nativeChecked.set(video.id, {fingerprint: JSON.stringify(video), item: accepted.has(video.id) && C.classify(accepted.get(video.id), {...this.settings, mode: 'off'}).visible ? accepted.get(video.id) : null});
+          for (const video of videos) {
+            const item = accepted.has(video.id) && C.classify(accepted.get(video.id), {...this.settings, mode: 'off'}).visible ? accepted.get(video.id) : null;
+            this.nativeChecked.set(video.id, {fingerprint: JSON.stringify(video), item}); this.nativeTotalChecked++;
+            // Keep matches and a bounded pending window, rather than filling a
+            // lifetime 240-video pool with already-rejected candidates.
+            if (!item) {this.nativePool.delete(video.id); this.nativeNodes.delete(video.id);}
+          }
+          while (this.nativeChecked.size > 2048) {const id=[...this.nativeChecked.keys()].find(id=>!this.nativePool.has(id));if(!id)break;this.nativeChecked.delete(id);}
           this.renderRecommendations();
         }
       })().catch(error => { if (current()) { if (/context invalidated/i.test(error.message || '')) {document.dispatchEvent(new Event('intent-context-lost')); return;} this.nativeRetryAt = Date.now() + 30000; this.recommendedMore.title = error.message; this.recommendedMessage.textContent = 'Recommendations could not be checked. Try again later.'; } }).finally(() => {if (this.nativeJob === job) this.nativeJob = null;});
@@ -338,7 +348,7 @@
       else if (/^(Checking your YouTube recommendations|No matching recommendations yet)/.test(this.recommendedMessage.textContent)) this.recommendedMessage.textContent = '';
       if (this.recommendedItems.length) this.setFeedState('active');
       const target = this.recommendedItems.length ? this.recommendedActions : this.discoveryActions;
-      if (this.recommendedMore.parentElement !== target) { const focused = this.host.shadowRoot.activeElement === this.recommendedMore; target.append(this.recommendedMore); if (focused) this.recommendedMore.focus({preventScroll: true}); }
+      if (this.recommendedMore.parentElement !== target) { const focused = this.host.shadowRoot.activeElement === this.recommendedMore; target.append(this.recommendedMore,this.recommendedMessage); if (focused) this.recommendedMore.focus({preventScroll: true}); }
       // A late native match takes priority over a duplicate search result.
       if (this.items.some(v => nativeIds.has(v.id))) {
         this.items = this.items.filter(v => !nativeIds.has(v.id));
@@ -350,17 +360,31 @@
     async moreRecommendations() {
       if (this.nativeMoreBusy || !this.host?.isConnected || !globalThis.IntentRecommendations) return;
       const generation = this.generation; this.nativeMoreBusy = true; this.nativeRetryAt = 0; this.recommendedMore.disabled = true; this.recommendedMore.textContent = 'Checking recommendations…'; this.recommendedMessage.textContent = '';
-      const before = this.nativeChecked.size;
+      const before = this.nativeTotalChecked, matches = this.recommendedItems.length;
+      let batches = 0, unavailable = false, stalled = false;
       try {
-        this.nativeLimit = Math.min(240, this.nativeLimit + 96); await this.syncRecommendations();
-        if (generation !== this.generation) return;
-        if (this.nativeChecked.size === before) {
-          this.nativePagination ||= new globalThis.IntentRecommendations.Pagination();
-          const result = await this.nativePagination.load(this.primary, this.videoId);
-          if (generation !== this.generation || result.cancelled) return;
+        // One click may walk three native batches when early batches have no
+        // matches. Work stays bounded; another click can continue further.
+        for (let step = 0; step < 4 && this.recommendedItems.length < 120; step++) {
+          this.nativeLimit = this.nativeTotalChecked + 96; const prior = this.nativeTotalChecked;
           await this.syncRecommendations();
-          if (!result.added) this.recommendedMessage.textContent = result.available ? 'No additional recommendations loaded. Try again later.' : 'YouTube has no additional recommendations loaded here yet.';
+          if (generation !== this.generation) return;
+          if (this.nativeRetryAt > Date.now()) return;
+          const checked = this.nativeTotalChecked - before, added = this.recommendedItems.length - matches;
+          this.recommendedMore.textContent = `Checked ${checked} · ${added} new matches`;
+          if (added >= 6) break;
+          if (step === 3) break;
+          // Drain loaded candidates before asking YouTube for another batch.
+          if (this.nativeTotalChecked > prior && this.nativeTotalChecked >= this.nativeLimit) continue;
+          this.nativePagination ||= new globalThis.IntentRecommendations.Pagination();
+          const result = await this.nativePagination.load(this.primary, this.videoId, new Set([...this.nativeChecked.keys(),...this.nativePool.keys()])); batches++;
+          if (generation !== this.generation || result.cancelled) return;
+          if (!result.added) {unavailable = !result.available; stalled = result.available; break;}
         }
+        if (generation !== this.generation) return;
+        const checked = this.nativeTotalChecked - before, added = this.recommendedItems.length - matches;
+        this.recommendedMessage.textContent = `${checked} more videos checked · ${added} new match${added === 1 ? '' : 'es'}.` + (unavailable ? ' YouTube has no further recommendation batch here.' : stalled ? ' YouTube did not return another batch. Try again later.' : this.recommendedItems.length >= 120 ? ' 120 matches shown.' : added ? '' : ' No additional matches in these batches; you can try again.');
+        this.recommendedMore.title = `Checked ${checked} previously unseen videos across ${batches} native YouTube batch${batches === 1 ? '' : 'es'}. No public topic searches were used.`;
       } catch { if (generation === this.generation) this.recommendedMessage.textContent = 'Recommendations could not be checked. Try again later.'; }
       finally { if (generation === this.generation) { this.nativeMoreBusy = false; this.recommendedMore.disabled = false; this.recommendedMore.textContent = 'Find more recommendations'; } }
     }
@@ -395,6 +419,7 @@
       this.shortNext.disabled = this.shortGrid.scrollLeft >= end - 1;
     }
     card(video) {
+      const cached=this.nativeCards?.get(video,this.nativeNodes?.get(video.id));if(cached)return cached;
       const card = document.createElement('article'); card.className = video.shorts ? 'card shorts' : 'card'; card.dataset.videoId = video.id;
       const url = video.shorts ? `https://www.youtube.com/shorts/${video.id}` : `https://www.youtube.com/watch?v=${video.id}`;
       const cover = document.createElement('a'); cover.className = 'cover'; cover.href = url; cover.tabIndex = -1; cover.setAttribute('aria-hidden', 'true');
@@ -405,7 +430,7 @@
       const title = document.createElement('a'); title.className = 'title'; title.href = url; title.textContent = video.title;
       const channel = document.createElement('div'); channel.className = 'channel'; channel.textContent = video.channel;
       const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = video.metadata || '';
-      card.append(cover, title, channel, meta); return card;
+      card.append(cover, title, channel, meta); this.nativeCards?.enhance(card,video,this.nativeNodes?.get(video.id)); return card;
     }
     empty(titleText, detail) {
       if (this.grid.querySelector('.empty')) return;
@@ -425,7 +450,7 @@
     }
     destroy() {
       if (!this.signature && !this.host?.isConnected && !this.nativeElements.size && !this.spacingElements.size) return;
-      this.nativePagination?.cancel(); this.nativeJob = null; this.nativePool?.clear(); this.nativeChecked?.clear(); this.recommendedItems = [];
+      this.nativePagination?.cancel(); this.nativeCards?.destroy(); this.nativeCards=null; this.nativeJob = null; this.nativePool?.clear(); this.nativeChecked?.clear(); this.nativeNodes?.clear(); this.recommendedItems = [];
       this.generation++; this.signature = ''; this.videoId = ''; this.busy = false;
       this.resizeObserver?.disconnect(); this.observing = false;
       this.host?.remove(); document.documentElement.removeAttribute(this.pageMarker);

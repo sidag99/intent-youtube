@@ -33,13 +33,21 @@ const root=path.resolve(__dirname,'..'),shots=path.resolve(process.env.INTENT_SC
  await page.evaluate(()=>{const continuation=document.createElement('ytd-continuation-item-renderer');continuation.innerHTML='<button>Native load more</button>';continuation.querySelector('button').onclick=()=>{addNative('N0000000005','Build resilient services');continuation.remove();};document.querySelector('#native').append(continuation);});
  const searches=await page.evaluate(()=>calls.filter(m=>m.type==='GET_FEED').length);await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();
  await recommended.locator('[data-video-id="N0000000005"]').waitFor();assert.equal(await page.evaluate(()=>calls.filter(m=>m.type==='GET_FEED').length),searches);
- await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();await page.waitForFunction(()=>!home.nativeMoreBusy);assert.match(await feed.locator('.recommended-feedback').innerText(),/no additional recommendations/i);
+ await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();await page.waitForFunction(()=>!home.nativeMoreBusy);assert.match(await feed.locator('.recommended-feedback').innerText(),/no further recommendation batch/i);
  // No accepted recommendations means no section header, separator or blank space.
  await page.evaluate(()=>{document.querySelector('#native').replaceChildren();addNative('U0000000001','Unrelated interview');return home.refreshFeed();});await page.waitForFunction(()=>!home.nativeJob&&!home.busy);
  assert.equal(await recommended.isVisible(),false);assert.equal(await discover.getByRole('button',{name:'Find more recommendations',exact:true}).isVisible(),true);
  assert.equal(await discover.evaluate(n=>getComputedStyle(n).marginTop),'0px');assert.equal(await discover.evaluate(n=>getComputedStyle(n).paddingTop),'0px');
+ // A rolling candidate window reaches relevant videos beyond the former 240 lifetime cap.
+ await page.evaluate(()=>{document.querySelector('#native').replaceChildren();for(let i=0;i<400;i++)addNative('P'+String(i).padStart(10,'0'),i>=310&&i<320?'Build a travel planning app '+i:'Unrelated entertainment '+i);return home.refreshFeed();});
+ await page.waitForFunction(()=>home.nativeTotalChecked===96&&!home.nativeJob&&!home.busy);
+ await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();await page.waitForFunction(()=>!home.nativeMoreBusy);
+ assert.equal(await recommended.locator('.card').count(),10,'one click reaches matching videos beyond the first 300 candidates');
+ assert.ok(await page.evaluate(()=>home.nativeTotalChecked>310&&home.nativePool.size<=240&&home.nativeChecked.size<=2048));
+ assert.match(await feed.locator('.recommended-feedback').innerText(),/288 more videos checked · 10 new matches/);
+ assert.ok(await feed.locator('.recommended-feedback').isVisible(),'feedback moves with the button after refresh and after the first accepted recommendation');
  // Stale responses cannot bring an old intent back after Off/Pause.
- await page.evaluate(()=>{delayNative=true;addNative('N0000000006','Build a stale result');home.syncRecommendations();home.sync(settings,false);releaseNative();});await page.waitForTimeout(30);assert.equal(await feed.count(),0);assert.equal(await page.locator('#native').isVisible(),true);
+ await page.evaluate(()=>{delayNative=true;home.nativeLimit=home.nativeTotalChecked+96;addNative('N0000000006','Build a stale result');home.syncRecommendations();home.sync(settings,false);releaseNative();});await page.waitForTimeout(30);assert.equal(await feed.count(),0);assert.equal(await page.locator('#native').isVisible(),true);
  await page.evaluate(()=>{delayNative=false;settings=IntentCore.sanitize({...settings,hideShorts:false});document.querySelector('#native').replaceChildren();addNative('S0000000001','Build in sixty seconds',true);home.sync(settings,true);});await page.waitForFunction(()=>home.recommendedItems.length===1);
  assert.equal(await recommended.locator('.recommended-shorts').isVisible(),true);assert.match(await recommended.locator('.title').getAttribute('href'),/shorts/);
  await page.evaluate(()=>{settings=IntentCore.sanitize({...settings,hideShorts:true});home.sync(settings,true);});await page.waitForFunction(()=>!home.nativeJob&&!home.busy);assert.equal(await recommended.isVisible(),false);

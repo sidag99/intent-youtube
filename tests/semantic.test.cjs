@@ -67,3 +67,21 @@ test('every library definition has bounded focused examples and a varied keyword
   }
   for(const mode of Object.values(C.MODES))assert.ok(mode.topics.length>=50);
 });
+
+test('builtin Music requires corroboration for moderate scores, without comparing other intents',()=>{
+  const music=(scores,others={})=>S.decide([1],{music:scores.map(score=>[score]),...others},'music');
+  assert.equal(music([.331,.210,.203],{work:[[.80]]}).accepted,false,'an incidental ambient match cannot qualify a quiet PC build');
+  assert.equal(music([.354,.197,.187]).accepted,false,'an isolated live-concert match cannot qualify a camping vlog');
+  assert.equal(music([.295,.263],{study:[[.90]]}).accepted,true,'corroborated country music qualifies independently of a stronger alternative');
+  assert.equal(music([.396,.348]).accepted,true,'instrumentation supplied in metadata does not need an exact Music keyword');
+  assert.equal(music([.455,.233]).accepted,true,'a strong operatic performance does not need a second high score');
+  assert.equal(music([.259,.25]).accepted,false,'corroboration does not remove the normal confidence floor');
+});
+
+test('natural ambience explicitly advertised without music is not builtin Music, while performances and edited scopes remain valid',()=>{
+  const refs={music:[[.45],[.30]],study:[[.2]]};
+  for(const title of ['Eight hours of rain and thunder, no talking or music','Forest birds and wind without music','Ocean waves: no background music'])assert.equal(S.decide([1],refs,'music',false,{title}).accepted,false,title);
+  assert.equal(S.decide([1],refs,'music',false,{title:'Singing in the rain without music: a cappella vocal performance'}).accepted,true);
+  assert.equal(S.decide([1],refs,'music',false,{title:'Rainy window',description:'Soft piano melodies over gentle rain.'}).accepted,true);
+  assert.equal(S.decide([1],{music:[[.31]]},'music',true,{title:'Forest birds without music'}).accepted,true,'an explicitly edited Music description controls its own scope');
+});

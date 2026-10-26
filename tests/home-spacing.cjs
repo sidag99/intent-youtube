@@ -56,7 +56,7 @@ const root = path.resolve(__dirname, '..');
     assert.equal(await page.evaluate(() => measure().glass), 112);
     await page.evaluate(() => {window.watch = new IntentHome(runtime, 'watch'); watch.sync(settings, true);});
     assert.equal(await page.evaluate(() => watch.host.style.getPropertyValue('--intent-watch-thumbnail-width')), '196px', 'watch cards use the native recommendation thumbnail width');
-    await page.evaluate(() => {document.querySelector('ytd-thumbnail').style.width = 'auto'; watch.sync(settings, true);});
+    await page.evaluate(() => {const own=document.createElement('ytd-compact-video-renderer');own.innerHTML='<ytd-thumbnail style="width:168px"></ytd-thumbnail>';watch.host.append(own);[...document.querySelectorAll('ytd-watch-flexy ytd-thumbnail')].find(n=>!n.closest('#intent-watch-feed')).style.width = 'auto';watch.sync(settings,true);});
     assert.equal(await page.evaluate(() => watch.host.style.getPropertyValue('--intent-watch-thumbnail-width')), '196px', 'a hidden native thumbnail without a measurable width retains the last reliable native metric');
     await page.evaluate(() => watch.destroy());
     assert.deepEqual(errors, []);

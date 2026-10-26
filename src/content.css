@@ -82,3 +82,12 @@ html[data-intent-shorts] [data-intent-short-nav],
 }
 #intent-video-topic[data-state="matching"] { color: var(--yt-spec-text-primary, #365e4b); }
 #intent-video-topic[data-theme="dark"][data-state="matching"] { color: var(--yt-spec-text-primary, #9cc7ab); }
+
+/* Discovery uses the native compact renderer while retaining the current page's
+   measured recommendation thumbnail size, which varies between YouTube layouts. */
+#intent-watch-feed ytd-compact-video-renderer[data-intent-created-card] ytd-thumbnail {
+  flex: none !important;
+  width: var(--intent-watch-thumbnail-width, 168px) !important;
+  min-width: var(--intent-watch-thumbnail-width, 168px) !important;
+  height: calc(var(--intent-watch-thumbnail-width, 168px) * 9 / 16) !important;
+}

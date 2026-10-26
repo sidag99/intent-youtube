@@ -453,3 +453,16 @@ test('library defaults use focused discovery queries without leaking into an edi
   const edited=C.sanitize({...s,customIntents:{[id]:{...s.customIntents[id],description:'Chess tournament analysis'}}});
   assert.deepEqual(F.queries(edited),['Chess tournament analysis']);
 });
+
+test('native discovery preserves only public YouTube channel artwork CDN URLs',()=>{
+ const withAvatar=url=>renderer('abcdefghijk','A useful lesson',{channelThumbnailSupportedRenderers:{channelThumbnailWithLinkRenderer:{thumbnail:{thumbnails:[{url}]}}}});
+ assert.equal(F.extract(page([withAvatar('https://yt3.ggpht.com/public-avatar=s68')]))[0].channelThumbnail,'https://yt3.ggpht.com/public-avatar=s68');
+ for(const url of ['https://evil.test/avatar','https://yt3.ggpht.com.evil.test/avatar','https://x:secret@yt3.ggpht.com/avatar','https://yt3.ggpht.com:444/avatar'])assert.equal(F.extract(page([withAvatar(url)]))[0].channelThumbnail,undefined);
+});
+
+test('native hover preserves only the matching video public animated thumbnail',()=>{
+ const animated=url=>renderer('abcdefghijk','A useful lesson',{richThumbnail:{movingThumbnailRenderer:{movingThumbnailDetails:{thumbnails:[{url}]}}}});
+ const valid='https://i.ytimg.com/an_webp/abcdefghijk/mqdefault_6s.webp?public=1';
+ assert.equal(F.extract(page([animated(valid)]))[0].movingThumbnail,valid);
+ for(const url of ['https://evil.test/an_webp/abcdefghijk/preview.webp','https://i.ytimg.com/an_webp/bbbbbbbbbbb/preview.webp','https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg'])assert.equal(F.extract(page([animated(url)]))[0].movingThumbnail,undefined);
+});

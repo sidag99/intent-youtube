@@ -1166,8 +1166,9 @@ test('recovery leaves a healthy live controller alone and performs no background
 
 test('invalidated supported tabs recover through owned manifest files in frame0 without reloading or touching the player',async()=>{
   const h=recoveryHarness();assert.equal(await h.service.activate({tabId:1}),true);
-  assert.equal(h.calls.probe.length,1);assert.equal(h.calls.css.length,1);assert.equal(h.calls.files.length,1);
-  const injection=h.calls.files[0];assert.deepEqual(Array.from(injection.files),h.manifest.content_scripts[0].js);
+  assert.equal(h.calls.probe.length,1);assert.equal(h.calls.css.length,1);assert.equal(h.calls.files.length,2);
+  assert.equal(h.calls.files[0].world,'MAIN');assert.deepEqual(Array.from(h.calls.files[0].files),['src/native-renderer.js']);
+  const injection=h.calls.files[1];assert.deepEqual(Array.from(injection.files),h.manifest.content_scripts[0].js);
   assert.deepEqual(Array.from(h.calls.css[0].files),h.manifest.content_scripts[0].css);
   assert.equal(injection.target.tabId,1);assert.deepEqual(Array.from(injection.target.frameIds),[0]);assert.equal(injection.world,'ISOLATED');
   assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);assert.equal(h.calls.query.length,0);
@@ -1188,11 +1189,11 @@ test('install recovery queries only active YouTube scopes and concurrent activat
   let release,started;const gate=new Promise(resolve=>{release=resolve;}),began=new Promise(resolve=>{started=resolve;});
   const h=recoveryHarness({ping:async()=>{started();await gate;return undefined;}});
   const first=h.service.activate({tabId:1});await began;const second=h.service.activate({tabId:1});release();await Promise.all([first,second]);
-  assert.equal(h.calls.ping.length,1);assert.equal(h.calls.files.length,1);
+  assert.equal(h.calls.ping.length,1);assert.equal(h.calls.files.length,2);
   const installed=recoveryHarness();installed.tabs.set(2,{id:2,active:false,url:'https://www.youtube.com/watch?v=abcdefghijk'});installed.tabs.set(3,{id:3,active:true,url:'https://example.com/'});installed.tabs.set(4,{id:4,active:true,url:'https://www.youtube.com/embed/abcdefghijk'});
   await installed.service.installed();assert.equal(installed.calls.query.length,1);
   assert.equal(installed.calls.query[0].active,true);assert.ok(installed.calls.query[0].url.every(pattern=>pattern.includes('youtube')));
-  assert.deepEqual(installed.calls.files.map(call=>call.target.tabId),[1]);
+  assert.deepEqual(installed.calls.files.map(call=>call.target.tabId),[1,1]);
 });
 
 test('recovery revalidates navigation after ping and bounds repeated failed injections without retry loops',async()=>{
@@ -1211,6 +1212,6 @@ test('returning focus repairs only the active YouTube tab in that Chrome window'
   h.tabs.set(3,{id:3,windowId:1,active:false,url:'https://www.youtube.com/'});
   await h.service.focus(-1);assert.equal(h.calls.query.length,0,'leaving Chrome does not scan tabs');
   await h.service.focus(1);assert.equal(h.calls.query.length,1);assert.equal(h.calls.query[0].windowId,1);assert.equal(h.calls.query[0].active,true);
-  assert.deepEqual(h.calls.files.map(call=>call.target.tabId),[1]);
+  assert.deepEqual(h.calls.files.map(call=>call.target.tabId),[1,1]);
   assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);
 });
