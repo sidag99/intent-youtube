@@ -28,7 +28,22 @@
       const stage=document.createElement('div');stage.setAttribute('data-intent-native-staging','');stage.setAttribute('aria-hidden','true');stage.inert=true;
       stage.style.cssText=`position:fixed;left:0;top:0;width:${Math.max(168,host.getBoundingClientRect().width||360)}px;height:1px;overflow:hidden;visibility:hidden;pointer-events:none;z-index:-1`;
       (document.body||document.documentElement).append(stage);stage.append(node);
-      const payload=tag==='ytd-rich-item-renderer'?{content:{videoRenderer:data}}:data;
+      // Follow the page's Home renderer variant instead of forcing the older
+      // rich-grid-media title/channel/view arrangement on a modern lockup feed.
+      const browse=host.closest('ytd-browse');
+      const modern=tag==='ytd-rich-item-renderer'&&browse&&[...browse.querySelectorAll('yt-lockup-view-model')].find(item=>!item.closest('[data-intent-created-card]'));
+      let content={videoRenderer:data};
+      if(modern){
+        const rows=[{metadataParts:[{text:{content:channel}}]},{metadataParts:metadata.filter(Boolean).map((value,index)=>({text:{content:value},...(index===0?{leadingIcon:{name:'PLAY_ARROW_OUTLINED',height:12,width:12,marginEndToken:{spacing:2}}}:{})}))}];
+        if(modern.querySelectorAll('.ytContentMetadataViewModelMetadataRow,.yt-content-metadata-view-model__metadata-row').length===1)rows.splice(0,rows.length,{metadataParts:rows.flatMap(row=>row.metadataParts)});
+        const model={itemPlayback:{inlinePlayerData:{onSelect:{innertubeCommand:endpoint},onVisible:{innertubeCommand:endpoint}}},contentId:v.id,contentType:'LOCKUP_CONTENT_TYPE_VIDEO',contentImage:{thumbnailViewModel:{image:{sources:data.thumbnail.thumbnails},overlays:duration?[{thumbnailBottomOverlayViewModel:{badges:[{thumbnailBadgeViewModel:{text:duration,badgeStyle:'THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT'}}]}}]:[]}},metadata:{lockupMetadataViewModel:{title:{content:data.title.simpleText},metadata:{contentMetadataViewModel:{metadataRows:rows,delimiter:modern.querySelector('.ytContentMetadataViewModelDelimiter,.yt-content-metadata-view-model__delimiter')?.textContent||' '}}}},rendererContext:{commandContext:{onTap:{innertubeCommand:endpoint}}}};
+        const artwork=data.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer.thumbnail;
+        if(artwork)model.metadata.lockupMetadataViewModel.image={decoratedAvatarViewModel:{avatar:{avatarViewModel:{image:{sources:artwork.thumbnails}}},a11yLabel:channel}};
+        const moving=data.richThumbnail?.movingThumbnailRenderer.movingThumbnailDetails;
+        if(moving)model.contentImage.thumbnailViewModel.overlays.push({animatedThumbnailOverlayViewModel:{thumbnail:{sources:moving.thumbnails}}});
+        content={lockupViewModel:model};
+      }
+      const payload=tag==='ytd-rich-item-renderer'?{content}:data;
       let observer,timer;
       const cleanup=(failed=false)=>{observer?.disconnect();clearTimeout(timer);stage.remove();cleanups.delete(cleanup);active.delete(host);if(failed&&host.getAttribute('data-intent-native-request')===raw){host.setAttribute('data-intent-native-failed','');host.removeAttribute('data-intent-native-request');}};cancel=cleanup;cleanups.add(cleanup);
       const ready=()=>{

@@ -48,12 +48,7 @@
       this.updateTheme();
       if (this.surface === 'home') {
         if (!this.observing) {this.resizeObserver.observe(this.host); this.observing = true;}
-        // Use the native grid's chosen column count, without adding an outer gutter or width cap.
-        const native = primary.querySelector('ytd-rich-grid-renderer');
-        const measuredWidth = native?.getBoundingClientRect().width || 0;
-        const columns = measuredWidth >= primary.getBoundingClientRect().width * .8 && measuredWidth >= 120 && parseInt(getComputedStyle(native).getPropertyValue('--ytd-rich-grid-items-per-row'), 10);
-        if (columns >= 1 && columns <= 12 && (columns > 1 || measuredWidth < 640)) { this.host.style.setProperty('--intent-grid-columns', columns); this.host.dataset.nativeColumns = ''; }
-        else if (!this.host.hasAttribute('data-native-columns')) this.host.style.removeProperty('--intent-grid-columns');
+        this.matchHomeGrid(primary);
       }
       else this.matchWatchThumbnail(primary);
       document.documentElement.setAttribute(this.pageMarker, '');
@@ -72,6 +67,42 @@
         this.signature = signature; this.locale = locale; this.videoId = videoId; this.round = 0; this.restart(false);
       }
       this.layoutHome(); if (!restarted) this.syncRecommendations();
+    }
+    matchHomeGrid(primary) {
+      const native = primary.querySelector('ytd-rich-grid-renderer'), frame = primary.getBoundingClientRect(), nativeRect = native?.getBoundingClientRect();
+      if (!nativeRect || nativeRect.width < 120 || nativeRect.width < frame.width * .8) return;
+      const style = getComputedStyle(native), contents = native.querySelector(':scope > #contents,:scope > #native-contents') || native;
+      const layout = getComputedStyle(contents), previous = this.homeGridMetrics;
+      const tracks = layout.gridTemplateColumns.match(/[\d.]+px/g);
+      let columns = tracks?.length || parseInt(style.getPropertyValue('--ytd-rich-grid-items-per-row'), 10);
+      let gap = parseFloat(layout.columnGap), rowGap = parseFloat(layout.rowGap);
+      if (!Number.isFinite(gap)) gap = previous?.gap ?? parseFloat(style.getPropertyValue('--ytd-rich-grid-item-margin'));
+      if (!Number.isFinite(rowGap)) rowGap = previous?.rowGap;
+      let start = previous?.start ?? 0, end = previous?.end ?? 0;
+      const cards = [...native.querySelectorAll('ytd-rich-item-renderer')].slice(0, 60).flatMap(card => {
+        if (card.closest('ytd-rich-section-renderer,ytd-reel-shelf-renderer') || card.querySelector('ytd-ad-slot-renderer')) return [];
+        const thumbnail = card.querySelector('.ytLockupViewModelContentImage,.yt-lockup-view-model__content-image,ytd-thumbnail');
+        const rect = thumbnail?.getBoundingClientRect();
+        return rect && rect.width >= 100 && rect.height > 0 ? [{card, rect, outer: card.getBoundingClientRect()}] : [];
+      });
+      if (cards.length) {
+        const top = Math.min(...cards.map(item => item.rect.top));
+        const row = cards.filter(item => Math.abs(item.rect.top - top) < 2).sort((a, b) => a.rect.left - b.rect.left);
+        start = Math.max(0, row[0].rect.left - frame.left);
+        if (row.length > 1) gap = row[1].rect.left - row[0].rect.right;
+        end = row.length >= columns ? Math.max(0, frame.right - row.at(-1).rect.right) : start;
+        if (!tracks?.length) columns = Math.round((frame.width - start - end + (gap || 0)) / (row[0].rect.width + (gap || 0)));
+        const next = cards.filter(item => item.rect.top > top + 2);
+        const measuredRowGap = next.length ? Math.min(...next.map(item => item.outer.top)) - Math.max(...row.map(item => item.outer.bottom)) : NaN;
+        if (measuredRowGap >= 0 && measuredRowGap <= 120) rowGap = measuredRowGap;
+      }
+      if (!(columns >= 1 && columns <= 12) || columns === 1 && nativeRect.width >= 640) columns = previous?.columns;
+      if (!(columns >= 1 && columns <= 12)) return;
+      const bounded = (value, fallback, maximum) => Number.isFinite(value) && value >= 0 && value <= maximum ? value : fallback;
+      const metrics = {columns, gap: bounded(gap, 20, 120), rowGap: bounded(rowGap, 34, 120), start: bounded(start, 0, frame.width / 4), end: bounded(end, 0, frame.width / 4)};
+      this.homeGridMetrics = metrics;
+      for (const [name, value] of Object.entries(metrics)) this.host.style.setProperty(name === 'columns' ? '--intent-grid-columns' : `--intent-grid-${name === 'rowGap' ? 'row-gap' : name}`, name === 'columns' ? String(value) : `${value}px`);
+      this.host.dataset.nativeColumns = '';
     }
     syncNative(primary) {
       for (const child of this.nativeElements) if (child.parentElement !== primary) {
@@ -467,7 +498,7 @@
     destroy() {
       if (!this.signature && !this.host?.isConnected && !this.nativeElements.size && !this.spacingElements.size) return;
       this.nativePagination?.cancel(); this.nativeCards?.destroy(); this.nativeCards=null; this.nativeJob = null; this.nativePool?.clear(); this.nativeChecked?.clear(); this.nativeNodes?.clear(); this.recommendedItems = [];
-      this.generation++; this.signature = ''; this.videoId = ''; this.busy = false;
+      this.generation++; this.signature = ''; this.videoId = ''; this.busy = false; this.homeGridMetrics = null;
       this.resizeObserver?.disconnect(); this.observing = false;
       this.host?.remove(); document.documentElement.removeAttribute(this.pageMarker);
       this.restoreNative();

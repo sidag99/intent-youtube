@@ -302,10 +302,10 @@ test('locale codes are bounded, canonical and restricted to public language/regi
   assert.notEqual(F.key(C.defaults(), {hl: 'en-GB', gl: 'GB'}), F.key(C.defaults(), {hl: 'en-IN', gl: 'IN'}));
 });
 const localeDocument = (lang, texts) => ({documentElement: {lang}, scripts: texts.map(textContent => ({textContent}))});
-test('YouTube locale is read from bootstrap JSON without executing scripts and falls back to the document language', () => {
+test('YouTube locale follows the live document language and safely falls back to bootstrap JSON', () => {
   const escaped = 'globalThis.localeScriptExecuted = true; ytcfg.set(' + JSON.stringify({HL: 'en', GL: 'US', text: 'brace } and escaped " quote'}) + ');';
-  assert.deepEqual(F.pageLocale(localeDocument('de', [escaped])), {hl: 'en', gl: 'US'}, 'quoted braces and escaped quotes are balanced as JSON');
-  const doc = localeDocument('de', [escaped,
+  assert.deepEqual(F.pageLocale(localeDocument('', [escaped])), {hl: 'en', gl: 'US'}, 'quoted braces and escaped quotes are balanced as JSON');
+  const doc = localeDocument('', [escaped,
     'ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"GB"}},"HL":"hi","GL":"IN"});'
   ]);
   assert.deepEqual(F.pageLocale(doc), {hl: 'en-GB', gl: 'GB'});
@@ -315,13 +315,21 @@ test('YouTube locale is read from bootstrap JSON without executing scripts and f
   assert.deepEqual(F.pageLocale(localeDocument('fr', ['ytcfg.set({"HL":"en&gl=IN","GL":"IN/US"});'])), {hl: 'fr'});
   assert.deepEqual(F.pageLocale(localeDocument('ja', [])), {hl: 'ja'});
   assert.deepEqual(F.pageLocale(undefined), {hl: 'en'});
+  assert.deepEqual(F.pageLocale(localeDocument('en&gl=IN', [escaped])), {hl: 'en', gl: 'US'}, 'invalid document languages retain a valid bootstrap fallback');
+  assert.deepEqual(F.pageLocale(localeDocument('', ['ytcfg.set({"HL":"en-invalid-toolongsubtag","GL":"DE"});'])), {hl: 'en', gl: 'DE'});
+  const switched = localeDocument('en-IN', ['ytcfg.set({"HL":"en-IN","GL":"IN","INNERTUBE_CONTEXT":{"client":{"hl":"en-IN","gl":"IN"}}});']);
+  assert.deepEqual(F.pageLocale(switched), {hl: 'en-IN', gl: 'IN'});
+  const oldKey = F.key(C.defaults(), F.pageLocale(switched));
+  switched.documentElement.lang = 'en-GB';
+  assert.deepEqual(F.pageLocale(switched), {hl: 'en-GB', gl: 'IN'}, 'a native language switch wins over stale initial-page scripts without guessing another country');
+  assert.notEqual(F.key(C.defaults(), F.pageLocale(switched)), oldKey, 'the language switch invalidates regional search results and continuation state');
 });
 test('search requests follow the native YouTube locale and isolate regional search caches without extra requests', async () => {
   const calls = [];
   const service = F.createService({fetcher: async (url, options) => {
     calls.push({url, options});
-    const region = new URL(url).searchParams.get('gl');
-    const viewText = region === 'IN' ? '39 lakh views' : region === 'DE' ? '3,9 Mio. Aufrufe' : '3.9M views';
+    const language = new URL(url).searchParams.get('hl');
+    const viewText = language === 'en-IN' ? '39 lakh views' : language === 'de' ? '3,9 Mio. Aufrufe' : '3.9M views';
     return {ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python programming', {shortViewCountText: {simpleText: viewText}, publishedTimeText: {simpleText: '2 years ago'}, lengthText: {simpleText: '12:35'}})])};
   }});
   const settings = C.defaults(), british = {hl: 'en-GB', gl: 'GB'}, indian = {hl: 'en-IN', gl: 'IN'}, german = {hl: 'de', gl: 'DE'};
@@ -336,8 +344,26 @@ test('search requests follow the native YouTube locale and isolate regional sear
   await service.get(settings, {locale: british}); assert.equal(calls.length, 6, 'a different region does not evict or overwrite a warm locale');
   for (const [i, locale] of [british, indian, german].entries()) for (const call of calls.slice(i * 2, i * 2 + 2)) {
     const url = new URL(call.url); assert.equal(url.origin, 'https://www.youtube.com'); assert.equal(url.pathname, '/results');
-    assert.equal(url.searchParams.get('hl'), locale.hl); assert.equal(url.searchParams.get('gl'), locale.gl); assert.equal(call.options.credentials, 'omit');
+    assert.equal(url.searchParams.get('hl'), locale.hl); assert.equal(url.searchParams.get('gl'), locale.gl); assert.equal(call.options.headers['Accept-Language'], locale.hl); assert.equal(call.options.credentials, 'omit');
   }
+});
+test('an updated native English language retains its India content region while replacing stale lakh-formatted search caches', async () => {
+  const doc = localeDocument('en-IN', ['ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-IN","gl":"IN"}}});']);
+  let calls = 0;
+  const service = F.createService({fetcher: async url => {
+    calls++; const request = new URL(url);
+    assert.equal(request.searchParams.get('gl'), 'IN');
+    const views = request.searchParams.get('hl') === 'en-IN' ? '2.6 crore views' : '26m views';
+    return {ok: true, url, text: async () => page([renderer('abcdefghijk', 'Python programming', {shortViewCountText: {simpleText: views}, publishedTimeText: {simpleText: '2 years ago'}, lengthText: {simpleText: '12:35'}})])};
+  }});
+  const settings = C.defaults();
+  assert.equal((await service.get(settings, {locale: F.pageLocale(doc)})).items[0].metadata, '2.6 crore views · 2 years ago');
+  doc.documentElement.lang = 'en-GB';
+  const british = await service.get(settings, {locale: F.pageLocale(doc)});
+  assert.equal(british.items[0].metadata, '26m views · 2 years ago'); assert.equal(british.items[0].duration, '12:35'); assert.equal(calls, 4);
+  await service.get(settings, {locale: F.pageLocale(doc)}); assert.equal(calls, 4, 'the corrected language uses its own warm cache');
+  doc.documentElement.lang = 'en-IN';
+  assert.equal((await service.get(settings, {locale: F.pageLocale(doc)})).items[0].metadata, '2.6 crore views · 2 years ago'); assert.equal(calls, 4, 'valid Indian English source labels are preserved');
 });
 test('simultaneous searches share requests within a locale and do not share results across locales', async () => {
   let calls = 0, release;
@@ -356,6 +382,26 @@ const continuationItem = token => ({continuationItemRenderer: {continuationEndpo
 const discoverPage = (entries, token, config = publicClient) => page([...entries, ...(token ? [continuationItem(token)] : [])]) + '<script>ytcfg.set(' + JSON.stringify(config) + ');</script>';
 const continuedPage = (entries, token) => JSON.stringify({onResponseReceivedCommands: [{appendContinuationItemsAction: {continuationItems: [{itemSectionRenderer: {contents: entries}}, ...(token ? [continuationItem(token)] : [])]}}]});
 const oneTopic = () => C.sanitize({intentDescriptions: {work: 'woodworking joinery'}, metadataLimit: 0});
+test('explicit native-page Accept-Language prevents browser English India from overriding GET and continuation locale', async () => {
+  const locale = F.pageLocale(localeDocument('en-GB', ['ytcfg.set({"INNERTUBE_CONTEXT":{"client":{"hl":"en-GB","gl":"DE"}}});']));
+  const calls = [];
+  const service = F.createService({fetcher: async (url, options) => {
+    calls.push({url, options});
+    // Match the observed public endpoint: a browser header can override ?hl=.
+    const language = options.headers?.['Accept-Language'] || 'en-IN';
+    const views = language === 'en-GB' ? '26m views' : '2.6 crore views';
+    const item = renderer(options.method ? 'bbbbbbbbbbb' : 'aaaaaaaaaaa', 'Woodworking joinery lesson', {shortViewCountText: {simpleText: views}, publishedTimeText: {simpleText: '2 years ago'}});
+    return {ok: true, url, text: async () => options.method ? continuedPage([item]) : discoverPage([item], 'next-language-page')};
+  }});
+  const first = await service.get(oneTopic(), {locale});
+  const second = await service.get(oneTopic(), {locale, cursor: first.nextCursor, pageCursor: first.pageCursor});
+  assert.equal(first.items[0].metadata, '26m views · 2 years ago'); assert.equal(second.items[0].metadata, '26m views · 2 years ago');
+  assert.equal(calls.length, 2); assert.deepEqual(calls[0].options.headers, {'Accept-Language': 'en-GB'});
+  const initial = new URL(calls[0].url); assert.equal(initial.searchParams.get('hl'), 'en-GB'); assert.equal(initial.searchParams.get('gl'), 'DE');
+  assert.deepEqual(calls[1].options.headers, {'Accept-Language': 'en-GB', 'Content-Type': 'application/json', 'X-YouTube-Client-Name': '1', 'X-YouTube-Client-Version': publicClient.INNERTUBE_CONTEXT_CLIENT_VERSION});
+  assert.deepEqual(JSON.parse(calls[1].options.body).context.client, {clientName: 'WEB', clientVersion: publicClient.INNERTUBE_CONTEXT_CLIENT_VERSION, hl: 'en-GB', gl: 'DE'});
+  assert.ok(calls.every(call => call.options.credentials === 'omit'));
+});
 test('recognized empty search continuations end discovery without a layout error', async () => {
   const endings = [
     ...['onResponseReceivedCommands', 'onResponseReceivedActions', 'onResponseReceivedEndpoints'].map(key => ({[key]: [{appendContinuationItemsAction: {continuationItems: []}}]})),
@@ -427,6 +473,7 @@ test('a single public topic keeps loading actual continuation pages with filters
     assert.deepEqual(body.context, {client: {clientName: 'WEB', clientVersion: '2.20261023.01.00', hl: 'en-GB', gl: 'GB'}});
     assert.deepEqual(Object.keys(body).sort(), ['context', 'continuation']); assert.ok(!JSON.stringify(call).includes('do-not-forward'));
     assert.equal(call.options.headers.Authorization, undefined); assert.equal(call.options.headers.Cookie, undefined);
+    assert.equal(call.options.headers['Accept-Language'], locale.hl);
   }
 });
 test('discovery cursors are server-owned, expire, and cannot be reused with another intent, locale or refresh round', async () => {

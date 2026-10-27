@@ -6,12 +6,15 @@
     study: ['science explained', 'university lecture', 'math lesson', 'history documentary', 'language lesson', 'physics lecture', 'exam study', 'philosophy explained', 'computer science algorithms lesson', 'economics psychology explained', 'geography earth science lesson', 'worked problems proof explanation'],
     music: ['jazz music', 'ambient music', 'classical piano', 'lofi beats', 'acoustic music', 'live concert', 'world music', 'instrumental music', 'rock indie music live', 'hip hop soul music', 'electronic dance music mix', 'singing covers music production'],
   };
-  function normalizeLocale(input) {
-    let hl = 'en';
-    const value = typeof input?.hl === 'string' ? input.hl.trim() : '';
+  function languageTag(input) {
+    const value = typeof input === 'string' ? input.trim() : '';
     if (value.length <= 35 && /^[a-z]{2,3}(?:-[a-z0-9]{1,8})*$/i.test(value)) {
-      try { hl = Intl.getCanonicalLocales(value)[0] || 'en'; } catch { /* Use the English fallback for malformed language tags. */ }
+      try { return Intl.getCanonicalLocales(value)[0] || null; } catch { /* A malformed language tag cannot override another valid source. */ }
     }
+    return null;
+  }
+  function normalizeLocale(input) {
+    const hl = languageTag(input?.hl) || 'en';
     const gl = typeof input?.gl === 'string' ? input.gl.trim().toUpperCase() : '';
     return {hl, ...(/^[A-Z]{2}$/.test(gl) ? {gl} : {})};
   }
@@ -63,10 +66,14 @@
         const client = config.INNERTUBE_CONTEXT?.client;
         const hl = typeof client?.hl === 'string' ? client.hl : config.HL;
         const gl = typeof client?.gl === 'string' ? client.gl : config.GL;
-        if (typeof hl === 'string' && hl.length <= 35 && /^[a-z]{2,3}(?:-[a-z0-9]{1,8})*$/i.test(hl)) locale.hl = hl;
+        const language = languageTag(hl);
+        if (language) locale.hl = language;
         if (typeof gl === 'string' && /^[a-z]{2}$/i.test(gl)) locale.gl = gl;
       }
     }
+    // The live document language changes with YouTube's UI. Bootstrap scripts
+    // retain their initial language after SPA updates and must not override it.
+    locale.hl = languageTag(doc?.documentElement?.lang) || locale.hl;
     return normalizeLocale(locale);
   }
   function initialData(html, player = false) {
@@ -245,12 +252,14 @@
       if (!fresh && cached && now() - cached.at < ttl) return cached.page;
       if (inflight.has(cacheKey)) return inflight.get(cacheKey);
       const job = (async () => {
-        let url, options = {credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(12000)};
+        // YouTube can prefer Accept-Language over ?hl=. Match the page's UI
+        // language explicitly instead of inheriting a different browser locale.
+        let url, options = {credentials: 'omit', cache: 'no-store', headers: {'Accept-Language': context.hl}, signal: AbortSignal.timeout(12000)};
         if (task.token) {
           url = new URL('https://www.youtube.com/youtubei/v1/search');
           url.searchParams.set('key', task.client.apiKey); url.searchParams.set('prettyPrint', 'false');
           const client = {clientName: 'WEB', clientVersion: task.client.version, hl: context.hl, ...(context.gl ? {gl: context.gl} : {})};
-          options = {...options, method: 'POST', headers: {'Content-Type': 'application/json', 'X-YouTube-Client-Name': '1', 'X-YouTube-Client-Version': client.clientVersion}, body: JSON.stringify({context: {client}, continuation: task.token})};
+          options = {...options, method: 'POST', headers: {...options.headers, 'Content-Type': 'application/json', 'X-YouTube-Client-Name': '1', 'X-YouTube-Client-Version': client.clientVersion}, body: JSON.stringify({context: {client}, continuation: task.token})};
         } else {
           url = new URL('https://www.youtube.com/results'); url.searchParams.set('search_query', task.query); url.searchParams.set('hl', context.hl);
           if (context.gl) url.searchParams.set('gl', context.gl);

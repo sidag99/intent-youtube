@@ -54,8 +54,8 @@ const root = path.resolve(__dirname, '..');
           if (failNativeData) throw new Error('Native component rejected data');
           this.dataWrites++; this.receivedData = value; this.initializationParent = this.parentElement; nativeWrites.push(this.localName);
           if (silentNativeData) return;
-          const data = value.content?.videoRenderer || value, title = document.createElement('h3'), link = document.createElement('a');
-          link.href = '/watch?v=' + data.videoId; link.textContent = data.title.simpleText; title.append(link); this.replaceChildren(title);
+          const modern = value.content?.lockupViewModel, data = value.content?.videoRenderer || value, title = document.createElement('h3'), link = document.createElement('a');
+          link.href = '/watch?v=' + (modern?.contentId || data.videoId); link.textContent = modern?.metadata.lockupMetadataViewModel.title.content || data.title.simpleText; title.append(link); this.replaceChildren(title);
           if (deferNativeData) {this.replaceChildren(); this.finishNativeRender = () => this.replaceChildren(title);}
         }
       };
@@ -198,6 +198,37 @@ const root = path.resolve(__dirname, '..');
     await page.waitForFunction(() => !document.querySelector('[data-intent-native-staging]'));
     assert.deepEqual(await page.evaluate(() => ({fallbackVisible: !silentCard.firstElementChild.hidden, notReady: !silentCard.hasAttribute('data-native-card-ready'), slotEmpty: homeCards.entries.get('T0000000010').node.childElementCount === 0})), {fallbackVisible: true, notReady: true, slotEmpty: true}, 'silent native render failures leave a usable fallback instead of an empty native card');
     console.log('PASS native staging remains hidden and inert until real title/link readiness, moves the same controller into the slot, and times out to the fallback');
+
+    const modernHome = await page.evaluate(async () => {
+      homeCards.reset();
+      const browse = document.createElement('ytd-browse'); browse.setAttribute('page-subtype', 'home');
+      const source = document.createElement('yt-lockup-view-model'); source.innerHTML = '<span class="ytContentMetadataViewModelDelimiter"> </span>';
+      document.body.append(browse); browse.append(source, homeHost);
+      const model = {...video, id: 'M0000000013', movingThumbnail: 'https://i.ytimg.com/an_webp/M0000000013/mqdefault_6s.webp?public=1', metadata: '1.1m · 3 wk ago', rendererContext: {commandContext: {onTap: {innertubeCommand: {urlEndpoint: {url: 'https://evil.test/'}}}}}};
+      const card = makeCard(homeHost, 'Modern fallback'); homeCards.enhance(card, model);
+      await afterNativeFrames();
+      const entry = homeCards.entries.get(model.id), data = entry.node.firstElementChild.receivedData.content;
+      const result = {data, ready: card.hasAttribute('data-native-card-ready'), stageCount: document.querySelectorAll('[data-intent-native-staging]').length};
+      source.insertAdjacentHTML('beforeend', '<div class="ytContentMetadataViewModelMetadataRow">Channel · views · time</div>');
+      const inlineModel = {...model, id: 'M0000000014'}, inlineCard = makeCard(homeHost, 'Inline metadata fallback'); homeCards.enhance(inlineCard, inlineModel);
+      await afterNativeFrames(); result.inline = homeCards.entries.get(inlineModel.id).node.firstElementChild.receivedData.content.lockupViewModel.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows;
+      homeCards.reset(); document.body.append(homeHost); browse.remove(); return result;
+    });
+    assert.equal(modernHome.ready, true); assert.equal(modernHome.stageCount, 0);
+    const lockup = modernHome.data.lockupViewModel;
+    assert.equal(modernHome.data.videoRenderer, undefined, 'modern native Home feeds use the same lockup card type');
+    assert.equal(lockup.contentId, 'M0000000013'); assert.equal(lockup.contentType, 'LOCKUP_CONTENT_TYPE_VIDEO');
+    assert.equal(lockup.metadata.lockupMetadataViewModel.title.content, 'Understanding derivatives');
+    assert.deepEqual(lockup.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows.map(row => row.metadataParts.map(part => part.text.content)), [['数学の時間'], ['1.1m', '3 wk ago']]);
+    assert.equal(lockup.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.delimiter, ' ');
+    assert.deepEqual(modernHome.inline.map(row=>row.metadataParts.map(part=>part.text.content)), [['数学の時間', '1.1m', '3 wk ago']], 'native one-row metadata keeps channel, views and age on the same row');
+    assert.equal(lockup.rendererContext.commandContext.onTap.innertubeCommand.commandMetadata.webCommandMetadata.url, '/watch?v=M0000000013');
+    assert.deepEqual(lockup.itemPlayback.inlinePlayerData.onSelect.innertubeCommand, lockup.rendererContext.commandContext.onTap.innertubeCommand);
+    assert.deepEqual(lockup.itemPlayback.inlinePlayerData.onVisible.innertubeCommand, lockup.rendererContext.commandContext.onTap.innertubeCommand, 'modern hover uses the same owned public watch endpoint');
+    assert.equal(lockup.metadata.lockupMetadataViewModel.image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources[0].url, 'https://yt3.ggpht.com/public-avatar=s68');
+    assert.equal(lockup.contentImage.thumbnailViewModel.overlays[0].thumbnailBottomOverlayViewModel.badges[0].thumbnailBadgeViewModel.text, '10:42');
+    assert.equal(lockup.contentImage.thumbnailViewModel.overlays[1].animatedThumbnailOverlayViewModel.thumbnail.sources[0].url, 'https://i.ytimg.com/an_webp/M0000000013/mqdefault_6s.webp?public=1');
+    console.log('PASS discovery follows modern native Home lockup cards, public locale labels and native metadata rows without copying account endpoints');
 
     const invalid = await page.evaluate(() => {
       const requests = ['{', '', 'x'.repeat(10001), 'null', '[]', JSON.stringify({...video, id: 'bad-id'}), JSON.stringify({...video, id: 12345678901}), JSON.stringify({...video, id: ['V0000000001']}), JSON.stringify({...video, title: '   '}), JSON.stringify({...video, title: {text: 'Not a string'}}), JSON.stringify({...video, shorts: true})];

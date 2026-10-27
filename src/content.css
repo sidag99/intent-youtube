@@ -91,3 +91,23 @@ html[data-intent-shorts] [data-intent-short-nav],
   min-width: var(--intent-watch-thumbnail-width, 168px) !important;
   height: calc(var(--intent-watch-thumbnail-width, 168px) * 9 / 16) !important;
 }
+
+/* Each slotted Home card already occupies one complete Intent grid track.
+   Native grid variables must not divide that track a second time or cap it at
+   the legacy media renderer's 500px maximum. The original source is untouched. */
+#intent-home-feed [data-intent-native-card] {
+  --ytd-rich-grid-items-per-row: 1;
+  --ytd-rich-grid-item-margin: 0px;
+  --ytd-rich-grid-item-min-width: 0px;
+  --ytd-rich-grid-item-max-width: 100%;
+}
+#intent-home-feed [data-intent-native-card] > ytd-rich-item-renderer,
+#intent-home-feed [data-intent-native-card] > ytd-rich-item-renderer > #content,
+#intent-home-feed [data-intent-native-card] ytd-rich-grid-media,
+#intent-home-feed [data-intent-native-card] yt-lockup-view-model {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin-inline: 0 !important;
+}
