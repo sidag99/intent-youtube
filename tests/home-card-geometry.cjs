@@ -18,7 +18,7 @@ const root=path.resolve(__dirname,'..');
    window.frames=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
    window.makeNative=(index)=>{
     const card=document.createElement('ytd-rich-item-renderer'),content=document.createElement('div'),modern=index%2===0,media=document.createElement(modern?'yt-lockup-view-model':'ytd-rich-grid-media'),thumb=document.createElement(modern?'a':'ytd-thumbnail'),title=document.createElement('h3');
-    content.id='content';if(modern)thumb.className='ytLockupViewModelContentImage';title.textContent='Useful video '+index;media.append(thumb,title);content.append(media);card.append(content);card.dataset.index=index;return card;
+    content.id='content';if(modern)thumb.className='ytLockupViewModelContentImage';const link=document.createElement('a');link.href='/watch?v=V'+String(index).padStart(10,'0');link.textContent='Useful video '+index;title.append(link);media.append(thumb,title);content.append(media);card.append(content);card.dataset.index=index;return card;
    };
    window.setup=()=>{window.sources=Array.from({length:6},(_,index)=>makeNative(index));document.querySelector('#native-contents').replaceChildren(...sources);};
    window.readOriginal=()=>sources.map(node=>{const r=node.querySelector('ytd-thumbnail,.ytLockupViewModelContentImage').getBoundingClientRect();return{x:r.x,width:r.width};});

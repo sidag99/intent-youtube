@@ -128,6 +128,73 @@ const root = path.resolve(__dirname, '..');
     assert.deepEqual(upgraded, {stable: true, moved: true, generatedDetached: true, noStyle: true, restored: true, detachedPlaceholderSafe: true});
     console.log('PASS original native nodes, controller identity, listeners and sibling position survive filtering, cached upgrades and exact style restoration');
 
+    const degradation = await page.evaluate(async () => {
+      const host = document.createElement('section'); document.body.append(host);
+      const manager = new IntentNativeCards(host, 'home'), card = makeCard(host, 'Useful fallback link');
+      const native = document.createElement('ytd-rich-item-renderer'); native.id = 'health-original';
+      native.style.cssText = 'display:inline-block!important;width:83%;margin:4px;max-width:800px!important';
+      native.innerHTML = '<h3 id="video-title"><a href="/watch?v=F0000000014">Useful native title</a></h3><button>Native controls</button>';
+      const owner = document.querySelector('#native-list'); owner.append(native);
+      const controller = native.controller, styles = styleSnapshot(native), children = [...native.childNodes];
+      let clicks = 0; native.addEventListener('click', () => clicks++);
+      const model = {...video, id: 'F0000000014'}; manager.enhance(card, model, native);
+      const entry = manager.entries.get(model.id), initialWrites = nativeWrites.length;
+      const status = () => ({ready: card.hasAttribute('data-native-card-ready'), slotHidden: entry.slot.hidden, fallbackVisible: [...card.children].filter(node => node !== entry.slot).every(node => !node.hidden)});
+      await afterNativeFrames();
+      const initiallyReady = status();
+      native.replaceChildren(); await afterNativeFrames();
+      const empty = status();
+      native.replaceChildren(...children); await afterNativeFrames();
+      const recovered = {...status(), sameNative: entry.node.firstElementChild === native, sameController: native.controller === controller};
+
+      // A synchronous native reconciliation must settle before the next paint,
+      // with one dirty entry regardless of how many subtree records it creates.
+      let fallbacks = 0; const fallback = manager.fallback.bind(manager);
+      manager.fallback = target => {fallbacks++; fallback(target);};
+      for (let i = 0; i < 50; i++) {native.replaceChildren(); native.replaceChildren(...children);}
+      await Promise.resolve();
+      const queued = {dirty: manager.dirty.size, frame: manager.frame != null};
+      await afterNativeFrames();
+      const transient = {...status(), fallbacks};
+
+      native.querySelector('h3').remove(); await afterNativeFrames();
+      const missingTitle = status();
+      native.replaceChildren(...children); await afterNativeFrames();
+      entry.node.remove(); await afterNativeFrames();
+      const detachedWrapper = status();
+      host.append(entry.node); await afterNativeFrames();
+      const reattached = status();
+      native.click();
+
+      native.replaceChildren(); await Promise.resolve();
+      const resetWasPending = manager.frame != null && manager.dirty.size === 1;
+      manager.reset();
+      const reset = {wasPending: resetWasPending, frameCleared: manager.frame === null, dirty: manager.dirty.size, entries: manager.entries.size, restored: native.parentElement === owner, styles: styleSnapshot(native), sameController: native.controller === controller};
+      native.replaceChildren(...children);
+      const nextCard = makeCard(host, 'Fallback after reset'); manager.enhance(nextCard, {...video, id: 'F0000000015'}, native);
+      await afterNativeFrames(); native.replaceChildren(); await afterNativeFrames();
+      const resetStillObserved = !nextCard.hasAttribute('data-native-card-ready') && !nextCard.firstElementChild.hidden;
+      native.replaceChildren(...children); await afterNativeFrames();
+      native.replaceChildren(); await Promise.resolve();
+      const destroyWasPending = manager.frame != null;
+      manager.destroy();
+      native.replaceChildren(...children); native.click();
+      const oldFallbacks = fallbacks;
+      host.append(entry.node); entry.node.append(document.createElement('div'));
+      await afterNativeFrames();
+      const destroyed = {wasPending: destroyWasPending, frameCleared: manager.frame === null, dirty: manager.dirty.size, entries: manager.entries.size, noFurtherChecks: fallbacks === oldFallbacks, restored: native.parentElement === owner, styles: styleSnapshot(native), sameController: native.controller === controller, clicks, noFactoryRetries: nativeWrites.length === initialWrites};
+      host.remove(); native.remove();
+      return {initiallyReady, empty, recovered, queued, transient, missingTitle, detachedWrapper, reattached, reset, resetStillObserved, destroyed, styles};
+    });
+    const healthy = {ready: true, slotHidden: false, fallbackVisible: false}, fallback = {ready: false, slotHidden: true, fallbackVisible: true};
+    assert.deepEqual(degradation.initiallyReady, healthy); assert.deepEqual(degradation.empty, fallback);
+    assert.deepEqual(degradation.recovered, {...healthy, sameNative: true, sameController: true});
+    assert.deepEqual(degradation.queued, {dirty: 1, frame: true}); assert.deepEqual(degradation.transient, {...healthy, fallbacks: 0}, 'synchronous native reconciliation does not flash the fallback');
+    assert.deepEqual(degradation.missingTitle, fallback); assert.deepEqual(degradation.detachedWrapper, fallback); assert.deepEqual(degradation.reattached, healthy);
+    assert.deepEqual(degradation.reset, {wasPending: true, frameCleared: true, dirty: 0, entries: 0, restored: true, styles: degradation.styles, sameController: true}); assert.equal(degradation.resetStillObserved, true, 'reset keeps the same host observer usable for the next feed');
+    assert.deepEqual(degradation.destroyed, {wasPending: true, frameCleared: true, dirty: 0, entries: 0, noFurtherChecks: true, restored: true, styles: degradation.styles, sameController: true, clicks: 2, noFactoryRetries: true});
+    console.log('PASS late native subtree/wrapper loss reveals existing links, valid markup recovers, synchronous reconciliation coalesces and reset/destroy cancel pending checks');
+
     const pendingTakeover = await page.evaluate(async () => {
       const model = {...video, id: 'R0000000012'}, card = makeCard(homeHost, 'Pending discovery');
       deferNativeData = true; homeCards.enhance(card, model); deferNativeData = false;
