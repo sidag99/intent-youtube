@@ -19,20 +19,9 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     for (const file of ['core.js', 'feed.js', 'feed-theme.js', 'home.js', 'toolbar.js']) await page.addScriptTag({path: path.join(root, 'src', file)});
     await page.evaluate(() => {
       window.testSettings = IntentCore.sanitize({mode: 'work', customIntents: {'custom-build': {name: 'Build things', description: 'Make furniture and useful wooden objects'}}});
-      window.requests = []; window.changes = []; window.refreshes = 0; window.testCoverage = {state: 'active'}; window.pausedChanges = []; window.testPaused = false;
-      window.onTestPaused = paused => {
-        pausedChanges.push(paused); testPaused = paused;
-        if (paused) {if (testCoverage.state !== 'paused') window.testResumeCoverage = {...testCoverage}; testCoverage = {state: 'paused'};}
-        else testCoverage = window.testResumeCoverage || {state: 'active'};
-        toolbar.sync(testSettings, true, testCoverage);
-      };
+      window.requests = []; window.changes = []; window.refreshes = 0; window.testCoverage = {state: 'active'};
       window.runtime = {getURL: value => 'https://extension.test/' + value, sendMessage: async message => {
         requests.push(message);
-        if (message.type === 'SET_TAB_PAUSED') {
-          if (window.delayPause) await new Promise(resolve => {window.releasePause = resolve;});
-          if (window.failPause) return {ok: false, error: 'Could not pause this tab.'};
-          testPaused = message.paused; return {ok: true, tabPaused: testPaused, settings: testSettings};
-        }
         if (message.type === 'SET_MODE') {
           if (window.delayMode) await new Promise(resolve => {window.releaseMode = resolve;});
           if (window.failMode) return {ok: false, error: 'Try the mode again.'};
@@ -40,7 +29,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
         }
         return {ok: true};
       }};
-      window.toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}, onPaused: onTestPaused});
+      window.toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}});
       toolbar.sync(testSettings);
     });
     const toolbar = page.locator('#intent-toolbar'), trigger = toolbar.getByRole('combobox', {name: 'Intent mode'});
@@ -242,14 +231,13 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await trigger.focus(); await page.keyboard.press('ArrowDown');
     assert.equal(await option('Music').getAttribute('aria-selected'), 'true');
     await page.keyboard.press('Home'); assert.equal(await option('Work').evaluate(el => el.getRootNode().activeElement === el), true);
-    await page.keyboard.press('End'); assert.equal(await option('Off').evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.press('End'); assert.equal(await option('Intent off').evaluate(el => el.getRootNode().activeElement === el), true);
     await page.keyboard.press('Escape');
     assert.equal(await trigger.getAttribute('aria-expanded'), 'false'); assert.equal(await trigger.evaluate(el => el.getRootNode().activeElement === el), true);
     await page.keyboard.press('Space'); await toolbar.getByRole('listbox').waitFor();
     await page.locator('#outside').click(); assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
     await trigger.click(); await page.keyboard.press('Tab');
-    assert.equal(await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).evaluate(el => el.getRootNode().activeElement === el), true, 'Tab reaches the separate tab-pause action');
-    await page.keyboard.press('Tab'); assert.equal(await trigger.getAttribute('aria-expanded'), 'false', 'Tab leaves the footer without trapping focus');
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'false', 'Tab leaves the footer without trapping focus');
     await page.evaluate(() => {document.documentElement.setAttribute('dark', ''); toolbar.updateTheme();});
     await trigger.click(); const dark = await toolbar.locator('#intent-mode-popover').evaluate(menu => ({color: getComputedStyle(menu).color, background: getComputedStyle(menu).backgroundColor}));
     assert.equal(dark.background, 'rgb(40, 40, 40)'); assert.equal(dark.color, 'rgb(241, 241, 241)');
@@ -267,36 +255,25 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await page.evaluate(() => {releaseMode(); delayMode = false;}); await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'study');
     await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).click(); assert.equal(await page.evaluate(() => refreshes), 1);
     await toolbar.getByRole('button', {name: 'Intent settings', exact: true}).click(); assert.equal(await page.evaluate(() => requests.at(-1).type), 'OPEN_SETTINGS');
-    // Pause is a separate tab-local action: it never replaces the saved intent with Off.
-    const beforePauseModeCalls = await page.evaluate(() => requests.filter(message => message.type === 'SET_MODE').length);
-    await trigger.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Tab');
-    await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).waitFor();
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
-    assert.equal(await trigger.getAttribute('data-mode'), 'study');
-    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Paused');
-    assert.equal(await toolbar.locator('.coverage-badge').isVisible(), false, 'the paused label avoids a duplicate badge');
-    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
-    assert.match(await trigger.getAttribute('title'), /paused for this tab/);
-    assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_TAB_PAUSED', paused: true});
-    assert.deepEqual(await page.evaluate(() => pausedChanges), [true]);
+    // Intent off is the only off action here; Pause remains a separate popup control.
     await trigger.click();
-    const resume = toolbar.getByRole('button', {name: 'Resume on this tab', exact: true});
-    await resume.focus(); await page.keyboard.press('Space');
-    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
-    assert.equal(await trigger.getAttribute('data-mode'), 'study'); assert.deepEqual(await page.evaluate(() => pausedChanges), [true, false]);
-    assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_TAB_PAUSED', paused: false});
-    assert.equal(await page.evaluate(() => requests.filter(message => message.type === 'SET_MODE').length), beforePauseModeCalls);
-    await page.evaluate(() => {testCoverage = {state: 'paused'}; testPaused = true; toolbar.sync(testSettings, true, testCoverage);});
-    assert.equal(await trigger.getAttribute('data-mode'), 'study', 'a paused reload preserves the saved intent');
-    await trigger.click(); await resume.click(); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
-    await page.evaluate(() => {failPause = true;}); await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
-    await toolbar.getByRole('status').filter({hasText: 'Could not pause this tab.'}).waitFor();
-    assert.equal(await toolbar.getAttribute('data-filter-state'), 'active'); assert.equal(await trigger.getAttribute('data-mode'), 'study');
-    await page.evaluate(() => {failPause = false; delayPause = true;}); await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
-    await page.waitForFunction(() => typeof releasePause === 'function'); assert.equal(await trigger.isDisabled(), true);
-    await page.evaluate(() => {releasePause(); delayPause = false;}); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
-    await trigger.click(); await resume.click(); await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'active');
+    assert.equal(await toolbar.getByRole('button', {name: /Pause on this tab|Resume on this tab/}).count(), 0);
+    assert.equal(await option('Intent off').count(), 1);
+    await option('Intent off').click();
+    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'off');
+    assert.deepEqual(await page.evaluate(() => requests.at(-1)), {type: 'SET_MODE', mode: 'off'});
+    assert.equal(await page.evaluate(() => requests.some(message => message.type === 'SET_TAB_PAUSED')), false);
+    assert.match(await trigger.getAttribute('title'), /timer rules still apply/i);
+    await trigger.click(); await option('Study').click();
+    await page.evaluate(() => {testCoverage = {state: 'paused'}; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await trigger.getAttribute('data-mode'), 'study', 'popup Pause preserves the saved intent');
+    assert.equal(await toolbar.locator('.mode-name').innerText(), 'Paused');
+    assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
+    await trigger.click(); await option('Intent off').click();
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'paused', 'changing intent cannot silently resume a popup-paused tab');
+    await page.evaluate(() => {testCoverage = {state: 'active'}; toolbar.sync(testSettings, true, testCoverage);});
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'off');
+    await trigger.click(); await option('Study').click();
     // Open menus and their document/window listeners are removed on destruction, then safely recreated.
     await trigger.click(); await page.evaluate(() => toolbar.destroy()); assert.equal(await toolbar.count(), 0);
     await page.evaluate(() => {const old = document.querySelector('ytd-masthead'); const fresh = old.cloneNode(true); fresh.removeAttribute('data-intent-toolbar'); old.replaceWith(fresh); toolbar.sync(testSettings);});
@@ -332,7 +309,7 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await page.evaluate(() => {
       history.pushState({}, '', '/results?search_query=physics');
       testCoverage = {state: 'off-here'}; testSettings = IntentCore.sanitize({...testSettings, mode: 'work'});
-      toolbar.destroy(); toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}, onPaused: onTestPaused});
+      toolbar.destroy(); toolbar = new IntentToolbar(runtime, {onSettings: settings => {changes.push(settings.mode); toolbar.sync(settings, true, testCoverage);}, onRefresh: () => {refreshes++;}});
       toolbar.sync(testSettings, true, testCoverage);
     });
     assert.equal(await toolbar.getAttribute('data-filter-state'), 'off-here');
@@ -366,12 +343,10 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     assert.equal(await trigger.getAttribute('data-mode'), 'off'); assert.equal(await trigger.getAttribute('data-filter-state'), 'off');
     assert.equal(await toolbar.locator('.mode-name').innerText(), 'Intent off');
     assert.equal(await toolbar.getByRole('button', {name: 'Refresh feed', exact: true}).isDisabled(), true);
-    await trigger.click(); await toolbar.getByRole('button', {name: 'Pause on this tab', exact: true}).click();
-    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'paused');
-    assert.equal(await trigger.getAttribute('data-mode'), 'off', 'pause keeps an independently selected Off mode');
-    await trigger.click(); await toolbar.getByRole('button', {name: 'Resume on this tab', exact: true}).click();
-    await page.waitForFunction(() => document.querySelector('#intent-toolbar').dataset.filterState === 'off');
-    assert.equal(await trigger.getAttribute('data-mode'), 'off', 'resume does not implicitly choose a new intent');
+    await page.evaluate(() => toolbar.sync(testSettings, true, {state: 'paused'}));
+    assert.equal(await trigger.getAttribute('data-mode'), 'off', 'popup pause keeps an independently selected Off mode');
+    await page.evaluate(() => toolbar.sync(testSettings, true, testCoverage));
+    assert.equal(await toolbar.getAttribute('data-filter-state'), 'off');
     await trigger.click(); await option('Work').click();
     await page.waitForFunction(() => document.querySelector('#intent-toolbar').shadowRoot.querySelector('#intent-mode-trigger').dataset.mode === 'work');
     assert.equal(await toolbar.getAttribute('data-filter-state'), 'active', 'the retained Off control can re-enable filtering');
@@ -442,7 +417,6 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     const beforeMenuRefresh=await page.evaluate(()=>refreshes);await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).click();assert.equal(await page.evaluate(()=>refreshes),beforeMenuRefresh+1,'compact chooser refresh invokes the same feed action');await page.keyboard.press('Escape');
     await page.setViewportSize({width:390,height:250});await trigger.focus();await page.keyboard.press('ArrowDown');
     const shortMenu=toolbar.locator('#intent-mode-popover');const shortBox=await shortMenu.boundingBox();assert.ok(shortBox.y>=8&&shortBox.y+shortBox.height<=242,'the chooser stays within a zoomed short viewport');
-    await page.keyboard.press('Tab');assert.equal(await toolbar.getByRole('button',{name:'Pause on this tab',exact:true}).evaluate(el=>el===el.getRootNode().activeElement),true);
     await page.keyboard.press('Tab');assert.equal(await toolbar.getByRole('button',{name:'Refresh feed',exact:true}).evaluate(el=>el===el.getRootNode().activeElement),true);
     await page.keyboard.press('Tab');const menuSettings=toolbar.getByRole('button',{name:'Intent settings',exact:true});assert.equal(await menuSettings.evaluate(el=>el===el.getRootNode().activeElement),true);
     const settingsBox=await menuSettings.boundingBox();assert.ok(settingsBox.y>=shortBox.y&&settingsBox.y+settingsBox.height<=shortBox.y+shortBox.height,'keyboard focus scrolls the Settings action fully into the short menu');
@@ -479,6 +453,6 @@ const shots=path.resolve(process.env.INTENT_SCREENSHOTS||'test-results');fs.mkdi
     await page.evaluate(() => {layoutFeed.sync(layoutSettings, true); layoutFeed.sync(layoutSettings, false);});
     assert.deepEqual(await page.evaluate(() => measureHome()), await page.evaluate(() => nativeHomeGeometry), 'pausing removes the same scoped layout overrides');
     assert.deepEqual(errors, []);
-    console.log('PASS custom toolbar: packaged logo, top-layer menu, keyboard selection, pointer dismissal, per-tab callback, loading/errors, light/dark themes, SPA reattachment, dynamic custom intents, explicit search/off/loading/unavailable coverage, independent tab pause/resume, native wide search geometry, readable responsive slots, 44px launchers, short-viewport keyboard actions, restored native styles, settled resize observers, transparent feed surfaces and Home spacer restoration.');
+    console.log('PASS custom toolbar: packaged logo, top-layer menu, keyboard selection, pointer dismissal, per-tab callback, loading/errors, light/dark themes, SPA reattachment, dynamic custom intents, explicit search/off/loading/unavailable coverage, explicit Intent off without a dropdown Pause action, native wide search geometry, readable responsive slots, 44px launchers, short-viewport keyboard actions, restored native styles, settled resize observers, transparent feed surfaces and Home spacer restoration.');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

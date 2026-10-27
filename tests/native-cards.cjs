@@ -128,6 +128,22 @@ const root = path.resolve(__dirname, '..');
     assert.deepEqual(upgraded, {stable: true, moved: true, generatedDetached: true, noStyle: true, restored: true, detachedPlaceholderSafe: true});
     console.log('PASS original native nodes, controller identity, listeners and sibling position survive filtering, cached upgrades and exact style restoration');
 
+    const pendingTakeover = await page.evaluate(async () => {
+      const model = {...video, id: 'R0000000012'}, card = makeCard(homeHost, 'Pending discovery');
+      deferNativeData = true; homeCards.enhance(card, model); deferNativeData = false;
+      const entry = homeCards.entries.get(model.id), pending = document.querySelector('[data-intent-native-staging] ytd-rich-item-renderer');
+      const original = document.createElement('ytd-rich-item-renderer'); original.id = 'pending-original';
+      original.innerHTML = '<button>Original controls</button>';
+      document.querySelector('#native-list').append(original);
+      const controller = original.controller;
+      homeCards.get(model, original);
+      pending.finishNativeRender(); await afterNativeFrames();
+      const result = {originalKept: entry.node.firstElementChild === original, controllerKept: original.controller === controller, notFailed: !entry.node.hasAttribute('data-intent-native-failed'), stages: document.querySelectorAll('[data-intent-native-staging]').length};
+      homeCards.reset();
+      return {...result, restored: original.parentElement?.id === 'native-list', stylesRestored: !original.hasAttribute('style')};
+    });
+    assert.deepEqual(pendingTakeover, {originalKept: true, controllerKept: true, notFailed: true, stages: 0, restored: true, stylesRestored: true}, 'a delayed factory cannot overwrite an original native card that took over while loading');
+
     const watchSize=await page.evaluate(()=>{const host=document.querySelector('#intent-watch-feed');host.style.setProperty('--intent-watch-thumbnail-width','196px');const native=document.createElement('ytd-compact-video-renderer');native.setAttribute('data-intent-created-card','');const thumbnail=document.createElement('ytd-thumbnail');thumbnail.style.cssText='display:block;width:168px;height:94px';native.append(thumbnail);host.append(native);const size={width:thumbnail.getBoundingClientRect().width,height:thumbnail.getBoundingClientRect().height};native.remove();return size;});
     assert.deepEqual(watchSize,{width:196,height:110.25},'generated compact cards follow the page measured native thumbnail size');
 

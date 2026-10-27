@@ -9,7 +9,7 @@ const root=path.resolve(__dirname,'..'),shots=path.resolve(process.env.INTENT_SC
   window.addNative=(id,title,shorts=false,target=document.querySelector('#native'))=>{const card=document.createElement('ytd-rich-item-renderer');card.innerHTML=`<a id="video-title" href="${shorts?'/shorts/'+id:'/watch?v='+id}">${title}</a><div id="channel-name"><a>Helpful creator</a></div><div id="metadata-line"><span>3.9M views</span><span>2 years ago</span></div><div id="description-text">A tutorial for building reliable software.</div>`;target.append(card);return card;};
   window.video=(id,title)=>({id,title,channel:'Helpful creator',metadata:'3.9M views · 2 years ago',thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg`});
   window.settings=IntentCore.sanitize({mode:'work',metadataLimit:0});window.calls=[];window.releaseNative=null;window.delayNative=false;
-  window.runtime={getURL:p=>'https://extension.test/'+p,sendMessage:async message=>{calls.push(message);if(message.type==='FILTER_RECOMMENDATIONS'){if(delayNative)await new Promise(resolve=>releaseNative=resolve);return{ok:true,key:message.key,semantic:true,items:message.videos.filter(v=>v.title.includes('Build')&&(!v.shorts||!settings.hideShorts))};}return{ok:true,key:message.key,semantic:true,items:[video('N0000000001','Build a reliable app'),video('D0000000001','Build a tiny compiler'),video('D0000000002','Build a keyboard')],hasMore:false,nextCursor:1};}};
+  window.runtime={getURL:p=>'https://extension.test/'+p,sendMessage:async message=>{calls.push(message);if(message.type==='FILTER_RECOMMENDATIONS'){if(delayNative)await new Promise(resolve=>releaseNative=resolve);return{ok:true,key:message.key,semantic:true,items:message.videos.filter(v=>(v.title.includes('Build')||v.description.includes('#SoftwareEngineering'))&&(!v.shorts||!settings.hideShorts))};}return{ok:true,key:message.key,semantic:true,items:[video('N0000000001','Build a reliable app'),video('D0000000001','Build a tiny compiler'),video('D0000000002','Build a keyboard')],hasMore:false,nextCursor:1};}};
   addNative('N0000000001','Build a reliable app');addNative('N0000000002','Unrelated celebrity interview');addNative('N0000000003','Build a local database');window.home=new IntentHome(runtime);home.sync(settings,true);
  });
  const feed=page.locator('#intent-home-feed'),recommended=feed.locator('[aria-labelledby="home-recommended-heading"]'),discover=feed.locator('[aria-labelledby="home-discovery-heading"]');
@@ -31,11 +31,41 @@ const root=path.resolve(__dirname,'..'),shots=path.resolve(process.env.INTENT_SC
  assert.deepEqual(rejectedBatch,{mutations:0,sameFocused:true},'an all-rejected batch leaves existing card DOM and focus untouched');
  const callsBefore=await page.evaluate(()=>calls.length);for(let i=0;i<10;i++)await page.evaluate(()=>home.sync(settings,true));
  assert.equal(await page.evaluate(()=>calls.length),callsBefore,'routine page scans do not repeat classification');
+ // Native descriptions and channels can arrive after a title has been rejected.
+ await page.evaluate(()=>{window.lateMetadataCard=addNative('M0000000001','An unexpected approach');lateMetadataCard.querySelector('#description-text').textContent='';lateMetadataCard.querySelector('#channel-name a').textContent='';return home.syncRecommendations();});
+ assert.equal(await recommended.locator('[data-video-id="M0000000001"]').count(),0);
+ await page.evaluate(()=>{lateMetadataCard.querySelector('#channel-name a').textContent='Systems teacher';lateMetadataCard.querySelector('#description-text').textContent='A distributed systems explanation. #SoftwareEngineering';return home.syncRecommendations();});
+ assert.equal(await recommended.locator('[data-video-id="M0000000001"]').count(),1);
+ const metadataChecks=await page.evaluate(()=>calls.filter(m=>m.type==='FILTER_RECOMMENDATIONS').flatMap(m=>m.videos).filter(v=>v.id==='M0000000001'));
+ assert.equal(metadataChecks.length,2);assert.equal(metadataChecks[1].channel,'Systems teacher');assert.deepEqual(metadataChecks[1].hashtags,['Software Engineering']);
+ for(let i=0;i<5;i++)await page.evaluate(()=>home.sync(settings,true));
+ assert.equal(await page.evaluate(()=>calls.filter(m=>m.type==='FILTER_RECOMMENDATIONS').flatMap(m=>m.videos).filter(v=>v.id==='M0000000001').length),2,'unchanged late metadata does not cause repeated inference');
+ // Rejecting an older snapshot must not delete metadata queued during its check.
+ await page.evaluate(()=>{window.inflightMetadata=addNative('M0000000002','Another unexpected approach');inflightMetadata.querySelector('#description-text').textContent='';delayNative=true;releaseNative=null;window.metadataJob=home.syncRecommendations();});
+ await page.waitForFunction(()=>typeof releaseNative==='function');
+ await page.evaluate(()=>{inflightMetadata.querySelector('#description-text').textContent='A useful explanation. #SoftwareEngineering';home.syncRecommendations();delayNative=false;releaseNative();return metadataJob;});
+ assert.equal(await recommended.locator('[data-video-id="M0000000002"]').count(),1);
+ assert.equal(await page.evaluate(()=>calls.filter(m=>m.type==='FILTER_RECOMMENDATIONS').flatMap(m=>m.videos).filter(v=>v.id==='M0000000002').length),2);
  // The native continuation button is used without public discovery requests.
  await page.evaluate(()=>{const continuation=document.createElement('ytd-continuation-item-renderer');continuation.innerHTML='<button>Native load more</button>';continuation.querySelector('button').onclick=()=>{addNative('N0000000005','Build resilient services');continuation.remove();};document.querySelector('#native').append(continuation);});
  const searches=await page.evaluate(()=>calls.filter(m=>m.type==='GET_FEED').length);await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();
  await recommended.locator('[data-video-id="N0000000005"]').waitFor();assert.equal(await page.evaluate(()=>calls.filter(m=>m.type==='GET_FEED').length),searches);
  await feed.getByRole('button',{name:'Find more recommendations',exact:true}).click();await page.waitForFunction(()=>!home.nativeMoreBusy);assert.match(await feed.locator('.recommended-feedback').innerText(),/no further recommendation batch/i);
+ // A failed next discovery page keeps existing videos active and remains retryable.
+ await page.evaluate(()=>{window.normalSend=runtime.sendMessage;window.capPages=0;window.failCapPage=false;runtime.sendMessage=async message=>{if(message.type!=='GET_FEED')return normalSend(message);calls.push(message);if(failCapPage){failCapPage=false;throw new Error('Temporary discovery failure');}const page=capPages++;return{ok:true,key:message.key,semantic:true,items:Array.from({length:page<2?60:1},(_,i)=>video('C'+String(page*60+i).padStart(10,'0'),'Build discovery item '+(page*60+i))),hasMore:page<2,nextCursor:capPages,pageCursor:page<2?'cap-page-'+capPages:null};};return home.refreshFeed();});
+ assert.equal(await page.evaluate(()=>home.items.length),60);
+ const retryCursor=await page.evaluate(()=>({cursor:home.cursor,pageCursor:home.pageCursor}));
+ await page.evaluate(()=>{failCapPage=true;return home.load(false,false);});
+ assert.equal(await page.evaluate(()=>home.feedState),'active');assert.equal(await discover.locator('.card').count(),60);assert.match(await discover.locator('.status').innerText(),/Temporary discovery failure/);
+ assert.deepEqual(await page.evaluate(()=>({cursor:home.cursor,pageCursor:home.pageCursor})),retryCursor);
+ await feed.getByRole('button',{name:'Retry loading more',exact:true}).click();await page.waitForFunction(()=>!home.busy&&home.items.length===120);
+ assert.equal(await feed.getByRole('button',{name:'Find more videos',exact:true}).isVisible(),false);assert.match(await discover.locator('.discovery-end').innerText(),/120 real videos/);
+ // Late native deduplication frees discovery capacity and updates its controls.
+ await page.evaluate(()=>{addNative('C0000000000','Build discovery item 0');return home.syncRecommendations();});
+ assert.equal(await page.evaluate(()=>home.items.length),119);assert.equal(await discover.locator('.discovery-end').isVisible(),false);assert.equal(await feed.getByRole('button',{name:'Find more videos',exact:true}).isVisible(),true);
+ await feed.getByRole('button',{name:'Find more videos',exact:true}).click();await page.waitForFunction(()=>!home.busy&&home.items.length===120);
+ assert.equal(await discover.locator('[data-video-id="C0000000120"]').count(),1);assert.equal(await feed.locator('[data-video-id="C0000000000"]').count(),1,'the late native duplicate appears once while the freed discovery slot refills');
+ await page.evaluate(()=>{runtime.sendMessage=normalSend;return home.refreshFeed();});
  // No accepted recommendations means no section header, separator or blank space.
  await page.evaluate(()=>{document.querySelector('#native').replaceChildren();addNative('U0000000001','Unrelated interview');return home.refreshFeed();});await page.waitForFunction(()=>!home.nativeJob&&!home.busy);
  assert.equal(await recommended.isVisible(),false);assert.equal(await discover.getByRole('button',{name:'Find more recommendations',exact:true}).isVisible(),true);

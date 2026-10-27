@@ -30,9 +30,9 @@
       (document.body||document.documentElement).append(stage);stage.append(node);
       const payload=tag==='ytd-rich-item-renderer'?{content:{videoRenderer:data}}:data;
       let observer,timer;
-      const cleanup=(failed=false)=>{observer?.disconnect();clearTimeout(timer);stage.remove();cleanups.delete(cleanup);if(failed){active.delete(host);host.setAttribute('data-intent-native-failed','');host.removeAttribute('data-intent-native-request');}};cancel=cleanup;cleanups.add(cleanup);
+      const cleanup=(failed=false)=>{observer?.disconnect();clearTimeout(timer);stage.remove();cleanups.delete(cleanup);active.delete(host);if(failed&&host.getAttribute('data-intent-native-request')===raw){host.setAttribute('data-intent-native-failed','');host.removeAttribute('data-intent-native-request');}};cancel=cleanup;cleanups.add(cleanup);
       const ready=()=>{
-        if(disposed||!host.isConnected){cleanup(true);return;}
+        if(disposed||!host.isConnected||host.getAttribute('data-intent-native-request')!==raw){cleanup();return;}
         if(!node.querySelector('a[href*="watch"]')||!node.querySelector('#video-title,h3'))return;
         host.replaceChildren(node);cleanup();host.setAttribute('data-intent-native-rendered','');host.removeAttribute('data-intent-native-request');host.dispatchEvent(new Event('intent-native-card-ready',{bubbles:true}));
       };

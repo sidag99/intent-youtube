@@ -2,7 +2,7 @@
   const C = IntentCore, app = document.querySelector('#app');
   const full = document.body.classList.contains('settings');
   const live = Boolean(globalThis.chrome?.runtime?.id);
-  let state, editing = null, saving = false, targetTabId, targetURL, draggedIntent, libraryOpen = false;
+  let state, editing = null, saving = false, targetTabId, targetURL, draggedIntent, libraryOpen = false, stateRevision = 0;
   // Resolve once: a popup belongs to the tab from which it was opened.
   const targetReady = !full && live && chrome.tabs?.query ? chrome.tabs.query({active: true, currentWindow: true}).then(tabs => {
     const tab = tabs[0];
@@ -51,6 +51,7 @@
   const previewUI = full ? new IntentPreview({getSettings: () => state.settings, live, samples}) : null;
   async function request(type, patch, options = {}) {
     if (type === 'SET_TAB_PAUSED' && typeof options.paused !== 'boolean') throw new Error('Choose whether to pause or resume this tab.');
+    if (['UPDATE_SETTINGS', 'RESET_SETTINGS', 'SET_TAB_PAUSED'].includes(type)) stateRevision++;
     if (live) {
       await targetReady;
       let timer;
@@ -152,7 +153,7 @@
       </div><aside class="side-column"><section class="panel budget-panel"><div class="section-head"><h2>Your daily budget</h2>${toggle('limitEnabled', 'Enable daily time limit')}</div><p class="section-copy">Set how much time you want to spend on YouTube.</p><div class="budget-ring"><svg viewBox="0 0 200 200" aria-hidden="true"><circle class="ring-track" cx="100" cy="100" r="87"/><circle class="ring-value" id="ring-value" cx="100" cy="100" r="87"/></svg><div><strong id="remaining-value">60<span>min</span></strong><span id="remaining-label">left for today</span></div></div><div class="budget-summary"><span id="used-label">0 min used</span><span id="limit-label">60 min budget</span></div><div class="presets" aria-label="Daily budget presets">${[30, 60, 90].map(n => `<button data-minutes="${n}" class="${s.dailyMinutes === n ? 'active' : ''}" aria-pressed="${s.dailyMinutes === n}">${n} min</button>`).join('')}</div><label class="custom-budget" for="daily-minutes">Daily limit <span><input id="daily-minutes" type="number" min="1" max="1440" step="1" value="${s.dailyMinutes}" aria-describedby="budget-note"> min / day</span></label><p id="budget-note" class="budget-note">${escape(budgetNote())}</p><div class="playback-row"><div><h3>Count background playback</h3><p>Eligible playback follows each intent’s timer rule.</p></div>${toggle('countPlayback', 'Count background playback')}</div><p class="helper timer-explainer">The toolbar clock shows your remaining budget. Selected modes count while browsing or scrolling in the focused tab; eligible playback can also count. Multiple tabs count once. Exempt intents add no time unless matching-only exemptions identify an unrelated video. Resets at local midnight.</p></section>${full ? `<section class="panel timer-modes-panel"><div class="section-head"><h2>Time counting</h2></div><p class="section-copy">Choose how each intent uses your daily budget.</p><div class="count-mode-list">${[...Object.keys(definitions), 'off'].map(countModeToggle).join('')}</div><p class="helper">Eligible background playback follows the same rule. The daily budget is shared across tabs.</p></section>` : ''}${full ? '<div class="privacy-note"><span>↳</span><div><strong>Private by default</strong><p>Bundled local AI. No accounts or analytics.<br>Your settings and time stay in your browser.</p></div></div>' : '<a class="all-settings" href="settings.html" target="_blank">Settings <span>↗</span></a>'}</aside></div>
       ${full ? '<section class="preview-section" id="intent-preview" aria-label="Filter preview"></section>' : ''}
       ${!full ? '<dialog id="intent-library-dialog" aria-labelledby="library-dialog-heading"><header class="dialog-heading"><h2 id="library-dialog-heading">Intent library</h2><button type="button" class="icon-button" id="close-intent-library" aria-label="Close intent library">×</button></header><section id="intent-library" aria-label="Add intents"></section></dialog>' : ''}
-      ${editorMarkup()}${full ? '<dialog id="reset-dialog" aria-labelledby="reset-heading"><h2 id="reset-heading">Reset settings to factory defaults?</h2><p>This restores built-in intents, the role-preset library, intent order, timer rules, new-tab preferences and fuller-check limits, and clears per-tab pauses. Your custom intents and filter rules will be removed. Daily time already used and usage history will be kept.</p><div class="dialog-actions"><button type="button" class="button" id="cancel-reset">Cancel</button><button type="button" class="button danger" id="confirm-reset">Reset to defaults</button></div></dialog>' : ''}<footer><span>Your settings stay on this device.</span>${full ? '<button type="button" class="button danger-button" id="reset-settings">Reset settings</button>' : ''}<span>intent · ${full ? '2.2.1' : 'LOCAL & PRIVATE'}</span></footer><div id="notice" role="status" aria-live="polite"></div>`;
+      ${editorMarkup()}${full ? '<dialog id="reset-dialog" aria-labelledby="reset-heading"><h2 id="reset-heading">Reset settings to factory defaults?</h2><p>This restores built-in intents, the role-preset library, intent order, timer rules, new-tab preferences and fuller-check limits, and clears per-tab pauses. Your custom intents and filter rules will be removed. Daily time already used and usage history will be kept.</p><div class="dialog-actions"><button type="button" class="button" id="cancel-reset">Cancel</button><button type="button" class="button danger" id="confirm-reset">Reset to defaults</button></div></dialog>' : ''}<footer><span>Your settings stay on this device.</span>${full ? '<button type="button" class="button danger-button" id="reset-settings">Reset settings</button>' : ''}<span>intent · ${full ? '2.2.2' : 'LOCAL & PRIVATE'}</span></footer><div id="notice" role="status" aria-live="polite"></div>`;
     paintTime(); paintSamples(); rolePresetsUI?.render(); libraryUI?.render();
     const catalogue = document.querySelector('#intent-library-dialog');
     if (libraryOpen && catalogue) catalogue.showModal();
@@ -201,6 +202,7 @@
   }
   function closeLibrary() {libraryOpen = false; render(); document.querySelector('#popup-intent-library')?.focus();}
   function closeEditor() {
+    if (saving) return;
     const previous = editing;
     if (previous) for (const field of Object.values(drafts)) delete field[previous];
     blockedDraft = undefined; editing = null; render();
@@ -243,11 +245,16 @@
     const focused = document.activeElement;
     const focusSelector = focused?.dataset.timerPolicyMode ? `[data-timer-policy-mode="${focused.dataset.timerPolicyMode}"][value="${focused.value}"]` : focused?.dataset.mode ? `[data-mode="${focused.dataset.mode}"]` : focused?.dataset.toggle ? `[data-toggle="${focused.dataset.toggle}"]` : focused?.dataset.minutes ? `[data-minutes="${focused.dataset.minutes}"]` : focused?.id ? `#${focused.id}` : focused?.type === 'submit' ? '#rules-form button[type="submit"]' : null;
     saving = true; app.setAttribute('aria-busy', 'true');
+    const editorControls = [...app.querySelectorAll('#intent-editor input,#intent-editor textarea,#intent-editor select,#intent-editor button')].map(control => [control, control.disabled]);
+    for (const [control] of editorControls) control.disabled = true;
     try {
       state = await request('UPDATE_SETTINGS', patch);
       render(); if (focusSelector) document.querySelector(focusSelector)?.focus(); notify(message); return true;
     } catch (e) { notify(e.message, true); return false; }
-    finally { saving = false; app.removeAttribute('aria-busy'); }
+    finally {
+      for (const [control, disabled] of editorControls) if (control.isConnected) control.disabled = disabled;
+      saving = false; app.removeAttribute('aria-busy');
+    }
   }
   async function setTabPaused() {
     if (!canPauseTab() || saving) return;
@@ -388,8 +395,11 @@
   });
   setInterval(async () => {
     if (!state || saving || document.hidden) return;
+    const revision = stateRevision;
     try {
       const next = await request('GET_STATE');
+      // A read begun before a control was saved must not undo its newer result.
+      if (revision !== stateRevision || saving) return;
       const changed = JSON.stringify(next.settings) !== JSON.stringify(state.settings) || Boolean(next.tabPaused) !== Boolean(state.tabPaused);
       state = next; applyAppearance();
       if (!full && live && !Number.isInteger(targetTabId)) return;

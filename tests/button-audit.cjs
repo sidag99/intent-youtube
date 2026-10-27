@@ -56,7 +56,7 @@ function assertActions(rows){for(const row of rows){if(row.disabled)continue;if(
    let rows=await inspect(page,host);for(const row of rows.filter(r=>!r.disabled&&r.label)){assert.ok(row.contrast>=4.5,'feed action contrast');minimumContrast=Math.min(minimumContrast,row.contrast);}
    const more=rows.find(r=>r.classes==='more');assert.ok(more.height>=(surface==='watch'?36:40)&&more.font>=13,'contextual recommendation action size');
    await page.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode'}).click();rows=await inspect(page,'#intent-toolbar');
-   for(const row of rows.filter(r=>!r.disabled&&r.label)){assert.ok(row.contrast>=4.5,'toolbar text contrast: '+JSON.stringify(row));minimumContrast=Math.min(minimumContrast,row.contrast);if(row.classes==='option'||row.classes.includes('pause-button'))assert.ok(row.height>=44,'menu target');}
+   for(const row of rows.filter(r=>!r.disabled&&r.label)){assert.ok(row.contrast>=4.5,'toolbar text contrast: '+JSON.stringify(row));minimumContrast=Math.min(minimumContrast,row.contrast);if(row.classes==='option'||row.classes.includes('menu-button'))assert.ok(row.height>=44,'menu target');}
    await page.screenshot({path:path.join(shots,`intent-button-${surface}-${theme}.png`)});
   }await context.close();
  }

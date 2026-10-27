@@ -4,7 +4,7 @@
 :host{position:relative;display:block;flex:0 0 360px;width:360px;min-width:360px;max-width:360px;margin-right:12px;font:14px Roboto,Arial,sans-serif;color:var(--yt-spec-text-primary,#0f0f0f);color-scheme:light;--intent-chip:#f2f2f2;--intent-hover:#e5e5e5;--intent-ink:#0f0f0f;--intent-menu:#fff;--intent-muted:#606060;--intent-line:#e5e5e5;--intent-accent:#365e4b;--intent-warning:#8a5a00;--intent-critical:#b3261e}
 :host([data-theme=dark]){color-scheme:dark;--intent-chip:#272727;--intent-hover:#3f3f3f;--intent-ink:#f1f1f1;--intent-menu:#282828;--intent-muted:#aaa;--intent-line:#3f3f3f;--intent-accent:#9cc7ab;--intent-warning:#e9c46a;--intent-critical:#ffb4ab;color:var(--yt-spec-text-primary,var(--intent-ink))}
 *{box-sizing:border-box}.controls{width:100%;display:flex;align-items:center;gap:0;white-space:nowrap;background:var(--yt-spec-badge-chip-background,var(--intent-chip));border:0;border-radius:20px;padding:0 3px;height:36px}button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}button:hover{background:var(--intent-hover)}button:disabled{opacity:.5;cursor:wait}button:focus-visible{outline:2px solid var(--intent-accent);outline-offset:2px}.trigger{height:36px;flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px 0 6px;border-radius:20px;font-size:14px;font-weight:500}.logo{display:block;width:20px;height:20px;flex:0 0 20px}.compact-state{display:none}.selected-symbol{display:block;flex:0 0 14px;width:14px;font-size:14px;line-height:1;text-align:center}.mode-name{display:block;flex:1 1 0;min-width:0;text-align:left;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chevron{width:12px;height:12px;flex:0 0 12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.8}.trigger[aria-expanded=true] .chevron{transform:rotate(180deg)}.coverage-badge{display:inline-flex;flex:0 0 auto;align-items:center;max-width:90px;border:1px solid var(--intent-line);border-radius:5px;padding:2px 5px;font-size:10px;font-weight:500;line-height:1.2;color:var(--intent-muted);white-space:nowrap}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}[hidden]{display:none!important}.icon-button{flex:0 0 30px;border-radius:50%;width:30px;height:30px;display:grid;place-items:center;padding:6px}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-x:hidden;overflow-y:auto;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-ink);padding:6px 16px 4px;margin:0}.coverage-detail{font-size:12px;line-height:16px;color:var(--intent-muted);padding:0 16px 8px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-symbol svg{width:20px;height:20px}.option-symbol{display:inline-grid;place-items:center;width:20px;height:24px;flex:0 0 20px;font-size:19px;line-height:1}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.pause-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.pause-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
+.menu{position:fixed;inset:auto;margin:0;padding:8px 0;border:1px solid var(--intent-line);border-radius:18px;background:var(--intent-menu);color:var(--intent-ink);box-shadow:0 4px 24px #0003;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-x:hidden;overflow-y:auto;font:14px Roboto,Arial,sans-serif}.menu::backdrop{background:transparent}.menu-heading{font-size:12px;font-weight:500;color:var(--intent-ink);padding:6px 16px 4px;margin:0}.coverage-detail{font-size:12px;line-height:16px;color:var(--intent-muted);padding:0 16px 8px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.options{max-height:320px;overflow:auto;overscroll-behavior:contain;padding:0 6px}.option{display:flex;align-items:center;gap:12px;min-height:40px;width:100%;padding:9px 12px;text-align:left;border-radius:12px;line-height:1.4;overflow-wrap:anywhere}.option[aria-selected=true]{background:var(--intent-chip);font-weight:500}.option:focus-visible{outline-offset:-2px}.option-symbol svg{width:20px;height:20px}.option-symbol{display:inline-grid;place-items:center;width:20px;height:24px;flex:0 0 20px;font-size:19px;line-height:1}.option-name{flex:1;min-width:0}.check{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}.option[aria-selected=true] .check{visibility:visible}.menu-footer{margin-top:6px;border-top:1px solid var(--intent-line);padding:6px 6px 0}.menu-button{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;padding:9px 12px;border-radius:12px;font-size:13px;text-align:left}.menu-button svg{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.error{position:absolute;top:46px;left:0;max-width:280px;border-radius:8px;padding:10px 12px;background:var(--intent-menu);color:inherit;box-shadow:0 2px 10px #0003;font-size:12px;white-space:normal;z-index:10}.error:empty{display:none}
 .timer-indicator{flex:0 0 76px;display:flex;align-items:center;justify-content:center;gap:4px;width:76px;height:30px;padding:4px 6px;border-radius:15px;cursor:default;color:var(--intent-accent);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.timer-indicator[data-tab-counting=false][data-timer-state=normal]{color:var(--intent-muted)}.timer-indicator[data-timer-state=low]{color:var(--intent-warning)}.timer-indicator[data-timer-state=critical]{color:var(--intent-critical)}.timer-indicator[data-timer-state=exempt],.timer-indicator[data-timer-state=paused],.timer-indicator[data-timer-state=unlimited],.timer-indicator[data-timer-state=loading]{color:var(--intent-muted)}.timer-clock{display:block;flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.timer-track{stroke:var(--intent-line);stroke-width:1.3}.timer-progress{stroke-width:1.5;transition:none;animation:none}.timer-value{flex:0 0 auto;white-space:nowrap;line-height:16px}.timer-indicator:focus-visible{outline:2px solid var(--intent-accent);outline-offset:2px}.timer-mobile{display:none}.timer-details{padding:12px 14px;border-radius:12px;font-size:12px;white-space:normal;pointer-events:auto}.timer-detail-heading{font-size:13px;font-weight:500;margin:0}.timer-stats{margin:10px 0}.timer-stat{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}.timer-stats dt{color:var(--intent-muted)}.timer-stats dd{margin:0;font-variant-numeric:tabular-nums}.timer-context,.timer-reset{font-size:12px;line-height:17px;color:var(--intent-muted);margin:8px 0 0}
 :host([data-filter-state=off-here]) .trigger,:host([data-filter-state=loading]) .trigger,:host([data-filter-state=unavailable]) .trigger{padding:0 3px;gap:2px}.compact-state{min-width:0;flex:1 1 0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-size:12px;white-space:nowrap}:host([data-filter-state=off-here]) .compact-state,:host([data-filter-state=loading]) .compact-state,:host([data-filter-state=unavailable]) .compact-state{display:block}:host([data-filter-state=off-here]) .mode-name,:host([data-filter-state=loading]) .mode-name,:host([data-filter-state=unavailable]) .mode-name,:host([data-filter-state=off-here]) .coverage-badge,:host([data-filter-state=loading]) .coverage-badge,:host([data-filter-state=unavailable]) .coverage-badge,:host([data-filter-state=off-here]) .selected-symbol,:host([data-filter-state=loading]) .selected-symbol,:host([data-filter-state=unavailable]) .selected-symbol{display:none!important}
 /* Spare masthead space preserves native search geometry. At higher zoom,
@@ -25,7 +25,7 @@
 :host([data-layout=launcher]) .trigger{height:44px;padding:0;gap:3px;justify-content:center}
 :host([data-layout=launcher]) .logo{width:24px;height:24px;flex-basis:24px}
 :host([data-layout=launcher]) .chevron{width:10px;flex-basis:10px}
-.option,.pause-button{min-height:44px}
+.option,.menu-button{min-height:44px}
 .menu-budget{margin:0;padding:2px 16px 8px;font-size:12px;line-height:16px;color:var(--intent-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .trigger{position:relative;isolation:isolate}.trigger:hover{background:transparent}.trigger::before{content:"";position:absolute;inset:3px 0;border-radius:15px;z-index:-1;pointer-events:none}.trigger:hover::before{background:var(--intent-hover)}
 .selected-symbol svg{display:block;width:14px;height:14px}
@@ -45,8 +45,8 @@
     icon.innerHTML = markup; return icon;
   };
   class Toolbar {
-    constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}, onPaused = () => {}} = {}) {
-      this.runtime = runtime; this.onSettings = onSettings; this.onRefresh = onRefresh; this.onPaused = onPaused;
+    constructor(runtime = chrome.runtime, {onSettings = () => {}, onRefresh = () => {}} = {}) {
+      this.runtime = runtime; this.onSettings = onSettings; this.onRefresh = onRefresh;
       this.open = false; this.timerOpen = false; this.flowStyles = new Map();
       this.outside = event => { if (!event.composedPath().includes(this.host)) {this.closeMenu(false); this.closeTimer();} };
       this.reposition = () => { if (this.open) this.positionMenu(); if (this.timerOpen) this.positionTimer(); };
@@ -57,7 +57,6 @@
       this.settings = settings;
       const state = ['active', 'loading', 'unavailable', 'off-here', 'paused'].includes(coverage?.state) ? coverage.state : 'active';
       this.coverage = {state, detail: typeof coverage?.detail === 'string' ? coverage.detail : ''};
-      if (state !== 'paused') this.resumeCoverage = {...this.coverage};
       const masthead = document.querySelector('ytd-masthead:not([hidden])');
       const center = masthead?.querySelector('#center');
       const container = masthead?.querySelector('#container') || masthead;
@@ -131,7 +130,7 @@
       this.host.style.setProperty('--intent-toolbar-width', `${width}px`); this.host.style.setProperty('--intent-toolbar-gap', width === 44 ? '4px' : '8px');
       this.host.style.left = overlay ? `${Math.round(alignedLeft)}px` : 'auto';
       this.host.style.top = overlay ? `${Math.round(masthead.top + (masthead.height - (layout === 'full' ? 36 : 44)) / 2)}px` : 'auto';
-      this.menuRefreshButton.hidden = this.menuSettingsButton.hidden = layout === 'full'; this.menuBudget.hidden = layout !== 'launcher';
+      this.menuRefreshButton.hidden = this.menuSettingsButton.hidden = layout === 'full'; this.menuBudget.hidden = layout !== 'launcher'; this.menuFooter.hidden = layout === 'full';
       if (layout === 'launcher') this.closeTimer();
       if (this.open) this.positionMenu();
     }
@@ -170,19 +169,16 @@
       this.list = document.createElement('div'); this.list.className = 'options'; this.list.id = 'intent-mode-menu'; this.list.setAttribute('role', 'listbox'); this.list.setAttribute('aria-labelledby', heading.id);
       this.list.addEventListener('keydown', event => this.listKey(event));
       this.coverageDetail = document.createElement('p'); this.coverageDetail.className = 'coverage-detail';
-      this.pauseFooter = document.createElement('div'); this.pauseFooter.className = 'menu-footer';
-      this.pauseButton = document.createElement('button'); this.pauseButton.type = 'button'; this.pauseButton.id = 'intent-tab-pause'; this.pauseButton.className = 'pause-button'; this.pauseButton.setAttribute('aria-describedby', this.coverageStatus.id);
-      this.pauseIcon = svg('M8 5v14M16 5v14'); this.pauseLabel = document.createElement('span'); this.pauseButton.append(this.pauseIcon, this.pauseLabel);
-      this.pauseButton.addEventListener('click', () => this.togglePaused());
-      this.menuRefreshButton = document.createElement('button'); this.menuRefreshButton.type = 'button'; this.menuRefreshButton.className = 'pause-button'; this.menuRefreshButton.textContent = 'Refresh feed'; this.menuRefreshButton.addEventListener('click', () => this.refreshFeed());
-      this.menuSettingsButton = document.createElement('button'); this.menuSettingsButton.type = 'button'; this.menuSettingsButton.className = 'pause-button'; this.menuSettingsButton.textContent = 'Settings'; this.menuSettingsButton.setAttribute('aria-label', 'Intent settings'); this.menuSettingsButton.addEventListener('click', () => this.openSettings());
-      this.pauseFooter.append(this.pauseButton, this.menuRefreshButton, this.menuSettingsButton);
-      this.pauseFooter.addEventListener('keydown', event => {
+      this.menuFooter = document.createElement('div'); this.menuFooter.className = 'menu-footer';
+      this.menuRefreshButton = document.createElement('button'); this.menuRefreshButton.type = 'button'; this.menuRefreshButton.className = 'menu-button'; this.menuRefreshButton.textContent = 'Refresh feed'; this.menuRefreshButton.addEventListener('click', () => this.refreshFeed());
+      this.menuSettingsButton = document.createElement('button'); this.menuSettingsButton.type = 'button'; this.menuSettingsButton.className = 'menu-button'; this.menuSettingsButton.textContent = 'Settings'; this.menuSettingsButton.setAttribute('aria-label', 'Intent settings'); this.menuSettingsButton.addEventListener('click', () => this.openSettings());
+      this.menuFooter.append(this.menuRefreshButton, this.menuSettingsButton);
+      this.menuFooter.addEventListener('keydown', event => {
         if (event.key === 'Escape') {event.preventDefault(); this.closeMenu(true);}
-        else if (event.key === 'Tab') {const buttons = [...this.pauseFooter.querySelectorAll('button')].filter(button => !button.hidden && !button.disabled); if (event.shiftKey && event.target === buttons[0] || !event.shiftKey && event.target === buttons.at(-1)) this.closeMenu(false);}
+        else if (event.key === 'Tab') {const buttons = [...this.menuFooter.querySelectorAll('button')].filter(button => !button.hidden && !button.disabled); if (event.shiftKey && event.target === buttons[0] || !event.shiftKey && event.target === buttons.at(-1)) this.closeMenu(false);}
       });
       this.menuBudget = document.createElement('p'); this.menuBudget.id = 'intent-menu-budget'; this.menuBudget.className = 'menu-budget'; this.menuBudget.hidden = true;
-      this.menu.append(heading, this.coverageDetail, this.menuBudget, this.list, this.pauseFooter);
+      this.menu.append(heading, this.coverageDetail, this.menuBudget, this.list, this.menuFooter);
       this.menu.addEventListener('toggle', event => { if (event.newState === 'closed' && this.open) this.closeMenu(false); });
       controls.append(this.trigger, refresh, settings); root.append(style, controls, this.coverageStatus, this.error, this.menu);
       this.createTimer(root, controls, refresh);
@@ -201,7 +197,7 @@
       try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.handleError(error);}
     }
     updateOptions(settings) {
-      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['off', 'Off', '○']];
+      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['off', 'Intent off', '○']];
       const signature = JSON.stringify(options);
       if (signature === this.optionSignature) return;
       const hadFocus = this.open && this.options?.includes(this.root.activeElement);
@@ -261,9 +257,6 @@
       }[state];
       this.coverageDetail.textContent = shortDetail; this.coverageDetail.title = detail;
       this.menuHeading.textContent = state === 'off' ? 'Intent is off' : state === 'paused' ? 'Intent paused' : 'Intent for this tab';
-      const paused = state === 'paused';
-      this.pauseLabel.textContent = paused ? 'Resume on this tab' : 'Pause on this tab'; this.pauseButton.dataset.paused = String(paused); this.pauseButton.disabled = Boolean(this.pausePending);
-      this.pauseIcon.firstElementChild.setAttribute('d', paused ? 'm8 5 11 7-11 7z' : 'M8 5v14M16 5v14');
       this.trigger.title = state === 'off' ? `Intent is off. ${detail}` : `Saved intent: ${this.savedModeName}. ${detail}`;
       this.menuRefreshButton.disabled = this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused';
     }
@@ -289,7 +282,7 @@
       this.menu.style.left = `${Math.max(edge, Math.min(rect.left, innerWidth - width - edge))}px`;
       const availableBelow = innerHeight - rect.bottom - 8, availableAbove = rect.top - 8;
       const above = availableBelow < 180 && availableAbove > availableBelow;
-      const detailHeight = this.menuHeading.getBoundingClientRect().height + this.coverageDetail.getBoundingClientRect().height + this.menuBudget.getBoundingClientRect().height + this.pauseFooter.getBoundingClientRect().height + 16;
+      const detailHeight = this.menuHeading.getBoundingClientRect().height + this.coverageDetail.getBoundingClientRect().height + this.menuBudget.getBoundingClientRect().height + this.menuFooter.getBoundingClientRect().height + 16;
       this.list.style.maxHeight = `${Math.max(44, Math.min(320, (above ? availableAbove : availableBelow) - detailHeight))}px`;
       const height = this.menu.getBoundingClientRect().height;
       this.menu.style.top = `${Math.max(edge, Math.min(above ? rect.top - height - 6 : rect.bottom + 6, innerHeight - height - edge))}px`;
@@ -299,8 +292,8 @@
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
         event.preventDefault(); this.focusOption(event.key === 'Home' ? 0 : event.key === 'End' ? this.options.length - 1 : index + (event.key === 'ArrowDown' ? 1 : -1));
       } else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.closeMenu(true); }
-      else if (event.key === 'Tab' && event.shiftKey) this.closeMenu(false);
-      // Forward Tab reaches the separate pause/resume action after the listbox.
+      else if (event.key === 'Tab' && (event.shiftKey || this.menuFooter.hidden)) this.closeMenu(false);
+      // Compact layouts expose refresh and settings after the listbox.
       // Native buttons dispatch click for Enter/Space, keeping pointer and keyboard selection identical.
     }
     closeMenu(returnFocus) {
@@ -312,7 +305,7 @@
       if (returnFocus && this.host.isConnected && !this.trigger.disabled) this.trigger.focus({preventScroll: true});
     }
     async choose(mode) {
-      if (this.pending || this.pausePending) return;
+      if (this.pending) return;
       this.closeMenu(true); this.trigger.disabled = true; this.trigger.setAttribute('aria-busy', 'true'); this.error.textContent = ''; this.pending = true;
       try {
         const result = await this.runtime.sendMessage({type: 'SET_MODE', mode});
@@ -321,24 +314,6 @@
       } catch (error) { this.handleError(error); }
       finally {
         this.pending = false; this.trigger.disabled = false; this.trigger.removeAttribute('aria-busy');
-        if (this.host.isConnected && (document.activeElement === this.host || document.activeElement === document.body)) this.trigger.focus({preventScroll: true});
-      }
-    }
-    async togglePaused() {
-      if (this.pausePending || this.pending) return;
-      const paused = this.coverage?.state !== 'paused';
-      this.closeMenu(true); this.pausePending = true; this.trigger.disabled = true; this.trigger.setAttribute('aria-busy', 'true'); this.error.textContent = ''; this.paintCoverage();
-      try {
-        const result = await this.runtime.sendMessage({type: 'SET_TAB_PAUSED', paused});
-        if (!result?.ok || typeof result.tabPaused !== 'boolean') throw new Error(result?.error || 'Intent could not change the pause setting. Try again.');
-        this.updateTimer(result);
-        this.coverage = result.tabPaused ? {state: 'paused'} : this.resumeCoverage || {state: 'loading'};
-        if (result.settings) { this.settings = result.settings; this.updateOptions(this.settings); this.paintSelection(); this.onSettings(result.settings); }
-        else this.paintCoverage();
-        this.onPaused(result.tabPaused);
-      } catch (error) { this.handleError(error); }
-      finally {
-        this.pausePending = false; this.trigger.disabled = false; this.trigger.removeAttribute('aria-busy'); this.paintCoverage();
         if (this.host.isConnected && (document.activeElement === this.host || document.activeElement === document.body)) this.trigger.focus({preventScroll: true});
       }
     }

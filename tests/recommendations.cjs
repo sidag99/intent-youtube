@@ -85,6 +85,26 @@ const snapshot = page => page.evaluate(() => {
     assert.deepEqual(largeScan.changed, ['R0000000999']); assert.equal(largeScan.nodeCount, 631); assert.equal(largeScan.nodeIdentity, true);
     console.log('PASS native scans retain candidates beyond 240, resume without duplicates, exclude known IDs and detect reused native nodes');
 
+    await page.locator('#primary').evaluate((primary, html) => {primary.innerHTML = html;}, legacy('M0000000001', {title: 'An unexpected approach', channel: '', description: ''}));
+    const lateMetadata = await page.evaluate(() => {
+      const primary = document.querySelector('#primary'), card = primary.firstElementChild, scanned = new WeakMap();
+      const initial = IntentRecommendations.read(primary, '', {scanned});
+      card.querySelector('#channel-name a').textContent = 'Systems teacher';
+      const channel = IntentRecommendations.read(primary, '', {scanned});
+      card.querySelector('#description-text').textContent = 'A software engineering explanation. #DistributedSystems';
+      const description = IntentRecommendations.read(primary, '', {scanned});
+      const stable = IntentRecommendations.read(primary, '', {scanned});
+      card.querySelector('#description-text').textContent += ' New context.';
+      const strictExcluded = IntentRecommendations.read(primary, '', {scanned, exclude: new Map([['M0000000001', {}]])});
+      const afterExcluded = IntentRecommendations.read(primary, '', {scanned});
+      return {initial, channel, description, stable, strictExcluded, afterExcluded};
+    });
+    assert.equal(lateMetadata.initial[0].channel, ''); assert.equal(lateMetadata.initial[0].description, '');
+    assert.equal(lateMetadata.channel.length, 1); assert.equal(lateMetadata.channel[0].channel, 'Systems teacher');
+    assert.equal(lateMetadata.description.length, 1); assert.deepEqual(lateMetadata.description[0].hashtags, ['Distributed Systems']);
+    assert.deepEqual(lateMetadata.stable, []); assert.deepEqual(lateMetadata.strictExcluded, []); assert.match(lateMetadata.afterExcluded[0].description, /New context/);
+    console.log('PASS native scans detect late channel/description metadata once while preserving strict exclusions');
+
     await page.locator('#primary').evaluate((primary, html) => {
       primary.innerHTML = `<div id="large-owner">${html}<ytd-continuation-item-renderer><button id="large-more">More</button></ytd-continuation-item-renderer></div>`;
       window.largeSettled = false; window.largeClicks = 0;

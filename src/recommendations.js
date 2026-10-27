@@ -3,21 +3,25 @@
 (() => {
  const cards='ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,ytd-grid-video-renderer,yt-lockup-view-model,ytd-reel-item-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2';
  const plain=(root,selector)=>root.querySelector(selector)?.textContent?.trim()||'';
+ const channelSelector='#channel-name a,ytd-channel-name a,#channel-name,.yt-content-metadata-view-model__metadata-row:first-child .yt-content-metadata-view-model__metadata-text,.ytContentMetadataViewModelMetadataRow:first-child .ytContentMetadataViewModelMetadataText,a[href^="/@"]';
+ const descriptionSelector='#description-text,#description,.metadata-snippet-text,.description-snippet';
  function read(primary,currentVideo='',options={}){
   const videos=[],seen=new Set(),limit=Math.max(1,Math.min(5000,options.limit||240));
   for(const card of [...primary.querySelectorAll(cards)].slice(0,12000)){
-   const previous=options.scanned?.get(card);
-   if(previous&&previous.link.isConnected&&card.contains(previous.link)&&previous.link.getAttribute('href')===previous.href&&previous.title.isConnected&&(previous.title.getAttribute('title')||previous.title.textContent||'').trim()===previous.text)continue;
+   const previous=options.scanned?.get(card);let channel,description;
+   if(previous&&previous.link.isConnected&&card.contains(previous.link)&&previous.link.getAttribute('href')===previous.href&&previous.title.isConnected&&card.contains(previous.title)&&(previous.title.getAttribute('title')||previous.title.textContent||'').trim()===previous.text){
+    channel=plain(card,channelSelector).slice(0,200);description=plain(card,descriptionSelector).slice(0,1200);
+    if(channel===previous.channel&&description===previous.description)continue;
+   }
    if(card.closest('#intent-home-feed,#intent-watch-feed,[hidden],ytd-ad-slot-renderer,ytd-promoted-video-renderer,ytd-promoted-sparkles-web-renderer')||card.querySelector('ytd-ad-slot-renderer,ytd-promoted-video-renderer,ytd-promoted-sparkles-web-renderer'))continue;
    let id,videoAnchor,shorts=false;
    for(const link of card.querySelectorAll('a[href]')){try{const url=new URL(link.getAttribute('href'),location.origin);if(!['https:','http:'].includes(url.protocol)||!['www.youtube.com','youtube.com','m.youtube.com'].includes(url.hostname))continue;const short=url.pathname.match(/^\/shorts\/([\w-]{11})(?:\/|$)/);const candidate=short?.[1]||(url.pathname==='/watch'?url.searchParams.get('v'):'');if(/^[\w-]{11}$/.test(candidate||'')){id=candidate;videoAnchor=link;shorts=!!short;break;}}catch{}}
    if(!id||id===currentVideo||seen.has(id)||options.exclude?.has(id))continue;
    const titleNode=card.querySelector('#video-title,.yt-lockup-metadata-view-model__title,.ytLockupMetadataViewModelTitle,.shortsLockupViewModelHostMetadataTitle,h3 a,h3,#video-title-link');
    const rawTitle=(titleNode?.getAttribute('title')||titleNode?.textContent||'').trim(),title=rawTitle.slice(0,500);if(!title)continue;
-   options.scanned?.set(card,{link:videoAnchor,href:videoAnchor.getAttribute('href'),title:titleNode,text:rawTitle});
    if(options.nodes&&!options.nodes.has(id))options.nodes.set(id,card);
-   const channel=plain(card,'#channel-name a,ytd-channel-name a,#channel-name,.yt-content-metadata-view-model__metadata-row:first-child .yt-content-metadata-view-model__metadata-text,.ytContentMetadataViewModelMetadataRow:first-child .ytContentMetadataViewModelMetadataText,a[href^="/@"]').slice(0,200);
-   const description=plain(card,'#description-text,#description,.metadata-snippet-text,.description-snippet').slice(0,1200);
+   channel??=plain(card,channelSelector).slice(0,200);description??=plain(card,descriptionSelector).slice(0,1200);
+   options.scanned?.set(card,{link:videoAnchor,href:videoAnchor.getAttribute('href'),title:titleNode,text:rawTitle,channel,description});
    const duration=plain(card,'ytd-thumbnail-overlay-time-status-renderer,.yt-badge-shape__text,.ytBadgeShapeText,#time-status').slice(0,30);
    const metadataLine=card.querySelector('#metadata-line');
    const metadata=(metadataLine?[...metadataLine.children].map(n=>n.textContent.trim()).filter(Boolean).join(' · '):plain(card,'.yt-content-metadata-view-model__metadata-row:nth-child(2),.ytContentMetadataViewModelMetadataRow:nth-child(2)')).slice(0,120);

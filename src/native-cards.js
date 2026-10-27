@@ -12,6 +12,7 @@
       if(source&&source.isConnected&&!source.closest('#intent-home-feed,#intent-watch-feed')&&this.supported(source.localName)){
         const placeholder=document.createComment('Intent native recommendation');source.parentNode.insertBefore(placeholder,source);
         const hadStyle=source.hasAttribute('style'),styles=new Map();for(const [name,value]of Object.entries({display:'block',width:'100%','min-width':'0','max-width':'none',margin:'0'})){styles.set(name,[source.style.getPropertyValue(name),source.style.getPropertyPriority(name)]);source.style.setProperty(name,value,'important');}
+        entry.node.removeAttribute('data-intent-native-request');
         entry.original={node:source,placeholder,styles,hadStyle};entry.node.replaceChildren(source);this.reveal(entry);return;
       }
       if(entry.original||entry.node.hasAttribute('data-intent-native-failed')||entry.node.hasAttribute('data-intent-native-rendered')||!this.supported(this.surface==='watch'?'ytd-compact-video-renderer':'ytd-rich-item-renderer'))return;

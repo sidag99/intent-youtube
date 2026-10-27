@@ -356,6 +356,53 @@ const continuationItem = token => ({continuationItemRenderer: {continuationEndpo
 const discoverPage = (entries, token, config = publicClient) => page([...entries, ...(token ? [continuationItem(token)] : [])]) + '<script>ytcfg.set(' + JSON.stringify(config) + ');</script>';
 const continuedPage = (entries, token) => JSON.stringify({onResponseReceivedCommands: [{appendContinuationItemsAction: {continuationItems: [{itemSectionRenderer: {contents: entries}}, ...(token ? [continuationItem(token)] : [])]}}]});
 const oneTopic = () => C.sanitize({intentDescriptions: {work: 'woodworking joinery'}, metadataLimit: 0});
+test('recognized empty search continuations end discovery without a layout error', async () => {
+  const endings = [
+    ...['onResponseReceivedCommands', 'onResponseReceivedActions', 'onResponseReceivedEndpoints'].map(key => ({[key]: [{appendContinuationItemsAction: {continuationItems: []}}]})),
+    {continuationContents: {searchContinuation: {contents: []}}}
+  ];
+  for (const ending of endings) {
+    let calls = 0;
+    const service = F.createService({fetcher: async (url, options) => {
+      calls++; return {ok: true, url, text: async () => options.method ? JSON.stringify(ending) : discoverPage([renderer('aaaaaaaaaaa', 'Woodworking joinery lesson')], 'last-page')};
+    }});
+    const first = await service.get(oneTopic());
+    const last = await service.get(oneTopic(), {cursor: first.nextCursor, pageCursor: first.pageCursor});
+    assert.deepEqual(last.items, []); assert.equal(last.hasMore, false); assert.equal(last.pageCursor, null); assert.equal(last.warning, ''); assert.equal(calls, 2);
+  }
+});
+test('dense terminal pages retain accepted overflow in a bounded context-checked cursor without extra work', async () => {
+  let calls = 0, judgments = 0, time = 0;
+  const ids = Array.from({length: 100}, (_, i) => 'V' + String(i).padStart(10, '0'));
+  const service = F.createService({now: () => time, fetcher: async url => {
+    calls++; return {ok: true, url, text: async () => discoverPage(ids.map(id => renderer(id, 'Woodworking joinery lesson')))};
+  }, judge: async videos => {judgments++; return videos.map(() => ({accepted: true, uncertain: false}));}});
+  const settings = oneTopic(), first = await service.get(settings);
+  assert.deepEqual(first.items.map(v => v.id), ids.slice(0, 60)); assert.equal(first.hasMore, true); assert.equal(typeof first.pageCursor, 'string');
+  const options = {cursor: first.nextCursor, pageCursor: first.pageCursor};
+  const second = await service.get(settings, options);
+  assert.deepEqual(second.items.map(v => v.id), ids.slice(60)); assert.equal(second.hasMore, false); assert.equal(second.pageCursor, null); assert.equal(second.nextCursor, first.nextCursor);
+  assert.deepEqual((await service.get(settings, options)).items, second.items, 'retrying an accepted-results cursor is idempotent');
+  assert.deepEqual((await service.get(settings, {...options, exclude: ids.slice(60, 63)})).items.map(v => v.id), ids.slice(63), 'new native matches are excluded when saved discovery matches are delivered');
+  assert.deepEqual(second.metadataStats, {limit: 0, uncertain: 0, checked: 0, requests: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0});
+  await assert.rejects(service.get(settings, {...options, isActive: () => false}), /no longer active/);
+  await assert.rejects(service.get(settings, {...options, locale: {hl: 'de', gl: 'DE'}}), /continuation expired or changed/);
+  await assert.rejects(service.get({...settings, hideShorts: false}, options), /continuation expired or changed/);
+  time = 600001; await assert.rejects(service.get(settings, options), /continuation expired/);
+  assert.equal(calls, 1); assert.equal(judgments, 1, 'saved matches do not cause another search, fuller check or inference');
+});
+test('accepted overflow drains before remaining public continuation tasks and honors new exclusions', async () => {
+  const ids = Array.from({length: 80}, (_, i) => 'V' + String(i).padStart(10, '0'));
+  let calls = 0, judgments = 0;
+  const service = F.createService({fetcher: async (url, options) => {
+    calls++; return {ok: true, url, text: async () => options.method ? continuedPage([renderer('N0000000001', 'Woodworking joinery next lesson')]) : discoverPage(ids.map(id => renderer(id, 'Woodworking joinery lesson')), 'next-page')};
+  }, judge: async videos => {judgments++; return videos.map(() => ({accepted: true, uncertain: false}));}});
+  const settings = oneTopic(), first = await service.get(settings);
+  const second = await service.get(settings, {cursor: first.nextCursor, pageCursor: first.pageCursor, exclude: ids});
+  assert.deepEqual(second.items, []); assert.equal(second.hasMore, true); assert.equal(typeof second.pageCursor, 'string'); assert.equal(calls, 1); assert.equal(judgments, 1);
+  const third = await service.get(settings, {cursor: second.nextCursor, pageCursor: second.pageCursor, exclude: ids});
+  assert.deepEqual(third.items.map(v => v.id), ['N0000000001']); assert.equal(third.hasMore, false); assert.equal(third.pageCursor, null); assert.equal(calls, 2); assert.equal(judgments, 2);
+});
 test('a single public topic keeps loading actual continuation pages with filters, regional context and no duplicate videos', async () => {
   const calls = [], locale = {hl: 'en-GB', gl: 'GB'}, settings = oneTopic();
   const service = F.createService({fetcher: async (url, options) => {

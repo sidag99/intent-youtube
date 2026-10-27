@@ -60,7 +60,7 @@ async function expandAdvanced(page) {
 }
 
 async function chooseMode(toolbar, mode, customName) {
- const names={work:'Work',study:'Study',music:'Music',off:'Off'};
+ const names={work:'Work',study:'Study',music:'Music',off:'Intent off'};
  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
  await toolbar.getByRole('option',{name:customName||names[mode],exact:true}).click();
  if(mode==='off')return;

@@ -50,7 +50,7 @@ async function expandAdvanced(page) {
 }
 
 async function chooseMode(toolbar, mode, customName) {
- const names={work:'Work',study:'Study',music:'Music',off:'Off'};
+ const names={work:'Work',study:'Study',music:'Music',off:'Intent off'};
  await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
  await toolbar.getByRole('option',{name:customName||names[mode],exact:true}).click();
  if(mode==='off')return;
@@ -424,8 +424,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.equal(await followed.locator('#intent-toolbar').getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music','follow-last policy uses the latest chosen intent');
   console.log('PASS independent per-tab intents survive reload and respect fixed/follow-last new-tab policies');
   const secondToolbar=second.locator('#intent-toolbar');
-  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
-  await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),await tabIdFor(second));
   await second.locator('#intent-home-feed').waitFor({state:'detached'});
   await secondToolbar.locator('[data-filter-state="paused"]').first().waitFor();
   assert.equal(await second.locator('#native').isVisible(),true,'pause restores native YouTube recommendations');
@@ -557,16 +556,14 @@ async function chooseMode(toolbar, mode, customName) {
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});await third.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   console.log('PASS actual timer distinguishes counting, exempt and paused tabs and shows low/critical states without changing Chrome badges');
 
-  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
-  await secondToolbar.getByRole('button',{name:'Pause on this tab',exact:true}).click();
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:true}),await tabIdFor(second));
   await second.locator('#intent-home-feed').waitFor({state:'detached'});
   await worker.evaluate(()=>{days[IntentCore.dayKey()]=60000;});
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{dailyMinutes:1,newTabMode:'music'}}));
   await third.getByRole('heading',{name:'There’s a whole world'}).waitFor();
   await second.reload();await second.locator('#intent-toolbar [data-filter-state="paused"]').first().waitFor();
   assert.ok(second.url().includes('youtube.com/'),'a paused counted intent remains accessible at the daily limit');
-  await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).click();
-  await secondToolbar.getByRole('button',{name:'Resume on this tab',exact:true}).click();
+  await settings.evaluate(targetTabId=>chrome.runtime.sendMessage({type:'SET_TAB_PAUSED',targetTabId,paused:false}),await tabIdFor(second));
   await second.getByRole('heading',{name:'There’s a whole world'}).waitFor();
   console.log('PASS actual network rules allow paused tabs at the budget limit and restore blocking on resume');
   assert.equal(yt.url(),'https://www.youtube.com/watch?v=M0000000000','Music remains available after the counted budget is exhausted');

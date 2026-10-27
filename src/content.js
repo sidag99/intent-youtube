@@ -29,7 +29,6 @@
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
   const toolbar = window.top === window ? new IntentToolbar(chrome.runtime, {
     onSettings: value => { settingsRevision++; applySettings(value); schedule(); },
-    onPaused: value => { settingsRevision++; setTabPaused(value); schedule(); },
     onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
   }) : null;
   let topicBadge, topicContext, topicSignature = '', topicGeneration = 0, topicTimer, topicNavigationTimer, topicNavigating = false, topicScriptRevision = 0;
@@ -155,14 +154,14 @@
       return;
     }
     clearVideoTopic(); topicSignature = signature; topicContext = current;
-    const generation = topicGeneration, cached = topicResults.get(signature);
+    const generation = topicGeneration, cached = topicResults.get(signature), pageURL = location.href;
     if (cached && Date.now() - cached.at < 600000) renderVideoTopic(cached.result);
     else renderVideoTopic({status: 'checking'});
     topicTimer = setTimeout(async () => {
       topicTimer = null;
       const revision = settingsRevision;
       try {
-        const state = await chrome.runtime.sendMessage({type: 'CHECK_TIMER_VIDEO', video: current.video});
+        const state = await chrome.runtime.sendMessage({type: 'CHECK_TIMER_VIDEO', pageURL, video: current.video});
         if (generation !== topicGeneration || signature !== topicSignature || config !== topicConfig() || id !== currentTopicVideoId() || topicNavigating || tabPaused || settings?.mode === 'off') return;
         if (state?.paused || state?.tabPaused) {setTabPaused(true); clearVideoTopic(); return;}
         if (state?.stale) {clearVideoTopic(); if (state.settings && revision === settingsRevision) applySettings(state.settings); return;}

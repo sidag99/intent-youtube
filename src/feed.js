@@ -151,9 +151,11 @@
   function searchRoot(data, continued = false) {
     if (!continued) return data.contents?.twoColumnSearchResultsRenderer?.primaryContents || data.contents?.sectionListRenderer || data.contents?.singleColumnSearchResultsRenderer;
     const commands = [...(data.onResponseReceivedCommands || []), ...(data.onResponseReceivedActions || []), ...(data.onResponseReceivedEndpoints || [])];
-    const roots = commands.flatMap(command => command.appendContinuationItemsAction?.continuationItems || []);
-    if (data.continuationContents?.searchContinuation?.contents) roots.push(...data.continuationContents.searchContinuation.contents);
-    return roots.length ? roots : null;
+    const actions = commands.filter(command => Array.isArray(command.appendContinuationItemsAction?.continuationItems));
+    const roots = actions.flatMap(command => command.appendContinuationItemsAction.continuationItems);
+    const contents = data.continuationContents?.searchContinuation?.contents;
+    if (Array.isArray(contents)) roots.push(...contents);
+    return actions.length || Array.isArray(contents) ? roots : null;
   }
   function readSearch(root) {
     if (!root) throw new Error('YouTube changed its search layout or returned a consent page. Try opening YouTube search.');
@@ -201,10 +203,10 @@
     const cache = new Map(), inflight = new Map(), metadataCache = new Map(), metadataInflight = new Map(), cursors = new Map();
     let cursorSequence = 0;
     const ttl = 600000;
-    function rememberCursor(context, tasks) {
+    function rememberCursor(context, tasks, accepted = [], endReason = '') {
       for (const [id, value] of cursors) if (now() - value.at >= ttl) cursors.delete(id);
       const id = 'discovery-' + (++cursorSequence).toString(36) + '-' + now().toString(36);
-      cursors.set(id, {at: now(), context, tasks: tasks.slice(0, 24)});
+      cursors.set(id, {at: now(), context, tasks: tasks.slice(0, 24), accepted: accepted.slice(0, 40), endReason});
       while (cursors.size > 128) cursors.delete(cursors.keys().next().value);
       return id;
     }
@@ -287,16 +289,19 @@
       const s = C.sanitize(preview ? {...settings, metadataLimit: 0} : settings), pool = queries(s, round);
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const context = JSON.stringify([key(s, locale), round]);
+      const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);
       let tasks = pool.slice(cursor).map(query => ({query}));
       if (!preview && options.pageCursor != null) {
         const saved = typeof options.pageCursor === 'string' ? cursors.get(options.pageCursor) : null;
         if (!saved || saved.context !== context || now() - saved.at >= ttl) throw new Error('Discovery continuation expired or changed. Refresh discovery to continue.');
         tasks = saved.tasks;
+        // Drain already-checked matches before fetching another public page.
+        // Cursor retries retain the same bounded results and spend no model work.
+        if (saved.accepted.length) return {key: key(s, locale), items: saved.accepted.filter(video => !excluded.has(video.id)), semantic: Boolean(judge), metadataStats: {limit: s.metadataLimit, uncertain: 0, checked: 0, requests: 0, cacheHits: 0, sharedRequests: 0, failed: 0, remaining: 0}, nextCursor: cursor, pageCursor: tasks.length ? rememberCursor(context, tasks) : null, hasMore: tasks.length > 0, endReason: saved.endReason, warning: ''};
       }
       const selected = tasks.slice(0, 2), remaining = tasks.slice(2);
       const batches = await Promise.allSettled(selected.map(task => search(task, options.fresh === true && !options.pageCursor, locale)));
       ensureActive();
-      const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);
       const items = [], seen = new Set(excluded);
       // Interleave searches so a topic doesn't fill the entire screen before the next one.
       const lists = batches.filter(b => b.status === 'fulfilled').map(b => b.value.items);
@@ -354,7 +359,8 @@
       }
       ensureActive();
       metadataStats.remaining = uncertain.length - metadataStats.checked;
-      return {key: key(s, locale), items: candidates.filter((_, i) => decisions[i]?.accepted).slice(0, 60), semantic: Boolean(judge), metadataStats: {...metadataStats}, nextCursor: Math.min(pool.length, cursor + selected.length), pageCursor: nextTasks.length ? rememberCursor(context, nextTasks) : null, hasMore: nextTasks.length > 0, endReason, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
+      const accepted = candidates.filter((_, i) => decisions[i]?.accepted), overflow = accepted.slice(60);
+      return {key: key(s, locale), items: accepted.slice(0, 60), semantic: Boolean(judge), metadataStats: {...metadataStats}, nextCursor: Math.min(pool.length, cursor + selected.length), pageCursor: nextTasks.length || overflow.length ? rememberCursor(context, nextTasks, overflow, endReason) : null, hasMore: nextTasks.length > 0 || overflow.length > 0, endReason, warning: errors.length ? 'Some searches were unavailable. You can retry or load more.' : ''};
     }
     return {get};
   }

@@ -1,5 +1,9 @@
 let currentTabId;
 const currentTab = chrome.tabs.getCurrent().then(tab => { currentTabId = tab?.id; }).catch(() => {});
+async function closeTab() {
+  await currentTab;
+  if (Number.isInteger(currentTabId)) await chrome.tabs.remove(currentTabId);
+}
 async function refresh() {
   try {
     await currentTab;
@@ -24,6 +28,9 @@ async function refresh() {
       button.textContent = 'Return to YouTube →';
       button.onclick = () => location.assign('https://www.youtube.com/');
     } else {
+      document.querySelector('h1').innerHTML = 'There’s a whole world<br>outside this tab.';
+      const button = document.querySelector('#close-tab');
+      button.textContent = 'Close this tab ↗'; button.onclick = closeTab;
       document.querySelector('#block-detail').textContent = `You’ve reached your ${state.settings.dailyMinutes}-minute daily budget for counted intents. Timer-exempt intents remain available.`;
       const remaining = Math.max(0, state.resetAt - Date.now());
       const hours = Math.floor(remaining / 3600000), minutes = Math.ceil((remaining % 3600000) / 60000);
@@ -45,8 +52,5 @@ document.querySelector('#continue-exempt').onclick = async () => {
     location.assign('https://www.youtube.com/');
   } catch (error) { document.querySelector('#reset-label').textContent = error.message; button.disabled = false; }
 };
-document.querySelector('#close-tab').onclick = async () => {
-  await currentTab;
-  if (Number.isInteger(currentTabId)) await chrome.tabs.remove(currentTabId);
-};
+document.querySelector('#close-tab').onclick = closeTab;
 refresh(); setInterval(refresh, 15000);

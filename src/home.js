@@ -243,7 +243,7 @@
     }
     async load(fresh, auto) {
       if (this.busy || !this.hasMore || this.items.length >= 120) return;
-      const generation = this.generation, signature = this.signature;
+      const generation = this.generation, signature = this.signature, pageURL = location.href;
       this.busy = true; this.more.disabled = true; this.loadFailed = false; this.more.textContent = 'Find more videos';
       this.setFeedState(this.items.length || this.recommendedItems?.length ? 'active' : 'loading');
       this.status.className = 'status'; this.status.textContent = (this.items.length ? 'Finding more videos for your intent…' : 'Finding videos and analysing topics locally…') + (this.settings.metadataLimit ? ` Up to ${this.settings.metadataLimit} extra video-page requests per batch.` : ' Fuller checks are off.');
@@ -253,7 +253,7 @@
       try {
         let timer;
         const response = await Promise.race([
-          this.runtime.sendMessage({type: 'GET_FEED', key: signature, locale: this.locale, cursor: this.cursor, pageCursor: this.pageCursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.recommendedItems || []).map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
+          this.runtime.sendMessage({type: 'GET_FEED', pageURL, key: signature, locale: this.locale, cursor: this.cursor, pageCursor: this.pageCursor, round: this.round, fresh, exclude: [...this.items.map(v => v.id), ...(this.recommendedItems || []).map(v => v.id), ...(this.videoId ? [this.videoId] : [])]}),
           new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The feed took too long to load. Try refreshing or lowering the fuller-check limit in settings.')), 180000); })
         ]).finally(() => clearTimeout(timer));
         if (generation !== this.generation) return;
@@ -288,22 +288,25 @@
         this.loadFailed = true; this.restartRequired = /continuation.*expired|refresh discovery/i.test(error.message);
         if (/context invalidated/i.test(error.message || '')) {document.dispatchEvent(new Event('intent-context-lost')); return;}
         this.status.className = 'status error'; this.status.textContent = error.message;
-        this.setFeedState(this.recommendedItems?.length ? 'active' : 'unavailable');
+        this.setFeedState(this.items.length || this.recommendedItems?.length ? 'active' : 'unavailable');
         if (!this.items.length) this.empty('Your feed couldn’t load.', 'YouTube may be unavailable or asking for consent. Retry with Refresh feed, or open search below.');
       } finally {
         if (generation === this.generation) {
           this.busy = false; this.more.disabled = false;
-          this.more.hidden = !this.loadFailed && (!this.hasMore || this.items.length >= 120);
-          this.more.textContent = this.loadFailed ? this.restartRequired ? 'Restart discovery' : 'Retry loading more' : 'Find more videos';
-          this.endState.hidden = this.loadFailed || this.hasMore && this.items.length < 120;
-          if (!this.endState.hidden) {
-            this.endMessage.textContent = this.items.length >= 120 ? '120 real videos loaded. Open YouTube search to keep exploring.' : this.endReason || 'No more matching videos from these public searches.';
-            const search = new URL('https://www.youtube.com/results'); search.searchParams.set('search_query', F.queries(this.settings, this.round)[0] || C.modes(this.settings)[this.settings.mode].name);
-            if (this.locale?.hl) search.searchParams.set('hl', this.locale.hl); if (this.locale?.gl) search.searchParams.set('gl', this.locale.gl);
-            this.endSearch.href = search.href;
-          }
+          this.updateDiscoveryControls();
           this.grid.removeAttribute('aria-busy');
         }
+      }
+    }
+    updateDiscoveryControls() {
+      this.more.hidden = !this.loadFailed && (!this.hasMore || this.items.length >= 120);
+      this.more.textContent = this.loadFailed ? this.restartRequired ? 'Restart discovery' : 'Retry loading more' : 'Find more videos';
+      this.endState.hidden = this.loadFailed || this.hasMore && this.items.length < 120;
+      if (!this.endState.hidden) {
+        this.endMessage.textContent = this.items.length >= 120 ? '120 real videos loaded. Open YouTube search to keep exploring.' : this.endReason || 'No more matching videos from these public searches.';
+        const search = new URL('https://www.youtube.com/results'); search.searchParams.set('search_query', F.queries(this.settings, this.round)[0] || C.modes(this.settings)[this.settings.mode].name);
+        if (this.locale?.hl) search.searchParams.set('hl', this.locale.hl); if (this.locale?.gl) search.searchParams.set('gl', this.locale.gl);
+        this.endSearch.href = search.href;
       }
     }
     syncRecommendations() {
@@ -312,9 +315,13 @@
       this.recommendedMore.hidden = false;
       const declared = this.renderer?.getAttribute('video-id');
       if (this.surface === 'watch' && declared && declared !== this.videoId) return Promise.resolve();
-      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, exclude: this.nativeChecked, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) this.nativePool.set(video.id, video);
+      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) {
+        const checked = this.nativeChecked.get(video.id);
+        if (checked?.fingerprint === JSON.stringify(video)) {if (!checked.item) this.nativeNodes.delete(video.id); continue;}
+        this.nativePool.set(video.id, video);
+      }
       if (this.nativeJob || Date.now() < this.nativeRetryAt) return this.nativeJob || Promise.resolve();
-      const generation = this.generation, signature = this.signature;
+      const generation = this.generation, signature = this.signature, pageURL = location.href;
       const current = () => generation === this.generation && signature === this.signature && this.host?.isConnected;
       const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeTotalChecked));
       const firstBatch = pending().slice(0, 48);
@@ -323,14 +330,19 @@
       const job = (async () => {
         let videos = firstBatch;
         while (current() && videos.length) {
-          const result = await this.runtime.sendMessage({type: 'FILTER_RECOMMENDATIONS', key: signature, locale: this.locale, videos});
+          const result = await this.runtime.sendMessage({type: 'FILTER_RECOMMENDATIONS', pageURL, key: signature, locale: this.locale, videos});
           if (!current() || result?.stale || result?.paused || result?.tabPaused) return;
           if (result?.blocked) { location.replace(this.runtime.getURL('blocked.html')); return; }
           if (!result?.ok || result.key !== signature || !Array.isArray(result.items)) throw new Error(result?.error || 'Recommendations could not be checked.');
           const accepted = new Map(result.items.map(v => [v.id, v]));
           for (const video of videos) {
             const item = accepted.has(video.id) && C.classify(accepted.get(video.id), {...this.settings, mode: 'off'}).visible ? accepted.get(video.id) : null;
-            this.nativeChecked.set(video.id, {fingerprint: JSON.stringify(video), item}); this.nativeTotalChecked++;
+            this.nativeTotalChecked++;
+            const fingerprint = JSON.stringify(video);
+            // A late description can arrive while this older snapshot is being
+            // checked. Keep the updated candidate queued for its own decision.
+            if (JSON.stringify(this.nativePool.get(video.id)) !== fingerprint) continue;
+            this.nativeChecked.set(video.id, {fingerprint, item});
             // Keep matches and a bounded pending window, rather than filling a
             // lifetime 240-video pool with already-rejected candidates.
             if (!item) {this.nativePool.delete(video.id); this.nativeNodes.delete(video.id);}
@@ -361,7 +373,7 @@
         this.items = this.items.filter(v => !nativeIds.has(v.id));
         this.regularCards = this.regularCards.filter(card => !nativeIds.has(card.dataset.videoId));
         for (const container of [this.grid, this.restGrid, this.shortGrid]) for (const card of container.querySelectorAll('.card')) if (nativeIds.has(card.dataset.videoId)) card.remove();
-        this.status.textContent = this.status.textContent.replace(/^\d+ videos/, `${this.items.length} videos`); this.layoutHome();
+        this.status.textContent = this.status.textContent.replace(/^\d+ videos/, `${this.items.length} videos`); this.layoutHome(); this.updateDiscoveryControls();
       }
     }
     async moreRecommendations() {

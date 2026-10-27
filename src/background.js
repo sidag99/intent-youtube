@@ -289,14 +289,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   serial(() => tick(message, sender)).then(state => respond({ok: true, ...state}), error => respond({ok: false, error: error.message})); return true;
 });
 async function checkTimerVideo(message, sender) {
-  const videoId = T.videoId(sender.url);
+  const pageURL = requestPageURL(message, sender), videoId = T.videoId(pageURL);
   if (!sender.tab || (sender.frameId || 0) !== 0 || !videoId || message.video?.id !== videoId) throw new Error('Video topics can only be checked for the current top-level YouTube video.');
   const video = T.metadata(message.video, videoId);
   if (!video.title.trim()) throw new Error('The current video title is not available yet.');
   const prepared = await serial(async () => {
     const state = await tick({}, sender);
-    if (state.tabId !== sender.tab.id || T.videoId(timerURLs.get(sender.tab.id)) !== videoId) return {skip: {ok: true, stale: true}};
-    if (state.blocked || state.tabPaused || state.settings.mode === 'off' || state.settings.hideShorts && new URL(sender.url).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
+    if (state.tabId !== sender.tab.id || currentPageURL(sender.tab.id) !== pageURL) return {skip: {ok: true, stale: true}};
+    if (state.blocked || state.tabPaused || state.settings.mode === 'off' || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
     const key = T.key(state.settings), metadataKey = JSON.stringify(video), cacheKey = JSON.stringify([key, metadataKey]);
     const previous = currentReview(sender.tab.id);
     if (previous?.metadataKey === metadataKey && previous.status !== 'checking') return {skip: {ok: true, ...state}};
@@ -327,10 +327,26 @@ async function checkTimerVideo(message, sender) {
     await initialize();
     // Refresh real navigation and accounting before applying a late model result.
     await tick({}, sender);
-    if (timerReviews.get(sender.tab.id) !== prepared.review || pausedTabs[sender.tab.id] || T.videoId(timerURLs.get(sender.tab.id)) !== videoId || T.key(effectiveSettings(sender.tab.id)) !== prepared.key) return {ok: true, stale: true};
+    if (timerReviews.get(sender.tab.id) !== prepared.review || pausedTabs[sender.tab.id] || currentPageURL(sender.tab.id) !== pageURL || T.key(effectiveSettings(sender.tab.id)) !== prepared.key) return {ok: true, stale: true};
     Object.assign(prepared.review, estimate); await persistReviews();
     return {ok: true, ...await tick({}, sender)};
   });
+}
+function requestPageURL(message, sender) {
+  try {
+    const source = new URL(sender.url);
+    if (!C.isYouTube(source.href) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(source.hostname)) return '';
+    // Chrome can retain the document-creation URL in MessageSender after an
+    // in-document navigation. The controller captures its current route when
+    // dispatching; it must still match this document's origin and the live tab.
+    if (!Object.hasOwn(message, 'pageURL')) return source.href;
+    if (typeof message.pageURL !== 'string') return '';
+    const captured = new URL(message.pageURL);
+    return captured.origin === source.origin ? captured.href : '';
+  } catch {return '';}
+}
+function currentPageURL(tabId) {
+  try {return new URL(timerURLs.get(tabId)).href;} catch {return '';}
 }
 function feedPage(value) {
   try {
@@ -359,12 +375,12 @@ function recommendationVideos(input, currentVideo) {
   return videos;
 }
 async function filterRecommendations(message, sender) {
-  const page = feedPage(sender.url);
+  const page = feedPage(requestPageURL(message, sender));
   if (!page || !Number.isInteger(sender.tab?.id) || (sender.frameId || 0) !== 0) throw new Error('Recommendations can only be checked on the current top-level YouTube Home or video page.');
   const locale = IntentFeed.normalizeLocale(message.locale);
   const prepared = await serial(async () => {
     const state = await tick({}, sender);
-    if (state.tabId !== sender.tab.id || feedPage(timerURLs.get(sender.tab.id))?.url !== page.url) return {skip: {ok: true, stale: true}};
+    if (state.tabId !== sender.tab.id || currentPageURL(sender.tab.id) !== page.url) return {skip: {ok: true, stale: true}};
     if (state.tabPaused) return {skip: {ok: true, paused: true, tabPaused: true}};
     if (state.blocked) return {skip: {ok: true, blocked: true}};
     if (state.settings.mode === 'off') return {skip: {ok: true, off: true, key: IntentFeed.key(state.settings, locale), items: [], semantic: true}};
@@ -373,7 +389,7 @@ async function filterRecommendations(message, sender) {
     return {settings: state.settings, videos, revision: feedRevision, tabRevision: tabFeedRevisions.get(sender.tab.id) || 0, key: message.key};
   });
   if (prepared.skip) return prepared.skip;
-  const active = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && prepared.revision === feedRevision && prepared.tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && prepared.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale) && feedPage(timerURLs.get(sender.tab.id))?.url === page.url;
+  const active = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && prepared.revision === feedRevision && prepared.tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && prepared.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale) && currentPageURL(sender.tab.id) === page.url;
   const cacheKey = JSON.stringify([prepared.key, prepared.videos]), now = Date.now();
   for (const [key, entry] of nativeRecommendationCache) if (now - entry.at >= 600000) nativeRecommendationCache.delete(key);
   let items, failure;
@@ -405,32 +421,32 @@ async function filterRecommendations(message, sender) {
   });
 }
 async function feedRequest(message, sender) {
-  const page = feedPage(sender.url);
+  const page = feedPage(requestPageURL(message, sender));
   if (!sender.tab || (sender.frameId || 0) !== 0 || !page) throw new Error('Feeds can only be requested from top-level YouTube home and video pages.');
   const currentVideo = page.videoId;
   const locale = IntentFeed.normalizeLocale(message.locale);
   const state = await serial(() => tick({}, sender));
-  if (!Number.isInteger(state.tabId)) return {ok: true, stale: true};
+  const samePage = () => currentPageURL(sender.tab.id) === page.url;
+  if (state.tabId !== sender.tab.id || !samePage()) return {ok: true, stale: true};
   if (state.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (state.blocked) return {ok: true, blocked: true};
   if (message.key !== IntentFeed.key(state.settings, locale)) return {ok: true, stale: true};
   const revision = feedRevision;
   const tabRevision = tabFeedRevisions.get(sender.tab.id) || 0;
-  const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale);
+  const isActive = () => Object.hasOwn(tabModes, sender.tab.id) && !pausedTabs[sender.tab.id] && samePage() && revision === feedRevision && tabRevision === (tabFeedRevisions.get(sender.tab.id) || 0) && message.key === IntentFeed.key(effectiveSettings(sender.tab.id), locale);
   const exclude = currentVideo ? [currentVideo, ...(Array.isArray(message.exclude) ? message.exclude : [])] : message.exclude;
-  let result;
+  let result, failure;
   try { result = await feedService.get(state.settings, {...message, locale, exclude, isActive, preview: false}); }
-  catch (error) {
-    if (pausedTabs[sender.tab.id]) return {ok: true, paused: true, tabPaused: true};
-    if (!isActive()) return {ok: true, stale: true};
-    throw error;
-  }
-  if (!Object.hasOwn(tabModes, sender.tab.id)) return {ok: true, stale: true};
-  const current = stateFor(sender.tab.id);
-  if (current.tabPaused) return {ok: true, paused: true, tabPaused: true};
-  if (current.blocked) return {ok: true, blocked: true};
-  if (!isActive() || result.key !== IntentFeed.key(current.settings, locale)) return {ok: true, stale: true};
-  return {ok: true, ...result};
+  catch (error) {failure = error;}
+  return serial(async () => {
+    const current = await tick({}, sender);
+    if (current.tabPaused) return {ok: true, paused: true, tabPaused: true};
+    if (current.tabId !== sender.tab.id || !isActive()) return {ok: true, stale: true};
+    if (current.blocked) return {ok: true, blocked: true};
+    if (failure) throw failure;
+    if (result.key !== IntentFeed.key(current.settings, locale)) return {ok: true, stale: true};
+    return {ok: true, ...result};
+  });
 }
 async function previewRequest(message, sender) {
   if (!extensionSender(sender) || (sender.frameId || 0) !== 0 || new URL(sender.url).pathname !== '/settings.html') throw new Error('Intent previews are only available from the settings page.');

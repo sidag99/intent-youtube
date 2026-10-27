@@ -122,6 +122,7 @@ test('feed requests are restricted to top-level YouTube home/video pages and res
   const sender = {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0};
   const blocked = await h.send({type: 'GET_FEED'}, sender);
   assert.equal(blocked.blocked, true); assert.equal(calls, 0);
+  h.setTabs([{id: 1, active: true, windowId: 1, url: 'https://www.youtube.com/watch?v=abcdefghijk'}]);
   assert.equal((await h.send({type: 'GET_FEED'}, {...sender, url: 'https://www.youtube.com/watch?v=abcdefghijk'})).blocked, true);
   for (const url of ['https://www.youtube.com/watch', 'https://www.youtube.com/watch?v=bad', 'https://www.youtube.com/results?search_query=music', 'https://music.youtube.com/', 'https://example.com/']) {
     assert.equal((await h.send({type: 'GET_FEED'}, {...sender, url})).ok, false, url);
@@ -134,9 +135,115 @@ test('watch recommendations always exclude the playing video using the sender UR
   const fetcher = async url => ({ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: ['abcdefghijk', 'lmnopqrstuv'].map(videoId => ({videoRenderer: {videoId, title: {simpleText: 'Build a useful application'}}}))}}}}}) + ';</script>'});
   const h = harness({}, undefined, fetcher);
   const sender = {url: 'https://www.youtube.com/watch?v=abcdefghijk&t=40', tab: {id: 1}, frameId: 0};
+  h.setTabs([{id: 1, active: true, windowId: 1, url: sender.url}]);
   const response = await h.send({type: 'GET_FEED', key: IntentFeed.key(IntentCore.defaults()), exclude: []}, sender);
   assert.equal(response.ok, true);
   assert.deepEqual(Array.from(response.items, v => v.id), ['lmnopqrstuv']);
+});
+test('an old watch-page sender cannot search after the queried live tab has changed video', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  let fetches = 0, judgments = 0;
+  const settings = IntentCore.sanitize({metadataLimit: 0});
+  const h = harness({settings}, undefined, async () => {fetches++; throw new Error('A stale page must not search');}, async () => {judgments++; return [];});
+  h.setTabs([{id: 1, active: true, windowId: 1, url: 'https://www.youtube.com/watch?v=Z0000000000'}]);
+  const response = await h.send({type: 'GET_FEED', key: IntentFeed.key(settings)}, {url: 'https://www.youtube.com/watch?v=Y0000000000', tab: {id: 1}, frameId: 0});
+  assert.equal(response.ok, true); assert.equal(response.stale, true); assert.equal(response.items, undefined);
+  assert.equal(fetches, 0); assert.equal(judgments, 0);
+});
+test('feed identity compares canonical URLs while retaining current-video exclusion', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const settings = IntentCore.sanitize({metadataLimit: 0});
+  const fetcher = async url => ({ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: ['abcdefghijk', 'lmnopqrstuv'].map(videoId => ({videoRenderer: {videoId, title: {simpleText: 'Build a useful application'}}}))}}}}}) + ';</script>'});
+  const h = harness({settings}, undefined, fetcher);
+  h.setTabs([{id: 1, active: true, windowId: 1, url: 'https://www.youtube.com/watch?v=abcdefghijk&t=40'}]);
+  const response = await h.send({type: 'GET_FEED', key: IntentFeed.key(settings)}, {url: 'https://WWW.YOUTUBE.COM:443/watch?v=abcdefghijk&t=40', tab: {id: 1}, frameId: 0});
+  assert.equal(response.ok, true); assert.equal(response.stale, undefined); assert.deepEqual(Array.from(response.items, video => video.id), ['lmnopqrstuv']);
+});
+test('feed results and failures recheck the queried live page before replying even before its navigation event', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  for (const failing of [false, true]) {
+    let release, requested;
+    const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+    const settings = IntentCore.sanitize({metadataLimit: 0});
+    const fetcher = async url => {
+      requested(); await gate;
+      if (failing) throw new Error('An old page search failed');
+      return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{videoRenderer: {videoId: 'A0000000001', title: {simpleText: 'Build a useful application'}}}]}}}}}) + ';</script>'};
+    };
+    const h = harness({settings}, undefined, fetcher);
+    const sender = {url: 'https://www.youtube.com/watch?v=Y0000000000', tab: {id: 1}, frameId: 0};
+    h.setTabs([{id: 1, active: true, windowId: 1, url: sender.url}]);
+    const pending = h.send({type: 'GET_FEED', key: IntentFeed.key(settings)}, sender);
+    await started;
+    h.setTabs([{id: 1, active: true, windowId: 1, url: 'https://www.youtube.com/watch?v=Z0000000000'}]);
+    release();
+    const response = await pending;
+    assert.equal(response.ok, true); assert.equal(response.stale, true); assert.equal(response.items, undefined); assert.equal(response.error, undefined);
+  }
+});
+test('captured same-origin page URLs support SPA feeds while MessageSender retains the document creation URL', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const settings = IntentCore.sanitize({metadataLimit: 0});
+  let fetches = 0;
+  const fetcher = async url => {
+    fetches++;
+    return {ok: true, url, text: async () => '<script>var ytInitialData = ' + JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: ['A0000000001', 'B0000000002'].map(videoId => ({videoRenderer: {videoId, title: {simpleText: 'Build a useful application'}}}))}}}}}) + ';</script>'};
+  };
+  for (const [creationURL, pageURL, expected] of [
+    ['https://www.youtube.com/watch?v=Z0000000000', 'https://www.youtube.com/', ['A0000000001', 'B0000000002']],
+    ['https://www.youtube.com/', 'https://www.youtube.com/watch?v=A0000000001', ['B0000000002']],
+    ['https://www.youtube.com/results?search_query=code', 'https://www.youtube.com/watch?v=A0000000001', ['B0000000002']]
+  ]) {
+    const h = harness({settings}, undefined, fetcher);
+    h.setTabs([{id: 1, active: true, windowId: 1, url: pageURL}]);
+    const response = await h.send({type: 'GET_FEED', pageURL, key: IntentFeed.key(settings)}, {url: creationURL, tab: {id: 1}, frameId: 0});
+    assert.equal(response.ok, true); assert.equal(response.stale, undefined); assert.deepEqual(Array.from(response.items, item => item.id), expected);
+  }
+  assert.ok(fetches > 0);
+});
+test('captured SPA routes drive native current-video exclusion and timer topic identity', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const pageURL = 'https://www.youtube.com/watch?v=B0000000002';
+  const sender = {url: 'https://www.youtube.com/watch?v=A0000000001', tab: {id: 1}, frameId: 0};
+  const received = [], h = harness({}, undefined, undefined, async videos => {
+    received.push(Array.from(videos, video => video.id));
+    return videos.map(() => ({accepted: true, uncertain: false, similarity: .6, categoryId: 'work', categorySimilarity: .6, categoryMargin: .2}));
+  });
+  h.setTabs([{id: 1, active: true, windowId: 1, url: pageURL}]);
+  const native = await h.send({type: 'FILTER_RECOMMENDATIONS', pageURL, key: IntentFeed.key(IntentCore.defaults()), videos: [{id: 'B0000000002', title: 'Current video'}, {id: 'C0000000003', title: 'Build useful software'}]}, sender);
+  assert.equal(native.ok, true); assert.equal(native.stale, undefined); assert.deepEqual(Array.from(native.items, video => video.id), ['C0000000003']);
+  const topic = await h.send({type: 'CHECK_TIMER_VIDEO', pageURL, video: {id: 'B0000000002', title: 'Build useful software'}}, sender);
+  assert.equal(topic.ok, true); assert.equal(topic.videoTopic.videoId, 'B0000000002'); assert.equal(topic.videoTopic.status, 'matching');
+  assert.deepEqual(received, [['C0000000003'], ['B0000000002']]);
+});
+test('captured page URLs cannot change sender origins or bypass frame, route and live-tab validation', async () => {
+  require('../src/core.js'); require('../src/feed.js');
+  const liveURL = 'https://www.youtube.com/watch?v=B0000000002', oldURL = 'https://www.youtube.com/watch?v=A0000000001';
+  let fetches = 0, judgments = 0;
+  const h = harness({}, undefined, async () => {fetches++; throw new Error('Rejected routes must not search');}, async () => {judgments++; return [];});
+  h.setTabs([{id: 1, active: true, windowId: 1, url: liveURL}]);
+  const sender = {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0};
+  for (const type of ['GET_FEED', 'FILTER_RECOMMENDATIONS', 'CHECK_TIMER_VIDEO']) {
+    const base = {type, key: IntentFeed.key(IntentCore.defaults()), videos: [{id: 'C0000000003', title: 'Useful project'}], video: {id: 'B0000000002', title: 'Current video'}};
+    for (const pageURL of [null, 42, {}, '/watch?v=B0000000002', 'https://evil.test/watch?v=B0000000002', 'https://m.youtube.com/watch?v=B0000000002', 'https://www.youtube.com/results?search_query=code']) {
+      assert.equal((await h.send({...base, pageURL}, sender)).ok, false, type + ': ' + String(pageURL));
+    }
+    for (const source of [{...sender, frameId: 2}, {url: sender.url}, {...sender, url: 'https://evil.test/'}, {...sender, url: 'https://music.youtube.com/'}]) assert.equal((await h.send({...base, pageURL: liveURL}, source)).ok, false);
+    const stale = await h.send({...base, pageURL: oldURL, video: {id: 'A0000000001', title: 'Old video'}}, sender);
+    assert.equal(stale.ok, true); assert.equal(stale.stale, true);
+  }
+  assert.equal(fetches, 0); assert.equal(judgments, 0);
+});
+test('a captured SPA topic estimate is discarded after another same-document navigation', async () => {
+  let release, requested;
+  const gate = new Promise(resolve => {release = resolve;}), started = new Promise(resolve => {requested = resolve;});
+  const h = harness({}, undefined, undefined, async () => {requested(); await gate; return [{accepted: true, uncertain: false, similarity: .6}];});
+  const pageURL = 'https://www.youtube.com/watch?v=B0000000002';
+  h.setTabs([{id: 1, active: true, windowId: 1, url: pageURL}]);
+  const pending = h.send({type: 'CHECK_TIMER_VIDEO', pageURL, video: {id: 'B0000000002', title: 'Useful software project'}}, {url: 'https://www.youtube.com/', tab: {id: 1}, frameId: 0});
+  await started; await h.updateTab(1, {url: 'https://www.youtube.com/watch?v=C0000000003'}); release();
+  const response = await pending;
+  assert.equal(response.ok, true); assert.equal(response.stale, true); assert.equal(response.videoTopic, undefined);
 });
 test('extension appearance follows the active top-level YouTube page and survives worker restart', async () => {
   const h = harness();
