@@ -402,10 +402,7 @@
     const home = isHome(), watch = isWatch();
     if (channelIncludes) {
       const id = !tabPaused && !topicNavigating && watch ? currentTopicVideoId() : '';
-      const current = id ? readTopicVideo(id) : null;
-      const root = current?.title.closest('ytd-watch-flexy');
-      const anchor = root?.querySelector('#owner #channel-name,#owner ytd-channel-name,ytd-video-owner-renderer #channel-name');
-      channelIncludes.sync(settings, current && anchor ? {videoId: id, channel: current.video.channel, anchor} : null);
+      channelIncludes.sync(settings, id ? IntentChannelIncludes.readCurrent(id) : null);
     }
     syncVideoTopic();
     if (tabPaused) {
@@ -485,7 +482,7 @@
     if (!settings && isHome() && !document.documentElement?.hasAttribute('data-intent-home-pending')) armHomePending(true);
     if (settings && !tabPaused) {filterShortsNavigation(); if (isShortsPage()) shortsGate();}
     schedule();
-  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href', 'hidden', 'page-subtype', 'title', 'aria-label', 'is-primary']});
+  }).observe(document, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-href', 'hidden', 'page-subtype', 'title', 'aria-label', 'is-primary', 'video-id', 'data-video-id']});
   function navigationDestination(event) {
     const detail = event.detail || {};
     const value = detail.url || detail.endpoint?.commandMetadata?.webCommandMetadata?.url || detail.navigationData?.endpoint?.commandMetadata?.webCommandMetadata?.url;
