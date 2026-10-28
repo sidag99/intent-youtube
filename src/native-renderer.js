@@ -38,6 +38,9 @@
     if(!v||typeof v.id!=='string'||!/^[\w-]{11}$/.test(v.id)||!text(v.title,500).trim()||v.shorts===true)return;
     const watch=host.closest('#intent-watch-feed'),surface=watch?.closest('#related')||watch||host.closest('ytd-browse');
     const modern=[...surface?.querySelectorAll('yt-lockup-view-model')||[]].find(item=>!item.closest('[data-intent-created-card],[hidden]'));
+    const feed=watch||host.closest('#intent-home-feed');
+    const layoutKey=!watch?feed?.getAttribute('data-intent-native-home-layout')||'':'';
+    let layout;try{const value=JSON.parse(layoutKey);if((value.rows===1||value.rows===2)&&typeof value.delimiter==='string'&&value.delimiter.length<=8&&typeof value.play==='boolean')layout=value;}catch{}
     const modernWatch=!!watch&&(watch.dataset.nativeWatchRenderer==='modern'||!watch.dataset.nativeWatchRenderer&&modern)&&!!(customElements.get('ytd-rich-item-renderer')||customElements.get('ytd-item-section-renderer'));
     const tag=watch?modernWatch?customElements.get('ytd-rich-item-renderer')?'ytd-rich-item-renderer':'ytd-item-section-renderer':'ytd-compact-video-renderer':'ytd-rich-item-renderer';
     if(!customElements.get(tag))return; active.add(host);let cancel;
@@ -56,12 +59,12 @@
       (document.body||document.documentElement).append(stage);stage.append(node);
       // Follow the page's Home renderer variant instead of forcing the older
       // rich-grid-media title/channel/view arrangement on a modern lockup feed.
-      const useModern=(tag==='ytd-rich-item-renderer'||tag==='ytd-item-section-renderer')&&(modern||modernWatch);
+      const useModern=(tag==='ytd-rich-item-renderer'||tag==='ytd-item-section-renderer')&&(modern||modernWatch||layout);
       let content={videoRenderer:data};
       if(useModern){
-        const rows=[{metadataParts:[{text:{content:channel}}]},{metadataParts:metadata.filter(Boolean).map((value,index)=>({text:{content:value},...(index===0?{leadingIcon:{name:'PLAY_ARROW_OUTLINED',height:12,width:12,marginEndToken:{spacing:2}}}:{})}))}];
-        if(modern?.querySelectorAll('.ytContentMetadataViewModelMetadataRow,.yt-content-metadata-view-model__metadata-row').length===1)rows.splice(0,rows.length,{metadataParts:rows.flatMap(row=>row.metadataParts)});
-        const model={itemPlayback:{inlinePlayerData:{onSelect:{innertubeCommand:endpoint},onVisible:{innertubeCommand:endpoint}}},contentId:v.id,contentType:'LOCKUP_CONTENT_TYPE_VIDEO',contentImage:{thumbnailViewModel:{image:{sources:data.thumbnail.thumbnails},overlays:duration?[{thumbnailBottomOverlayViewModel:{badges:[{thumbnailBadgeViewModel:{text:duration,badgeStyle:'THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT'}}]}}]:[]}},metadata:{lockupMetadataViewModel:{title:{content:data.title.simpleText},metadata:{contentMetadataViewModel:{metadataRows:rows,delimiter:modern?.querySelector('.ytContentMetadataViewModelDelimiter,.yt-content-metadata-view-model__delimiter')?.textContent||' '}}}},rendererContext:{commandContext:{onTap:{innertubeCommand:endpoint}}}};
+        const rows=[{metadataParts:[{text:{content:channel}}]},{metadataParts:metadata.filter(Boolean).map((value,index)=>({text:{content:value},...(index===0&&layout?.play!==false?{leadingIcon:{name:'PLAY_ARROW_OUTLINED',height:12,width:12,marginEndToken:{spacing:2}}}:{})}))}];
+        if((layout?.rows??modern?.querySelectorAll('.ytContentMetadataViewModelMetadataRow,.yt-content-metadata-view-model__metadata-row').length)===1)rows.splice(0,rows.length,{metadataParts:rows.flatMap(row=>row.metadataParts)});
+        const model={itemPlayback:{inlinePlayerData:{onSelect:{innertubeCommand:endpoint},onVisible:{innertubeCommand:endpoint}}},contentId:v.id,contentType:'LOCKUP_CONTENT_TYPE_VIDEO',contentImage:{thumbnailViewModel:{image:{sources:data.thumbnail.thumbnails},overlays:duration?[{thumbnailBottomOverlayViewModel:{badges:[{thumbnailBadgeViewModel:{text:duration,badgeStyle:'THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT'}}]}}]:[]}},metadata:{lockupMetadataViewModel:{title:{content:data.title.simpleText},metadata:{contentMetadataViewModel:{metadataRows:rows,delimiter:layout?.delimiter??(modern?.querySelector('.ytContentMetadataViewModelDelimiter,.yt-content-metadata-view-model__delimiter')?.textContent||' ')}}}},rendererContext:{commandContext:{onTap:{innertubeCommand:endpoint}}}};
         const artwork=data.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer.thumbnail;
         if(artwork)model.metadata.lockupMetadataViewModel.image={decoratedAvatarViewModel:{avatar:{avatarViewModel:{image:{sources:artwork.thumbnails}}},a11yLabel:channel}};
         const moving=data.richThumbnail?.movingThumbnailRenderer.movingThumbnailDetails;
@@ -70,12 +73,12 @@
       }
       const payload=tag==='ytd-rich-item-renderer'?{content}:tag==='ytd-item-section-renderer'?{contents:[content]}:data;
       let observer,timer;
-      const cleanup=(failed=false)=>{observer?.disconnect();clearTimeout(timer);stage.remove();cleanups.delete(cleanup);active.delete(host);if(failed&&host.getAttribute('data-intent-native-request')===raw){host.setAttribute('data-intent-native-failed','');host.removeAttribute('data-intent-native-request');}};cancel=cleanup;cleanups.add(cleanup);
+      const cleanup=(failed=false)=>{observer?.disconnect();clearTimeout(timer);stage.remove();cleanups.delete(cleanup);active.delete(host);if(!disposed&&host.isConnected&&host.getAttribute('data-intent-native-request')&&host.getAttribute('data-intent-native-request')!==raw)queueMicrotask(()=>render({target:host}));if(failed&&host.getAttribute('data-intent-native-request')===raw){host.setAttribute('data-intent-native-failed','');host.removeAttribute('data-intent-native-request');}};cancel=cleanup;cleanups.add(cleanup);
       const ready=()=>{
         if(disposed||!host.isConnected||host.getAttribute('data-intent-native-request')!==raw){cleanup();return;}
         if(!node.querySelector('a[href*="watch"]')||!node.querySelector('#video-title,h3'))return;
         if(modernWatch){const lockup=node.querySelector('yt-lockup-view-model');if(lockup&&watch.dataset.nativeWatchLayout!=='stacked'){lockup.sizing='COMPACT';lockup.containerType=6;lockup.lockupExperiments={useRichGridLegacyMargin:false};}}
-        host.replaceChildren(node);cleanup();host.setAttribute('data-intent-native-rendered','');host.setAttribute('data-intent-native-variant',useModern?'modern':'compact');host.removeAttribute('data-intent-native-request');host.dispatchEvent(new Event('intent-native-card-ready',{bubbles:true}));
+        host.replaceChildren(node);cleanup();host.setAttribute('data-intent-native-rendered','');host.setAttribute('data-intent-native-variant',useModern?'modern':'compact');host.setAttribute('data-intent-native-layout-key',layoutKey);host.removeAttribute('data-intent-native-request');host.dispatchEvent(new Event('intent-native-card-ready',{bubbles:true}));
       };
       observer=new MutationObserver(ready);observer.observe(node,{childList:true,subtree:true,characterData:true});
       timer=setTimeout(()=>cleanup(true),2500);node.data=payload;ready();

@@ -90,3 +90,12 @@ test('natural ambience explicitly advertised without music is not builtin Music,
   assert.equal(S.decide([1],refs,'music',false,{title:'Rainy window',description:'Soft piano melodies over gentle rain.'}).accepted,true);
   assert.equal(S.decide([1],{music:[[.31]]},'music',true,{title:'Forest birds without music'}).accepted,true,'an explicitly edited Music description controls its own scope');
 });
+
+test('a creator name cannot supply the subject of a title-only recommendation',()=>{
+  const clip={title:'Awkward introductions that keep getting worse',description:''};
+  assert.equal(S.text({...clip,channel:'The Big Bang Theory'}),S.text({...clip,channel:'A different creator'}));
+  assert.equal(S.text({...clip,channel:'University lectures',description:'   '}),S.text({...clip,channel:''}));
+  const lesson={...clip,description:'A teacher explains conversation skills using examples.'};
+  assert.match(S.text({...lesson,channel:'Language lessons'}),/Channel: Language lessons/,'a creator remains supporting context when video metadata supplies a subject');
+  assert.match(S.text({...clip,channel:'Language lessons',hashtags:['German vocabulary']}),/Topics: German vocabulary/);
+});

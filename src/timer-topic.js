@@ -15,7 +15,7 @@
   }
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([2, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
+    return JSON.stringify([3, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
   }
   function estimate(decision, settings) {
     if (!decision || typeof decision.accepted !== 'boolean' || typeof decision.uncertain !== 'boolean' || !Number.isFinite(decision.similarity)) return {status: 'unavailable', categoryId: null, categoryIds: []};

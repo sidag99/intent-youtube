@@ -68,6 +68,7 @@
       if (restarted) {
         this.signature = signature; this.locale = locale; this.videoId = videoId; this.round = 0; this.restart(false);
       }
+      this.nativeCards?.syncLayout(primary);
       this.layoutHome(); if (!restarted) this.syncRecommendations();
     }
     matchHomeGrid(primary) {
@@ -359,6 +360,7 @@
       }
     }
     syncRecommendations() {
+      this.nativeCards?.syncLayout(this.primary);
       const source = globalThis.IntentRecommendations;
       if (!source || !this.primary?.isConnected || !this.host?.isConnected || !this.signature || this.settings.mode === 'off') { if (this.recommendedMore) this.recommendedMore.hidden = !source; return Promise.resolve(); }
       this.recommendedMore.hidden = false;

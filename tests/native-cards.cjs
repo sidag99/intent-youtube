@@ -331,6 +331,65 @@ const root = path.resolve(__dirname, '..');
     assert.equal(lockup.contentImage.thumbnailViewModel.overlays[1].animatedThumbnailOverlayViewModel.thumbnail.sources[0].url, 'https://i.ytimg.com/an_webp/M0000000013/mqdefault_6s.webp?public=1');
     console.log('PASS discovery follows modern native Home lockup cards, public locale labels and native metadata rows without copying account endpoints');
 
+    const lateHomeLayout = await page.evaluate(async () => {
+      homeCards.reset();
+      const browse=document.createElement('ytd-browse'),primary=document.createElement('main'),original=document.createElement('ytd-rich-item-renderer'),source=document.createElement('yt-lockup-view-model');
+      browse.setAttribute('page-subtype','home');primary.id='layout-primary';document.body.append(browse);browse.append(primary);primary.append(original,homeHost);original.append(source);
+      const setRows=(node,inline=false)=>{node.innerHTML=inline?'<h3><a href="/watch?v=O0000000060">元の動画</a></h3><div class="ytContentMetadataViewModelMetadataRow">講座<span class="ytContentMetadataViewModelDelimiter">・</span><span class="ytContentMetadataViewModelLeadingIcon"></span>１２万<span class="ytContentMetadataViewModelDelimiter">・</span>２日前</div>':'<h3><a href="/watch?v=O0000000060">元の動画</a></h3><div class="ytContentMetadataViewModelMetadataRow">講座</div><div class="ytContentMetadataViewModelMetadataRow">１２万<span class="ytContentMetadataViewModelDelimiter"> / </span>２日前</div>';};
+      setRows(source);homeCards.syncLayout(primary);await afterNativeFrames();
+      const model={...video,id:'M0000000061'},card=makeCard(homeHost,'Late metadata fallback');homeCards.enhance(card,model);await afterNativeFrames();
+      const entry=homeCards.entries.get(model.id),read=()=>entry.node.firstElementChild.receivedData.content.lockupViewModel.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel;
+      const before=read(),originalController=original.controller,originalCard=makeCard(homeHost,'Original stays native');homeCards.enhance(originalCard,{...video,id:'O0000000060'},original);
+      const decoy=document.createElement('yt-lockup-view-model');setRows(decoy);primary.prepend(decoy);
+      const writes=nativeWrites.length;
+      // The original is now slotted in Your recommendations. Its late hydration
+      // must override the stale hidden source and the already rendered discovery.
+      setRows(source,true);await afterNativeFrames();await afterNativeFrames();
+      const after=read(),afterWrites=nativeWrites.length,generated=entry.node.firstElementChild;
+      for(let index=0;index<8;index++)homeCards.syncLayout(primary);await afterNativeFrames();
+      const stable={sameGenerated:entry.node.firstElementChild===generated,writes:nativeWrites.length-afterWrites,sameOriginal:original===homeCards.entries.get('O0000000060').node.firstElementChild,sameController:original.controller===originalController,originalWrites:original.dataWrites};
+      source.replaceChildren();homeCards.syncLayout(primary);await afterNativeFrames();
+      const emptyIgnored=entry.node.firstElementChild===generated;
+      // Empty/hydrating moved originals are not valid templates. A detached
+      // source must not reset the current layout until another valid stable one.
+      decoy.remove();setRows(source,true);await afterNativeFrames();
+      original.remove();const fresh=document.createElement('yt-lockup-view-model');setRows(fresh);primary.prepend(fresh);homeCards.syncLayout(primary);await afterNativeFrames();await afterNativeFrames();
+      const detachedIgnored=read().metadataRows.length===2;
+      const noNetwork=networkCalls.length;
+      homeCards.reset();const restored=original.parentNode===primary;document.body.append(homeHost);browse.remove();homeHost.removeAttribute('data-intent-native-home-layout');homeCards.layoutKey=null;homeCards.layoutPrimary=null;
+      return {before,after,rerenders:afterWrites-writes,stable,emptyIgnored,detachedIgnored,noNetwork,restored};
+    });
+    assert.equal(lateHomeLayout.before.metadataRows.length,2);
+    assert.equal(lateHomeLayout.before.delimiter,' / ');
+    assert.equal(lateHomeLayout.before.metadataRows[1].metadataParts[0].leadingIcon,undefined,'native layout without a leading play icon is preserved');
+    assert.equal(lateHomeLayout.after.metadataRows.length,1,'late inline hydration reconciles already rendered discovery cards');
+    assert.equal(lateHomeLayout.after.delimiter,'・','native locale delimiter is preserved without replacing public metadata text');
+    assert.deepEqual(lateHomeLayout.after.metadataRows[0].metadataParts.map(part=>part.text.content),['数学の時間','１２万回視聴','２日前']);
+    assert.equal(lateHomeLayout.after.metadataRows[0].metadataParts[1].leadingIcon.name,'PLAY_ARROW_OUTLINED');
+    assert.equal(lateHomeLayout.rerenders,1,'one stable layout change creates one replacement, not a rendering loop');
+    assert.deepEqual(lateHomeLayout.stable,{sameGenerated:true,writes:0,sameOriginal:true,sameController:true,originalWrites:0});
+    assert.equal(lateHomeLayout.emptyIgnored,true);assert.equal(lateHomeLayout.detachedIgnored,true,'detached originals do not remain the layout authority');assert.equal(lateHomeLayout.restored,true);assert.equal(lateHomeLayout.noNetwork,0);
+    console.log('PASS late Home metadata hydration reconciles generated cards once using original inline rows, locale delimiter and play icon; original controllers, public text and network behavior are preserved');
+
+    const pendingLayout = await page.evaluate(async () => {
+      const browse=document.createElement('ytd-browse'),source=document.createElement('yt-lockup-view-model');document.body.append(browse);browse.append(source,homeHost);
+      source.innerHTML='<div class="ytContentMetadataViewModelMetadataRow">Channel</div><div class="ytContentMetadataViewModelMetadataRow">Views · age</div>';
+      const playlist=document.createElement('yt-lockup-view-model');playlist.innerHTML='<a href="/watch?v=P0000000063&list=PLexample">Collection</a><div class="ytContentMetadataViewModelMetadataRow">Collection metadata</div>';browse.prepend(playlist);
+      const playlistPage=playlist.cloneNode(true);playlistPage.querySelector('a').href='/playlist?list=PLexample';browse.prepend(playlistPage);
+      homeCards.syncLayout(browse);homeCards.syncLayout(browse);
+      const synchronousCommit=homeHost.hasAttribute('data-intent-native-home-layout');
+      await afterNativeFrames();
+      const sampledRows=JSON.parse(homeHost.getAttribute('data-intent-native-home-layout')).rows;
+      deferNativeData=true;const model={...video,id:'M0000000062'},card=makeCard(homeHost,'Pending layout fallback');homeCards.enhance(card,model);deferNativeData=false;
+      const pending=document.querySelector('[data-intent-native-staging] ytd-rich-item-renderer');
+      source.innerHTML='<div class="ytContentMetadataViewModelMetadataRow">Channel · views · age</div>';homeCards.syncLayout(browse);await afterNativeFrames();
+      pending.finishNativeRender();await afterNativeFrames();await afterNativeFrames();
+      const entry=homeCards.entries.get(model.id),rows=entry.node.firstElementChild?.receivedData.content.lockupViewModel.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows.length;
+      const result={rows,synchronousCommit,sampledRows,ready:card.hasAttribute('data-native-card-ready'),pendingDetached:!pending.isConnected,stages:document.querySelectorAll('[data-intent-native-staging]').length};
+      homeCards.reset();document.body.append(homeHost);browse.remove();homeHost.removeAttribute('data-intent-native-home-layout');homeCards.layoutKey=null;homeCards.layoutPrimary=null;return result;
+    });
+    assert.deepEqual(pendingLayout,{rows:1,synchronousCommit:false,sampledRows:2,ready:true,pendingDetached:true,stages:0},'a late layout update supersedes an older pending stage without exposing an empty card or leaking a stage');
+
     const invalid = await page.evaluate(() => {
       const requests = ['{', '', 'x'.repeat(10001), 'null', '[]', JSON.stringify({...video, id: 'bad-id'}), JSON.stringify({...video, id: 12345678901}), JSON.stringify({...video, id: ['V0000000001']}), JSON.stringify({...video, title: '   '}), JSON.stringify({...video, title: {text: 'Not a string'}}), JSON.stringify({...video, shorts: true})];
       const cases = requests.map(raw => {

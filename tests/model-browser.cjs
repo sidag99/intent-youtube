@@ -59,6 +59,21 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.equal(topicEstimates[2].categoryId,null);assert.equal(topicEstimates[2].status,'uncertain','displaying two strong topics does not relax timer relation thresholds');
   await fs.writeFile(path.join(root,'test-results/topic-model-regressions.json'),JSON.stringify(topicVideos.map((video,i)=>({video,decision:topicDecisions[i],estimate:topicEstimates[i]})),null,2));
   assert.equal(result.music[0].accepted,false,'app building excluded from music');
+  const homeRegressions=[
+   {title:'Awkward Introductions That Just Keep Getting Worse',channel:'The Big Bang Theory',expected:false},
+   {title:'Introduction to University Mathematics (2026), Lecture 5. First Year Student Lecture',channel:'Oxford Mathematics',expected:true},
+   {title:'Nick Lane | The Gifford Lectures: Beyond the Series - Why is Life the way it is?',channel:'The University of Edinburgh',expected:true},
+   {title:'Emotional Intelligence: From Theory to Everyday Practice',channel:'Yale University',expected:true},
+   {title:'Lecture 1: Introduction to Power and Politics in Today’s World',channel:'YaleCourses',expected:true},
+   {title:'The science behind The Big Bang Theory',channel:'Physics Explained',description:'A lesson on cosmology and the evidence for an expanding universe.',expected:true},
+   {title:'Learn English with The Big Bang Theory',channel:'Language lessons',description:'A language teacher explains useful vocabulary, pronunciation and conversation with examples from a sitcom.',expected:true},
+   {title:'Awkward Introductions That Just Keep Getting Worse',channel:'The Big Bang Theory',description:'Enjoy the funniest moments and awkward encounters with Sheldon, Penny, Leonard and the gang in this comedy sitcom compilation.',expected:false}
+  ];
+  const homeDecisions=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:homeRegressions,settings:{...IntentCore.defaults(),mode:'study'}});
+  for(let i=0;i<homeRegressions.length;i++)assert.equal(homeDecisions[i].accepted,homeRegressions[i].expected,'Home Study regression: '+homeRegressions[i].title);
+  const channelOverride=await page.evaluate(({video,settings})=>runModel([video],settings),{video:homeRegressions[0],settings:{...IntentCore.defaults(),mode:'study',channels:{...IntentCore.defaults().channels,study:'The Big Bang Theory'}}});
+  assert.equal(channelOverride[0].accepted,true,'an explicitly included creator still follows the user choice');
+  await fs.writeFile(path.join(root,'test-results/home-study-regressions.json'),JSON.stringify(homeRegressions.map((video,i)=>({video,decision:homeDecisions[i]})),null,2));
   const focusedExamples=[
    {title:'Convert an extra pawn into a win',channel:'Board Lessons',description:'King and pawn endgame techniques, opposition and promotion in chess.'},
    examples[0], examples[1]

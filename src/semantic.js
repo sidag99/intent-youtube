@@ -8,7 +8,12 @@
   };
   function text(video) {
     const tags = [...(video.hashtags || []), ...(video.keywords || [])].slice(0, 30).map(t => String(t).slice(0, 80)).join(', ');
-    return `${String(video.title || '').slice(0, 500)}. Channel: ${String(video.channel || '').slice(0, 160)}. ${tags ? 'Topics: ' + tags + '. ' : ''}${String(video.description || '').slice(0, 1800)}`;
+    const description = String(video.description || '').slice(0, 1800).trim();
+    // Bare Home recommendations often have only a vague title and creator name.
+    // A science/business-sounding creator cannot supply the missing topic;
+    // explicit user channel inclusions are handled separately in the worker.
+    const channel = description.trim() || tags.trim() ? String(video.channel || '').slice(0, 160) : '';
+    return `${String(video.title || '').slice(0, 500)}. Channel: ${channel}. ${tags ? 'Topics: ' + tags + '. ' : ''}${description}`;
   }
   function profiles(settings) {
     const s = C.sanitize(settings);
