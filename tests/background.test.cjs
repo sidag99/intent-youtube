@@ -941,12 +941,25 @@ test('weak, uncertain, malformed and failed topic decisions preserve the exempti
   for (const decision of decisions) {
     const h = topicHarness(async () => [decision]);
     const state = await checkTopic(h);
-    assert.equal(state.timerTopicState, 'uncertain', JSON.stringify(decision));
+    const operational = typeof decision.accepted !== 'boolean' || typeof decision.uncertain !== 'boolean' || !Number.isFinite(decision.similarity);
+    assert.equal(state.timerTopicState, operational ? 'unavailable' : 'uncertain', JSON.stringify(decision));
     assert.equal(state.timerExempt, true); assert.equal(state.tabCounting, false);
     h.advance(10000); assert.equal((await tabState(h, 1)).usedMs, 0);
   }
   const failed = topicHarness(async () => {throw new Error('The model could not load');});
-  const state = await checkTopic(failed); assert.equal(state.ok, true); assert.equal(state.timerTopicState, 'uncertain'); assert.equal(state.timerExempt, true);
+  const state = await checkTopic(failed); assert.equal(state.ok, true); assert.equal(state.timerTopicState, 'unavailable'); assert.equal(state.timerExempt, true);
+});
+test('unavailable topic checks recover on explicit retry without caching errors or changing timer safety',async()=>{
+  let calls=0,fail=true;
+  const h=topicHarness(async()=>{calls++;if(fail)throw new Error('Temporary model failure');return[matchingTopic()];});
+  const failed=await checkTopic(h);assert.equal(failed.videoTopic.status,'unavailable');assert.deepEqual(Array.from(failed.videoTopic.categoryIds),[]);assert.equal(failed.timerExempt,true);
+  h.advance(10000);assert.equal((await tabState(h,1)).usedMs,0);assert.equal(calls,1,'heartbeats do not launch automatic retry loops');
+  fail=false;const recovered=await checkTopic(h);assert.equal(recovered.videoTopic.status,'matching');assert.equal(recovered.timerExempt,true);assert.equal(calls,2);
+  await checkTopic(h);assert.equal(calls,2,'successful estimates remain cached');
+});
+test('strong overlapping displayed categories remain exempt under an uncertain timer relation',async()=>{
+  const h=topicHarness(async()=>[{accepted:false,uncertain:false,similarity:.1,categoryId:'study',categorySimilarity:.410,categoryMargin:.025,categoryCandidates:[{id:'study',similarity:.410},{id:'work',similarity:.385}]}]);
+  const state=await checkTopic(h);assert.equal(state.videoTopic.categoryId,null);assert.deepEqual(Array.from(state.videoTopic.categoryIds),['study','work']);assert.equal(state.timerTopicState,'uncertain');assert.equal(state.timerExempt,true);assert.equal(state.tabCounting,false);
 });
 
 test('topic requests require the real top-level current YouTube video and never trust a page verdict', async () => {
@@ -1153,6 +1166,18 @@ test('native recommendation metadata is bounded, deduplicated and strips all sup
   for (const thumbnail of ['http://i.ytimg.com/a.jpg','https://ytimg.com.evil.test/a.jpg','https://user:password@i.ytimg.com/a.jpg','https://i.ytimg.com:8443/a.jpg','javascript:alert(1)']) {
     const checked = await filterNative(h, [{...nativeVideo(), thumbnail}]); assert.equal(checked.items[0].thumbnail, 'https://i.ytimg.com/vi/N0000000000/hqdefault.jpg');
   }
+});
+
+test('native playlists retain bounded collection identity and match using collection metadata without fetching contents', async () => {
+  let inspected, searches=0;
+  const h=harness({},undefined,async()=>{searches++;throw new Error('No playlist fetch');},async videos=>{inspected=videos;return videos.map(v=>({accepted:v.title.includes('course')}));});
+  const playlist={...nativeVideo(),id:'playlist:PL_systems_course',type:'playlist',playlistId:'PL_systems_course',videoId:'N0000000000',title:'Distributed systems course',url:'https://evil.test/',shorts:true};
+  const result=await filterNative(h,[playlist,playlist,{...playlist,id:'playlist:PL_other',playlistId:'PL_other',title:'Unrelated games'}, {...playlist,id:'playlist:bad/list',playlistId:'bad/list'}, {...playlist,id:'playlist:PL_mismatch'},nativeVideo()]);
+  assert.deepEqual(Array.from(result.items,v=>v.id),['playlist:PL_systems_course']);
+  assert.deepEqual(Array.from(inspected,v=>v.id),['playlist:PL_systems_course','playlist:PL_other','N0000000000']);
+  assert.equal(result.items[0].type,'playlist');assert.equal(result.items[0].playlistId,'PL_systems_course');assert.equal(result.items[0].videoId,'N0000000000');assert.equal(result.items[0].shorts,false);assert.equal('url' in result.items[0],false);assert.equal(searches,0);
+  const onlyList=await filterNative(h,[{...playlist,id:'playlist:PL_only',playlistId:'PL_only',videoId:'not-valid',thumbnail:'javascript:alert(1)'}]);
+  assert.equal(onlyList.items[0].videoId,'');assert.equal(onlyList.items[0].thumbnail,'');
 });
 
 test('native recommendation authorization requires a current top-level native Home or watch page', async () => {

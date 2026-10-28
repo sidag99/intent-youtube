@@ -116,12 +116,22 @@
     if (!topicBadge) {
       topicBadge = document.createElement('span'); topicBadge.id = 'intent-video-topic'; topicBadge.setAttribute('role', 'note');
     }
-    const status = ['checking', 'matching', 'unrelated', 'uncertain'].includes(result?.status) ? result.status : 'uncertain';
-    const modes = C.modes(settings), intent = modes[settings.mode]?.name || 'your intent', category = modes[result?.categoryId]?.name;
-    const label = status === 'checking' ? 'Checking topic…' : !category ? 'Topic uncertain' : status === 'uncertain' ? `Likely ${category} · uncertain` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
-    const relation = status === 'checking' ? `Checking this video's metadata against ${intent}.` : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
-    const detail = relation + ' Local metadata estimate; the video itself is not watched or listened to.';
-    if (topicBadge.textContent !== label) topicBadge.textContent = label;
+    const status = ['checking', 'matching', 'unrelated', 'uncertain', 'unavailable'].includes(result?.status) ? result.status : 'uncertain';
+    const modes = C.modes(settings), intent = modes[settings.mode]?.name || 'your intent';
+    const categoryIds = [...new Set(Array.isArray(result?.categoryIds) ? result.categoryIds : [result?.categoryId])].filter(id => typeof id === 'string' && Object.hasOwn(modes, id)).slice(0, 2);
+    const category = categoryIds.map(id => modes[id].name).join(' · ');
+    const label = status === 'checking' ? 'Checking topic…' : status === 'unavailable' ? 'Topic unavailable' : !category ? 'Topic uncertain' : status === 'uncertain' || categoryIds.length > 1 ? `Likely ${category}` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
+    const relation = status === 'checking' ? `Checking this video's metadata against ${intent}.` : status === 'unavailable' ? 'The local topic check could not run. Retry when ready; your timer rule is unchanged.' : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
+    const detail = relation + (categoryIds.length > 1 ? ' Several configured topics overlap.' : '') + ' Local metadata estimate; the video itself is not watched or listened to.';
+    if (status === 'unavailable') {
+      if (topicBadge.dataset.state !== 'unavailable' || !topicBadge.querySelector('button')) {
+        topicBadge.textContent = label;
+        const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.setAttribute('aria-label', 'Retry topic check');
+        retry.style.cssText = 'margin-inline-start:8px;padding:0;border:0;background:transparent;color:inherit;text-decoration:underline;font:inherit;cursor:pointer';
+        retry.addEventListener('click', () => {if (!topicContext || tabPaused || settings?.mode === 'off') return; topicResults.delete(topicSignature); clearVideoTopic(); schedule();});
+        topicBadge.append(retry);
+      }
+    } else if (topicBadge.textContent !== label) topicBadge.textContent = label;
     if (topicBadge.title !== detail) topicBadge.title = detail;
     if (topicBadge.getAttribute('aria-label') !== label + '. ' + detail) topicBadge.setAttribute('aria-label', label + '. ' + detail);
     topicBadge.dataset.state = status; topicBadge.dataset.videoId = topicContext.video.id; topicBadge.dataset.theme = IntentHome.theme();
@@ -130,9 +140,9 @@
   function acceptVideoTopic(state) {
     const result = state?.videoTopic;
     if (!topicContext || topicNavigating || tabPaused || settings?.mode === 'off' || result?.videoId !== topicContext.video.id || result.videoId !== currentTopicVideoId()) return;
-    if (!['checking', 'matching', 'unrelated', 'uncertain'].includes(result.status)) return;
+    if (!['checking', 'matching', 'unrelated', 'uncertain', 'unavailable'].includes(result.status)) return;
     topicContext.result = result; renderVideoTopic(result);
-    if (result.status !== 'checking') {
+    if (!['checking', 'unavailable'].includes(result.status)) {
       topicResults.set(topicSignature, {at: Date.now(), result: {...result}});
       if (topicResults.size > 24) topicResults.delete(topicResults.keys().next().value);
     }
@@ -172,8 +182,8 @@
         acceptVideoTopic(state);
       } catch {
         if (generation === topicGeneration && signature === topicSignature && id === currentTopicVideoId()) {
-          const uncertain = {videoId: id, status: 'uncertain', categoryId: null};
-          topicContext.result = uncertain; renderVideoTopic(uncertain);
+          const unavailable = {videoId: id, status: 'unavailable', categoryId: null, categoryIds: []};
+          topicContext.result = unavailable; renderVideoTopic(unavailable);
         }
       }
     }, 350);

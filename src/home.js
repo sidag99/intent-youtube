@@ -38,6 +38,7 @@
       if (!primary) { this.destroy(); return; }
       if (!this.host) this.create();
       if (!this.nativeCards && globalThis.IntentNativeCards) this.nativeCards = new IntentNativeCards(this.host, this.surface);
+      if (this.surface === 'watch' && !this.nativeFilters && globalThis.IntentNativeFilters) this.nativeFilters = new IntentNativeFilters(this.host, this.filterControls, state => this.nativeFilterChanged(state));
       this.primary = primary; this.renderer = renderer;
       if (this.host.parentElement !== primary) {
         // YouTube moves or replaces the related container at responsive breakpoints.
@@ -45,6 +46,7 @@
         primary.prepend(this.host);
       }
       this.syncNative(primary);
+      this.nativeFilters?.sync(primary);
       this.updateTheme();
       if (this.surface === 'home') {
         if (!this.observing) {this.resizeObserver.observe(this.host); this.observing = true;}
@@ -142,6 +144,8 @@
       this.host = document.createElement('section'); this.host.id = `intent-${this.surface}-feed`; this.host.dataset.surface = this.surface;
       const root = this.host.attachShadow({mode: 'open'});
       const style = document.createElement('style'); style.textContent = globalThis.IntentFeedTheme || '';
+      this.filterControls = document.createElement('div'); this.filterControls.hidden = true; this.filterControls.style.cssText = 'min-width:0;margin:0 0 12px';
+      this.filterControls.setAttribute('aria-label', 'YouTube recommendation filters'); this.filterControls.title = 'YouTube filters refine Your recommendations. Discover more remains an independent topic search.';
       this.title = document.createElement('h1'); this.title.className = 'sr-only';
       this.title.id = 'feed-heading';
       const section = (id, label, path) => {
@@ -205,7 +209,7 @@
       const note = document.createElement('p'); note.className = 'note'; note.textContent = 'Public YouTube searches, analysed locally using titles, available descriptions and hashtags. The topic model is bundled with Intent; this does not change your YouTube recommendation algorithm.';
       this.discoveryActions.append(this.recommendedMessage);
       this.discoverySection.append(discovery, this.status, this.grid, this.shortShelf, this.restGrid, this.more, this.endState, note);
-      root.append(style, this.title, this.recommendedSection, this.discoverySection);
+      root.append(style, this.title, this.filterControls, this.recommendedSection, this.discoverySection);
     }
     collapseEmptySpacing(renderer, primary) {
       // YouTube sometimes removes the chip renderer but leaves its fixed-height
@@ -242,16 +246,30 @@
       for (const [node, marker] of next) if (!node.hasAttribute(marker)) node.setAttribute(marker, '');
     }
     matchWatchThumbnail(primary) {
-      const selector = 'ytd-compact-video-renderer ytd-thumbnail,ytd-compact-video-renderer a#thumbnail,yt-lockup-view-model .yt-lockup-view-model__content-image';
+      const previousRenderer = this.host.dataset.nativeWatchRenderer;
+      const selector = 'ytd-compact-video-renderer ytd-thumbnail,ytd-compact-video-renderer a#thumbnail,yt-lockup-view-model .yt-lockup-view-model__content-image,yt-lockup-view-model .ytLockupViewModelContentImage';
+      const availableWidth = primary.getBoundingClientRect().width;
       for (const thumbnail of primary.querySelectorAll(selector)) {
         if(thumbnail.closest('#intent-home-feed,#intent-watch-feed'))continue;
         const computed = getComputedStyle(thumbnail).width;
         const width = thumbnail.getBoundingClientRect().width || (/^[\d.]+px$/.test(computed) ? parseFloat(computed) : 0);
-        if (width >= 100 && width <= 320) {this.watchThumbnailWidth = width; break;}
+        if (width >= 100 && width <= Math.min(720, Math.max(320, availableWidth + 2))) {
+          this.watchThumbnailWidth = width;
+          const card = thumbnail.closest('yt-lockup-view-model,ytd-compact-video-renderer');
+          this.host.dataset.nativeWatchRenderer = card?.localName === 'yt-lockup-view-model' ? 'modern' : 'compact';
+          const stacked = width >= (card?.getBoundingClientRect().width || availableWidth) * .8;
+          this.host.dataset.nativeWatchLayout = stacked ? 'stacked' : 'compact';
+          const title = card?.querySelector('h3,#video-title');
+          const gap = stacked ? 0 : title?.getBoundingClientRect().left - thumbnail.getBoundingClientRect().right;
+          if (Number.isFinite(gap) && gap >= 0 && gap <= 40) this.host.style.setProperty('--intent-watch-thumbnail-gap', `${gap}px`);
+          break;
+        }
       }
       if (this.watchThumbnailWidth) this.host.style.setProperty('--intent-watch-thumbnail-width', `${this.watchThumbnailWidth}px`);
+      if (previousRenderer !== this.host.dataset.nativeWatchRenderer) this.nativeCards?.flush();
     }
     restart(fresh) {
+      this.nativeGeneration = (this.nativeGeneration || 0) + 1;
       this.nativePagination?.cancel(); this.nativeCards?.reset(); this.nativePool = new Map(); this.nativeChecked = new Map(); this.nativeNodes = new Map(); this.nativeScanned = new WeakMap(); this.nativeTotalChecked = 0; this.recommendedItems = []; this.nativeLimit = 96; this.nativeJob = null; this.nativeMoreBusy = false; this.nativeRetryAt = 0;
       this.recommendedSection.hidden = true; this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedMore.disabled = false; this.recommendedMessage.textContent = 'No matching recommendations yet.'; this.recommendedMore.textContent = 'Find more recommendations'; this.discoveryActions.append(this.recommendedMore,this.recommendedMessage);
       this.generation++; this.items = []; this.cursor = 0; this.pageCursor = null; this.hasMore = true; this.busy = false; this.autoBatches = 0; this.loadFailed = false; this.restartRequired = false; this.endReason = '';
@@ -344,16 +362,17 @@
       const source = globalThis.IntentRecommendations;
       if (!source || !this.primary?.isConnected || !this.host?.isConnected || !this.signature || this.settings.mode === 'off') { if (this.recommendedMore) this.recommendedMore.hidden = !source; return Promise.resolve(); }
       this.recommendedMore.hidden = false;
+      if (this.nativeFilters?.waiting) return Promise.resolve();
       const declared = this.renderer?.getAttribute('video-id');
       if (this.surface === 'watch' && declared && declared !== this.videoId) return Promise.resolve();
-      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, nodes: this.nativeNodes, limit: 240-this.nativePool.size}) : []) {
+      for (const video of this.nativePool.size<240 ? source.read(this.primary, this.videoId, {scanned: this.nativeScanned, nodes: this.nativeNodes, ignoreNodes: this.nativeFilters?.stale, limit: 240-this.nativePool.size}) : []) {
         const checked = this.nativeChecked.get(video.id);
         if (checked?.fingerprint === JSON.stringify(video)) {if (!checked.item) this.nativeNodes.delete(video.id); continue;}
         this.nativePool.set(video.id, video);
       }
       if (this.nativeJob || Date.now() < this.nativeRetryAt) return this.nativeJob || Promise.resolve();
-      const generation = this.generation, signature = this.signature, pageURL = location.href;
-      const current = () => generation === this.generation && signature === this.signature && this.host?.isConnected;
+      const generation = this.generation, nativeGeneration = this.nativeGeneration, signature = this.signature, pageURL = location.href;
+      const current = () => generation === this.generation && nativeGeneration === this.nativeGeneration && signature === this.signature && this.host?.isConnected;
       const pending = () => [...this.nativePool.values()].filter(v => this.nativeChecked.get(v.id)?.fingerprint !== JSON.stringify(v)).slice(0, Math.max(0, this.nativeLimit - this.nativeTotalChecked));
       const firstBatch = pending().slice(0, 48);
       if (!firstBatch.length) return Promise.resolve();
@@ -407,9 +426,25 @@
         this.status.textContent = this.status.textContent.replace(/^\d+ videos/, `${this.items.length} videos`); this.layoutHome(); this.updateDiscoveryControls();
       }
     }
+    nativeFilterChanged(state) {
+      if (state === 'start') {
+        this.nativeGeneration = (this.nativeGeneration || 0) + 1; this.nativePagination?.cancel();
+        this.nativeCards?.release(this.recommendedItems.map(video => video.id));
+        this.nativePool = new Map(); this.nativeChecked = new Map(); this.nativeNodes = new Map(); this.nativeScanned = new WeakMap();
+        this.nativeTotalChecked = 0; this.nativeLimit = 96; this.nativeJob = null; this.nativeMoreBusy = false; this.nativeRetryAt = 0; this.recommendedItems = [];
+        this.recommendedGrid.replaceChildren(); this.recommendedShortGrid.replaceChildren(); this.recommendedShorts.hidden = true; this.recommendedSection.hidden = true;
+        this.discoveryActions.append(this.recommendedMore, this.recommendedMessage); this.recommendedMore.disabled = true;
+        this.recommendedMessage.textContent = 'Waiting for YouTube to load this recommendation filter…';
+      } else if (state === 'ready') {
+        this.nativeScanned = new WeakMap(); this.recommendedMore.disabled = false;
+        this.recommendedMessage.textContent = 'Checking your YouTube recommendations…'; this.syncRecommendations();
+      } else this.recommendedMessage.textContent = 'YouTube has not returned this filter yet. Choose another filter to try again.';
+    }
     async moreRecommendations() {
-      if (this.nativeMoreBusy || !this.host?.isConnected || !globalThis.IntentRecommendations) return;
-      const generation = this.generation; this.nativeMoreBusy = true; this.nativeRetryAt = 0; this.recommendedMore.disabled = true; this.recommendedMore.textContent = 'Checking recommendations…'; this.recommendedMessage.textContent = '';
+      if (this.nativeMoreBusy || this.nativeFilters?.waiting || !this.host?.isConnected || !globalThis.IntentRecommendations) return;
+      const generation = this.generation, nativeGeneration = this.nativeGeneration;
+      const current = () => generation === this.generation && nativeGeneration === this.nativeGeneration;
+      this.nativeMoreBusy = true; this.nativeRetryAt = 0; this.recommendedMore.disabled = true; this.recommendedMore.textContent = 'Checking recommendations…'; this.recommendedMessage.textContent = '';
       const before = this.nativeTotalChecked, matches = this.recommendedItems.length;
       let batches = 0, unavailable = false, stalled = false;
       try {
@@ -418,7 +453,7 @@
         for (let step = 0; step < 4 && this.recommendedItems.length < 120; step++) {
           this.nativeLimit = this.nativeTotalChecked + 96; const prior = this.nativeTotalChecked;
           await this.syncRecommendations();
-          if (generation !== this.generation) return;
+          if (!current()) return;
           if (this.nativeRetryAt > Date.now()) return;
           const checked = this.nativeTotalChecked - before, added = this.recommendedItems.length - matches;
           this.recommendedMore.textContent = `Checked ${checked} · ${added} new matches`;
@@ -428,15 +463,15 @@
           if (this.nativeTotalChecked > prior && this.nativeTotalChecked >= this.nativeLimit) continue;
           this.nativePagination ||= new globalThis.IntentRecommendations.Pagination();
           const result = await this.nativePagination.load(this.primary, this.videoId, new Set([...this.nativeChecked.keys(),...this.nativePool.keys()])); batches++;
-          if (generation !== this.generation || result.cancelled) return;
+          if (!current() || result.cancelled) return;
           if (!result.added) {unavailable = !result.available; stalled = result.available; break;}
         }
-        if (generation !== this.generation) return;
+        if (!current()) return;
         const checked = this.nativeTotalChecked - before, added = this.recommendedItems.length - matches;
         this.recommendedMessage.textContent = `${checked} more videos checked · ${added} new match${added === 1 ? '' : 'es'}.` + (unavailable ? ' YouTube has no further recommendation batch here.' : stalled ? ' YouTube did not return another batch. Try again later.' : this.recommendedItems.length >= 120 ? ' 120 matches shown.' : added ? '' : ' No additional matches in these batches; you can try again.');
         this.recommendedMore.title = `Checked ${checked} previously unseen videos across ${batches} native YouTube batch${batches === 1 ? '' : 'es'}. No public topic searches were used.`;
-      } catch { if (generation === this.generation) this.recommendedMessage.textContent = 'Recommendations could not be checked. Try again later.'; }
-      finally { if (generation === this.generation) { this.nativeMoreBusy = false; this.recommendedMore.disabled = false; this.recommendedMore.textContent = 'Find more recommendations'; } }
+      } catch { if (current()) this.recommendedMessage.textContent = 'Recommendations could not be checked. Try again later.'; }
+      finally { if (current()) { this.nativeMoreBusy = false; this.recommendedMore.disabled = false; this.recommendedMore.textContent = 'Find more recommendations'; } }
     }
     layoutHome() {
       if (this.surface !== 'home' || !this.host?.isConnected) return;
@@ -468,9 +503,9 @@
     card(video) {
       const cached=this.nativeCards?.get(video,this.nativeNodes?.get(video.id));if(cached)return cached;
       const card = document.createElement('article'); card.className = video.shorts ? 'card shorts' : 'card'; card.dataset.videoId = video.id;
-      const url = video.shorts ? `https://www.youtube.com/shorts/${video.id}` : `https://www.youtube.com/watch?v=${video.id}`;
+      const url = video.type === 'playlist' ? `https://www.youtube.com/${video.videoId ? `watch?v=${video.videoId}&list=${video.playlistId}` : `playlist?list=${video.playlistId}`}` : video.shorts ? `https://www.youtube.com/shorts/${video.id}` : `https://www.youtube.com/watch?v=${video.id}`;
       const cover = document.createElement('a'); cover.className = 'cover'; cover.href = url; cover.tabIndex = -1; cover.setAttribute('aria-hidden', 'true');
-      const image = document.createElement('img'); image.src = video.thumbnail; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.decoding = 'async';
+      const image = document.createElement('img'); if (video.thumbnail) image.src = video.thumbnail; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.decoding = 'async';
       cover.append(image);
       if (video.shorts) { const badge = document.createElement('span'); badge.className = 'duration'; badge.textContent = 'Shorts'; cover.append(badge); }
       else if (video.duration) { const duration = document.createElement('span'); duration.className = 'duration'; duration.textContent = video.duration; cover.append(duration); }
@@ -497,7 +532,7 @@
     }
     destroy() {
       if (!this.signature && !this.host?.isConnected && !this.nativeElements.size && !this.spacingElements.size) return;
-      this.nativePagination?.cancel(); this.nativeCards?.destroy(); this.nativeCards=null; this.nativeJob = null; this.nativePool?.clear(); this.nativeChecked?.clear(); this.nativeNodes?.clear(); this.recommendedItems = [];
+      this.nativePagination?.cancel(); this.nativeFilters?.destroy(); this.nativeFilters = null; this.nativeCards?.destroy(); this.nativeCards=null; this.nativeJob = null; this.nativePool?.clear(); this.nativeChecked?.clear(); this.nativeNodes?.clear(); this.recommendedItems = [];
       this.generation++; this.signature = ''; this.videoId = ''; this.busy = false; this.homeGridMetrics = null;
       this.resizeObserver?.disconnect(); this.observing = false;
       this.host?.remove(); document.documentElement.removeAttribute(this.pageMarker);

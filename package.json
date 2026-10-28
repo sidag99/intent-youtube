@@ -1,16 +1,16 @@
 {
   "name": "intent-youtube",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "private": true,
   "description": "A local-first YouTube focus extension",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check src/core.js && node --check src/feed.js && node --check src/feed-theme.js && node --check src/home.js && node --check src/toolbar.js && node --check src/timer-topic.js && node --check src/background.js && node --check src/content.js && node --check src/ui.js && node --check src/preview.js && node --check src/role-presets.js && node --check src/intent-library.js && node --check src/blocked.js && node --check src/semantic.js && node --check src/ai-host.js && node --check src/ai-worker-source.mjs && node --check src/recommendations.js && node --check src/reconnect.js && node --check src/native-cards.js && node --check src/native-renderer.js",
+    "check": "node --check src/core.js && node --check src/feed.js && node --check src/feed-theme.js && node --check src/home.js && node --check src/toolbar.js && node --check src/timer-topic.js && node --check src/background.js && node --check src/content.js && node --check src/ui.js && node --check src/preview.js && node --check src/role-presets.js && node --check src/intent-library.js && node --check src/blocked.js && node --check src/semantic.js && node --check src/ai-host.js && node --check src/ai-worker-source.mjs && node --check src/recommendations.js && node --check src/reconnect.js && node --check src/native-cards.js && node --check src/native-renderer.js && node --check src/native-filters.js",
     "test:build": "node --test tests/build.cjs",
-    "test:browser": "npm run test:build && node tests/browser.cjs && node tests/feed-pagination.cjs && node tests/preferences.cjs && node tests/ui-state.cjs && node tests/button-audit.cjs && node tests/popup-window.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs && node tests/video-topic.cjs && node tests/home-spacing.cjs && node tests/preview.cjs && node tests/recommendations.cjs && node tests/native-cards.cjs && node tests/hybrid-feed.cjs && node tests/content-recovery.cjs && node tests/recommendation-layout.cjs && node tests/home-card-geometry.cjs",
+    "test:browser": "npm run test:build && node tests/browser.cjs && node tests/feed-pagination.cjs && node tests/preferences.cjs && node tests/ui-state.cjs && node tests/button-audit.cjs && node tests/popup-window.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs && node tests/video-topic.cjs && node tests/home-spacing.cjs && node tests/preview.cjs && node tests/recommendations.cjs && node tests/native-cards.cjs && node tests/hybrid-feed.cjs && node tests/content-recovery.cjs && node tests/recommendation-layout.cjs && node tests/home-card-geometry.cjs && node tests/discovery-playback.cjs && node tests/playlist-recommendations.cjs && node tests/native-filters.cjs",
     "build": "node scripts/build.mjs",
     "test:model": "node tests/model-browser.cjs && node tests/music-model.cjs",
-    "test:extension": "node tests/extension.cjs"
+    "test:extension": "node tests/extension.cjs && node tests/topic-recovery-extension.cjs"
   },
   "engines": {
     "node": ">=20"

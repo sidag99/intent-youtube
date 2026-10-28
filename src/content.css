@@ -111,3 +111,46 @@ html[data-intent-shorts] [data-intent-short-nav],
   max-width: none !important;
   margin-inline: 0 !important;
 }
+
+/* The modern watch variant uses the same native lockup as the current YouTube
+   sidebar. Its rich-item adapter must not inherit Home's track sizing. */
+#intent-watch-feed [data-intent-created-card] {
+  --ytd-rich-grid-items-per-row: 1;
+  --ytd-rich-grid-item-margin: 0px;
+}
+#intent-watch-feed ytd-rich-item-renderer[data-intent-created-card],
+#intent-watch-feed ytd-rich-item-renderer[data-intent-created-card] > #content,
+#intent-watch-feed [data-intent-created-card] yt-lockup-view-model,
+#intent-watch-feed [data-intent-created-card] .ytLockupViewModelHost {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+#intent-watch-feed [data-intent-created-card] .ytLockupViewModelContentImage,
+#intent-watch-feed [data-intent-created-card] .yt-lockup-view-model__content-image {
+  box-sizing: border-box !important;
+  flex: none !important;
+  width: var(--intent-watch-thumbnail-width, 168px) !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-inline-end: 8px !important;
+}
+#intent-watch-feed[data-native-watch-layout="stacked"] [data-intent-created-card] .ytLockupViewModelContentImage { width: 100% !important; margin-inline-end: 0 !important; }
+#intent-watch-feed:not([data-native-watch-layout="stacked"]) [data-intent-created-card] .ytLockupViewModelHost {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: flex-start !important;
+  column-gap: var(--intent-watch-thumbnail-gap, 8px) !important;
+}
+#intent-watch-feed:not([data-native-watch-layout="stacked"]) [data-intent-created-card] .ytLockupViewModelContentImage,
+#intent-watch-feed:not([data-native-watch-layout="stacked"]) [data-intent-created-card] .yt-lockup-view-model__content-image {
+  margin-inline-end: 0 !important;
+}
+#intent-watch-feed:not([data-native-watch-layout="stacked"]) [data-intent-created-card] .ytLockupViewModelMetadata {
+  flex: 1 1 0% !important;
+  width: auto !important;
+  min-width: 0 !important;
+}

@@ -15,17 +15,21 @@
   }
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
+    return JSON.stringify([2, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
   }
   function estimate(decision, settings) {
-    if (!decision || typeof decision !== 'object') return {status: 'uncertain', categoryId: null};
+    if (!decision || typeof decision.accepted !== 'boolean' || typeof decision.uncertain !== 'boolean' || !Number.isFinite(decision.similarity)) return {status: 'unavailable', categoryId: null, categoryIds: []};
     const definitions = C.modes(settings);
     const categoryId = Object.hasOwn(definitions, decision.categoryId) && Number.isFinite(decision.categorySimilarity) && decision.categorySimilarity >= .35 && Number.isFinite(decision.categoryMargin) && decision.categoryMargin >= .05 ? decision.categoryId : null;
+    // Display strong overlapping categories without claiming one is exclusive.
+    // This list does not relax the strict categoryId used by timer decisions.
+    const categoryIds = [...new Set((Array.isArray(decision.categoryCandidates) ? decision.categoryCandidates : []).filter(candidate => candidate && Object.hasOwn(definitions, candidate.id) && Number.isFinite(candidate.similarity) && candidate.similarity >= .35 && Number.isFinite(decision.categorySimilarity) && decision.categorySimilarity - candidate.similarity <= .05).map(candidate => candidate.id))].slice(0, 2);
+    if (!categoryIds.length && categoryId) categoryIds.push(categoryId);
     // Similarity is not a calibrated probability. Require strong evidence of a
     // different category before turning an exemption into counted time.
     const unrelated = decision.accepted === false && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity <= .18 && categoryId && categoryId !== settings.mode && decision.categorySimilarity >= .40;
     const matching = decision.accepted === true && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity >= .30;
-    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId};
+    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId, categoryIds};
   }
   globalThis.IntentTimerTopic = {videoId, metadata, key, estimate};
 })();

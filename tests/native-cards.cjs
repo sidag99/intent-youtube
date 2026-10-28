@@ -54,13 +54,14 @@ const root = path.resolve(__dirname, '..');
           if (failNativeData) throw new Error('Native component rejected data');
           this.dataWrites++; this.receivedData = value; this.initializationParent = this.parentElement; nativeWrites.push(this.localName);
           if (silentNativeData) return;
-          const modern = value.content?.lockupViewModel, data = value.content?.videoRenderer || value, title = document.createElement('h3'), link = document.createElement('a');
+          const modern = value.content?.lockupViewModel || value.contents?.[0]?.lockupViewModel, data = value.content?.videoRenderer || value, title = document.createElement('h3'), link = document.createElement('a');
           link.href = '/watch?v=' + (modern?.contentId || data.videoId); link.textContent = modern?.metadata.lockupMetadataViewModel.title.content || data.title.simpleText; title.append(link); this.replaceChildren(title);
           if (deferNativeData) {this.replaceChildren(); this.finishNativeRender = () => this.replaceChildren(title);}
         }
       };
       customElements.define('ytd-rich-item-renderer', nativeClass());
       customElements.define('ytd-compact-video-renderer', nativeClass());
+      customElements.define('ytd-item-section-renderer', nativeClass());
       window.componentsReadyCount = 0;
       document.addEventListener('intent-native-components-ready', () => componentsReadyCount++);
     });
@@ -210,6 +211,39 @@ const root = path.resolve(__dirname, '..');
       return {...result, restored: original.parentElement?.id === 'native-list', stylesRestored: !original.hasAttribute('style')};
     });
     assert.deepEqual(pendingTakeover, {originalKept: true, controllerKept: true, notFailed: true, stages: 0, restored: true, stylesRestored: true}, 'a delayed factory cannot overwrite an original native card that took over while loading');
+
+    const modernWatchOnly = await page.evaluate(async () => {
+      const host=document.createElement('section'),published=document.documentElement.getAttribute('data-intent-native-components');host.id='intent-watch-feed';document.body.append(host);
+      document.documentElement.setAttribute('data-intent-native-components','ytd-rich-item-renderer,yt-lockup-view-model');
+      host.dataset.nativeWatchRenderer='modern';host.dataset.nativeWatchLayout='compact';
+      const manager=new IntentNativeCards(host,'watch'),card=makeCard(host,'Modern-only watch fallback');
+      manager.enhance(card,{...video,id:'M0000000018'});await afterNativeFrames();
+      const entry=manager.entries.get('M0000000018'),result={ready:card.hasAttribute('data-native-card-ready'),tag:entry.node.firstElementChild?.localName,modern:!!entry.node.firstElementChild?.receivedData?.content?.lockupViewModel};
+      manager.destroy();host.remove();
+      document.documentElement.setAttribute('data-intent-native-components',published);return result;
+    });
+    assert.deepEqual(modernWatchOnly,{ready:true,tag:'ytd-rich-item-renderer',modern:true},'modern-only Watch pages can dispatch their supported rich lockup route without a registered compact renderer');
+
+    const sectionWatchOnly = await page.evaluate(async () => {
+      const host=document.createElement('section'),published=document.documentElement.getAttribute('data-intent-native-components');host.id='intent-watch-feed';host.dataset.nativeWatchRenderer='modern';document.body.append(host);
+      const get=customElements.get.bind(customElements);customElements.get=name=>name==='ytd-rich-item-renderer'?undefined:get(name);
+      document.documentElement.setAttribute('data-intent-native-components','ytd-item-section-renderer,yt-lockup-view-model');
+      const manager=new IntentNativeCards(host,'watch'),card=makeCard(host,'Direct-watch modern fallback');manager.enhance(card,{...video,id:'M0000000019'});await afterNativeFrames();
+      const entry=manager.entries.get('M0000000019'),result={ready:card.hasAttribute('data-native-card-ready'),tag:entry.node.firstElementChild?.localName,modern:!!entry.node.firstElementChild?.receivedData?.contents?.[0]?.lockupViewModel};
+      manager.destroy();host.remove();customElements.get=get;document.documentElement.setAttribute('data-intent-native-components',published);return result;
+    });
+    assert.deepEqual(sectionWatchOnly,{ready:true,tag:'ytd-item-section-renderer',modern:true},'direct Watch can use its registered native item-section factory without depending on Home component registration');
+
+    const lateWatchVariant=await page.evaluate(async()=>{
+      const host=document.createElement('section');host.id='intent-watch-feed';document.body.append(host);
+      const manager=new IntentNativeCards(host,'watch'),card=makeCard(host,'Stable fallback');manager.enhance(card,{...video,id:'M0000000020'});await afterNativeFrames();
+      const entry=manager.entries.get('M0000000020'),initial=entry.node.firstElementChild.localName;
+      host.dataset.nativeWatchRenderer='modern';manager.flush();await afterNativeFrames();
+      const modern=entry.node.firstElementChild,stableCard=manager.get({...video,id:'M0000000020'})===card;
+      const writes=nativeWrites.length;for(let i=0;i<10;i++)manager.flush();await afterNativeFrames();
+      const result={initial,upgraded:modern.localName,variant:entry.node.getAttribute('data-intent-native-variant'),stableCard,noRetries:nativeWrites.length===writes};manager.destroy();host.remove();return result;
+    });
+    assert.deepEqual(lateWatchVariant,{initial:'ytd-compact-video-renderer',upgraded:'ytd-rich-item-renderer',variant:'modern',stableCard:true,noRetries:true},'late modern Watch source detection upgrades a compact discovery card once without repeated factory retries');
 
     const watchSize=await page.evaluate(()=>{const host=document.querySelector('#intent-watch-feed');host.style.setProperty('--intent-watch-thumbnail-width','196px');const native=document.createElement('ytd-compact-video-renderer');native.setAttribute('data-intent-created-card','');const thumbnail=document.createElement('ytd-thumbnail');thumbnail.style.cssText='display:block;width:168px;height:94px';native.append(thumbnail);host.append(native);const size={width:thumbnail.getBoundingClientRect().width,height:thumbnail.getBoundingClientRect().height};native.remove();return size;});
     assert.deepEqual(watchSize,{width:196,height:110.25},'generated compact cards follow the page measured native thumbnail size');
@@ -385,6 +419,7 @@ const root = path.resolve(__dirname, '..');
         }
       };
       customElements.define('ytd-rich-item-renderer', nativeClass()); customElements.define('ytd-compact-video-renderer', nativeClass());
+      customElements.define('ytd-item-section-renderer', nativeClass());
       window.originalSources = {}; window.originalControllers = {}; window.originalStyles = {};
       window.captureStyle = node => Object.fromEntries([...node.style].sort().map(key => [key, [node.style.getPropertyValue(key), node.style.getPropertyPriority(key)]]));
       for (const [surface, tag, id] of [['home', 'ytd-rich-item-renderer', 'H0000000020'], ['watch', 'ytd-compact-video-renderer', 'W0000000021']]) {

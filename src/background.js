@@ -121,7 +121,7 @@ function stateFor(tabId, now = Date.now()) {
   const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
   const timerExempt = tabPaused || !(Number.isInteger(tabId) ? countsTab(tabId) : countsMode(effective.mode));
   const review = Number.isInteger(tabId) && !tabPaused && effective.mode !== 'off' ? currentReview(tabId) : null;
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null} : null,
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null, categoryIds: Array.isArray(review.categoryIds) ? review.categoryIds.slice(0, 2) : review.categoryId ? [review.categoryId] : []} : null,
     timerDay: C.dayKey(now), timerUpdatedAt: now, timerRunning: !base.blocked && tracker?.counting === true,
     tabCounting: !base.blocked && !timerExempt && tracker?.counting === true && (tracker.countingTabs || []).includes(tabId)};
 }
@@ -299,7 +299,7 @@ async function checkTimerVideo(message, sender) {
     if (state.blocked || state.tabPaused || state.settings.mode === 'off' || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
     const key = T.key(state.settings), metadataKey = JSON.stringify(video), cacheKey = JSON.stringify([key, metadataKey]);
     const previous = currentReview(sender.tab.id);
-    if (previous?.metadataKey === metadataKey && previous.status !== 'checking') return {skip: {ok: true, ...state}};
+    if (previous?.metadataKey === metadataKey && !['checking', 'unavailable'].includes(previous.status)) return {skip: {ok: true, ...state}};
     const review = {videoId, key, metadataKey, status: 'checking', categoryId: null};
     timerReviews.set(sender.tab.id, review); await persistReviews();
     return {settings: state.settings, key, cacheKey, review};
@@ -309,12 +309,12 @@ async function checkTimerVideo(message, sender) {
   if (!estimate) {
     let job = timerTopicJobs.get(prepared.cacheKey);
     if (!job) {
-      if (timerTopicJobs.size >= 8) estimate = {status: 'uncertain', categoryId: null};
+      if (timerTopicJobs.size >= 8) estimate = {status: 'unavailable', categoryId: null, categoryIds: []};
       else {
         // Topic estimation ignores recommendation-only distractions/channel rules.
         const config = {...prepared.settings, hideShorts: false, hideClickbait: false, blockedTerms: '', channels: Object.fromEntries(Object.keys(C.modes(prepared.settings)).map(id => [id, '']))};
-        job = classifyLocally([video], config).then(decisions => T.estimate(decisions[0], prepared.settings)).catch(() => ({status: 'uncertain', categoryId: null})).then(result => {
-          timerTopicCache.set(prepared.cacheKey, result);
+        job = classifyLocally([video], config).then(decisions => T.estimate(decisions[0], prepared.settings)).catch(() => ({status: 'unavailable', categoryId: null, categoryIds: []})).then(result => {
+          if (result.status !== 'unavailable') timerTopicCache.set(prepared.cacheKey, result);
           while (timerTopicCache.size > 128) timerTopicCache.delete(timerTopicCache.keys().next().value);
           return result;
         }).finally(() => timerTopicJobs.delete(prepared.cacheKey));
@@ -362,15 +362,18 @@ function recommendationVideos(input, currentVideo) {
   const tags = value => Array.isArray(value) ? value.slice(0, 30).filter(item => typeof item === 'string').map(item => item.slice(0, 100)) : [];
   const seen = new Set(), videos = [];
   for (const item of input.slice(0, 48)) {
-    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !/^[\w-]{11}$/.test(item.id) || item.id === currentVideo || seen.has(item.id)) continue;
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string') continue;
+    const playlist = item.type === 'playlist' && typeof item.playlistId === 'string' && /^[\w-]{2,100}$/.test(item.playlistId) && item.id === 'playlist:' + item.playlistId;
+    if ((!playlist && !/^[\w-]{11}$/.test(item.id)) || item.id === currentVideo || seen.has(item.id)) continue;
+    const videoId = playlist ? typeof item.videoId === 'string' && /^[\w-]{11}$/.test(item.videoId) ? item.videoId : '' : item.id;
     const title = text(item.title, 500).trim(); if (!title) continue;
-    let thumbnail = `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
+    let thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '';
     try {
       const url = new URL(text(item.thumbnail, 2048));
       if (url.protocol === 'https:' && !url.username && !url.password && !url.port && (url.hostname === 'ytimg.com' || url.hostname.endsWith('.ytimg.com'))) thumbnail = url.href;
     } catch { /* Only the owned YouTube thumbnail fallback is used. */ }
     seen.add(item.id);
-    videos.push({id: item.id, title, channel: text(item.channel, 200), description: text(item.description, 1200), metadata: text(item.metadata, 120), duration: text(item.duration, 30), thumbnail, shorts: item.shorts === true, keywords: tags(item.keywords), hashtags: tags(item.hashtags)});
+    videos.push({id: item.id, ...(playlist ? {type: 'playlist', playlistId: item.playlistId, videoId} : {}), title, channel: text(item.channel, 200), description: text(item.description, 1200), metadata: text(item.metadata, 120), duration: text(item.duration, 30), thumbnail, shorts: !playlist && item.shorts === true, keywords: tags(item.keywords), hashtags: tags(item.hashtags)});
   }
   return videos;
 }

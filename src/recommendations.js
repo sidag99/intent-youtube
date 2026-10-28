@@ -1,21 +1,31 @@
 /* Read only recommendations already loaded by YouTube; pagination uses its own
    continuation control/observer, without copying account tokens or making APIs. */
 (() => {
- const cards='ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,ytd-grid-video-renderer,yt-lockup-view-model,ytd-reel-item-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2';
+ const cards='ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,ytd-grid-video-renderer,ytd-compact-playlist-renderer,ytd-compact-radio-renderer,ytd-playlist-renderer,ytd-grid-playlist-renderer,yt-lockup-view-model,ytd-reel-item-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,yt-shorts-lockup-view-model,yt-shorts-lockup-view-model-v2';
  const plain=(root,selector)=>root.querySelector(selector)?.textContent?.trim()||'';
  const channelSelector='#channel-name a,ytd-channel-name a,#channel-name,.yt-content-metadata-view-model__metadata-row:first-child .yt-content-metadata-view-model__metadata-text,.ytContentMetadataViewModelMetadataRow:first-child .ytContentMetadataViewModelMetadataText,a[href^="/@"]';
  const descriptionSelector='#description-text,#description,.metadata-snippet-text,.description-snippet';
  function read(primary,currentVideo='',options={}){
   const videos=[],seen=new Set(),limit=Math.max(1,Math.min(5000,options.limit||240));
   for(const card of [...primary.querySelectorAll(cards)].slice(0,12000)){
+   if(options.ignoreNodes?.has(card))continue;
    const previous=options.scanned?.get(card);let channel,description;
    if(previous&&previous.link.isConnected&&card.contains(previous.link)&&previous.link.getAttribute('href')===previous.href&&previous.title.isConnected&&card.contains(previous.title)&&(previous.title.getAttribute('title')||previous.title.textContent||'').trim()===previous.text){
     channel=plain(card,channelSelector).slice(0,200);description=plain(card,descriptionSelector).slice(0,1200);
     if(channel===previous.channel&&description===previous.description)continue;
    }
    if(card.closest('#intent-home-feed,#intent-watch-feed,[hidden],ytd-ad-slot-renderer,ytd-promoted-video-renderer,ytd-promoted-sparkles-web-renderer')||card.querySelector('ytd-ad-slot-renderer,ytd-promoted-video-renderer,ytd-promoted-sparkles-web-renderer'))continue;
-   let id,videoAnchor,shorts=false;
-   for(const link of card.querySelectorAll('a[href]')){try{const url=new URL(link.getAttribute('href'),location.origin);if(!['https:','http:'].includes(url.protocol)||!['www.youtube.com','youtube.com','m.youtube.com'].includes(url.hostname))continue;const short=url.pathname.match(/^\/shorts\/([\w-]{11})(?:\/|$)/);const candidate=short?.[1]||(url.pathname==='/watch'?url.searchParams.get('v'):'');if(/^[\w-]{11}$/.test(candidate||'')){id=candidate;videoAnchor=link;shorts=!!short;break;}}catch{}}
+   let id,videoAnchor,shorts=false,playlistId='',videoId='';
+   for(const link of card.querySelectorAll('a[href]')){try{
+    const url=new URL(link.getAttribute('href'),location.origin);
+    if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.port||!['www.youtube.com','youtube.com','m.youtube.com'].includes(url.hostname))continue;
+    const short=url.pathname.match(/^\/shorts\/([\w-]{11})(?:\/|$)/),candidate=short?.[1]||(url.pathname==='/watch'?url.searchParams.get('v'):'');
+    const list=['/watch','/playlist'].includes(url.pathname)&&url.searchParams.get('list');
+    if(list&&/^[\w-]{2,100}$/.test(list)){
+     playlistId=list;videoId=/^[\w-]{11}$/.test(candidate||'')?candidate:'';id='playlist:'+list;videoAnchor=link;shorts=false;break;
+    }
+    if(!id&&/^[\w-]{11}$/.test(candidate||'')){id=candidate;videoAnchor=link;shorts=!!short;}
+   }catch{}}
    if(!id||id===currentVideo||seen.has(id)||options.exclude?.has(id))continue;
    const titleNode=card.querySelector('#video-title,.yt-lockup-metadata-view-model__title,.ytLockupMetadataViewModelTitle,.shortsLockupViewModelHostMetadataTitle,h3 a,h3,#video-title-link');
    const rawTitle=(titleNode?.getAttribute('title')||titleNode?.textContent||'').trim(),title=rawTitle.slice(0,500);if(!title)continue;
@@ -26,7 +36,7 @@
    const metadataLine=card.querySelector('#metadata-line');
    const metadata=(metadataLine?[...metadataLine.children].map(n=>n.textContent.trim()).filter(Boolean).join(' · '):plain(card,'.yt-content-metadata-view-model__metadata-row:nth-child(2),.ytContentMetadataViewModelMetadataRow:nth-child(2)')).slice(0,120);
    let thumbnail=card.querySelector('img')?.getAttribute('src')||'';try{const image=new URL(thumbnail);if(image.protocol!=='https:'||!(image.hostname==='ytimg.com'||image.hostname.endsWith('.ytimg.com')))thumbnail='';}catch{thumbnail='';}
-   seen.add(id);videos.push({id,title,channel,description,duration,metadata,shorts,thumbnail:thumbnail||`https://i.ytimg.com/vi/${id}/hqdefault.jpg`,hashtags:globalThis.IntentFeed.hashtags(title+' '+description)});if(videos.length>=limit)break;
+   seen.add(id);videos.push({id,...(playlistId?{type:'playlist',playlistId,videoId}:{}),title,channel,description,duration,metadata,shorts,thumbnail:thumbnail||(playlistId?!videoId?'':`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`:`https://i.ytimg.com/vi/${id}/hqdefault.jpg`),hashtags:globalThis.IntentFeed.hashtags(title+' '+description)});if(videos.length>=limit)break;
   }return videos;
  }
  class Pagination{

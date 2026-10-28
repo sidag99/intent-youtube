@@ -313,7 +313,8 @@ async function chooseMode(toolbar, mode, customName) {
   let currentTopic=await topicState();assert.equal(currentTopic.timerTopicState,'matching');assert.equal(currentTopic.timerExempt,true);
   await yt.goto('https://www.youtube.com/watch?v=A0000000000');
   await yt.locator('#intent-video-topic[data-video-id="A0000000000"][data-state="uncertain"]').waitFor({timeout:60000});
-  assert.match(await yt.locator('#intent-video-topic').innerText(),/Work.*uncertain/i,'the best estimated category is still visible when its relation is uncertain');
+  assert.match(await yt.locator('#intent-video-topic').innerText(),/^Likely Work/,'the best estimated category is still visible when its relation is uncertain');
+  assert.match(await yt.locator('#intent-video-topic').getAttribute('title'),/relation.*uncertain/i,'the timer relation remains explicitly uncertain in the tooltip');
   currentTopic=await topicState();assert.equal(currentTopic.timerExempt,true);assert.equal(currentTopic.timerTopicState,'uncertain','uncertain app-building evidence does not revoke Music’s exemption');
 
   await settings.evaluate(()=>chrome.runtime.sendMessage({type:'UPDATE_SETTINGS',patch:{countModes:{study:false},matchOnlyModes:{study:true}}}));
@@ -406,7 +407,9 @@ async function chooseMode(toolbar, mode, customName) {
   // Each tab remembers its own intent, including reloads and configurable new-tab defaults.
   const second=await context.newPage();await second.goto('https://www.youtube.com/?intent-test=second');
   await chooseMode(second.locator('#intent-toolbar'),'study');
-  await second.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Why the sky'),null,{timeout:60000});
+  // Instructional projects can match both Work and Study; memory must retain
+  // the selected mode and include the science lesson without assuming its rank.
+  await second.waitForFunction(()=>[...document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.title')||[]].some(title=>title.textContent.startsWith('Why the sky')),null,{timeout:60000});
   assert.equal(await toolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'music','a second tab never changes the first tab intent');
   await second.bringToFront();await yt.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   await yt.waitForFunction(()=>{const clock=document.querySelector('#intent-toolbar')?.shadowRoot.querySelector('#intent-timer');return clock?.dataset.timerState==='exempt'&&clock.dataset.tabCounting==='false'&&clock.dataset.timerRunning==='true';});
@@ -444,7 +447,7 @@ async function chooseMode(toolbar, mode, customName) {
   const pausePopup=await context.newPage();await second.bringToFront();await pausePopup.goto(`chrome-extension://${id}/popup.html`);
   await pausePopup.getByRole('button',{name:'Resume on this tab',exact:true}).waitFor();
   await pausePopup.getByRole('button',{name:'Resume on this tab',exact:true}).click();
-  await second.waitForFunction(()=>document.querySelector('#intent-home-feed')?.shadowRoot.querySelector('.title')?.textContent.startsWith('Why the sky'),null,{timeout:60000});
+  await second.waitForFunction(()=>[...document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('.title')||[]].some(title=>title.textContent.startsWith('Why the sky')),null,{timeout:60000});
   assert.equal(await secondToolbar.getByRole('combobox',{name:'Intent mode',exact:true}).getAttribute('data-mode'),'study');
   await pausePopup.close();
   console.log('PASS per-tab pause restores native content, survives reload, leaves other tabs active and resumes its saved intent from the popup');

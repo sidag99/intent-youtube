@@ -50,7 +50,7 @@ const snapshot = page => page.evaluate(() => {
       legacy('E0000000010', {href: 'https://www.youtube.com.evil.test/watch?v=E0000000010'}),
       legacy('E0000000011', {href: 'https://evil.test/watch?v=E0000000011'}),
       legacy('E0000000012', {href: 'javascript:window.linkExecuted=true'}),
-      legacy('E0000000013', {href: '/playlist?list=E0000000013'}),
+      legacy('E0000000013', {href: '/playlist?list=invalid%2Flist'}),
       legacy('E0000000014', {title: ''}),
       legacy('bad-id', {href: '/watch?v=bad-id'})
     ].join('');
@@ -64,6 +64,18 @@ const snapshot = page => page.evaluate(() => {
     for (const video of videos.slice(4)) assert.equal(video.thumbnail, `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`, 'unsafe thumbnail hosts and data URLs get a bounded YouTube fallback');
     assert.equal(await page.evaluate(() => linkExecuted), false);
     console.log('PASS native recommendation parsing: legacy/modern cards, regional text, Shorts, deduplication and current/ad/hidden/owned/spoof exclusions');
+
+    // A playlist is one recommendation, independent of its first video. Its
+    // original YouTube node is retained for normal playlist playback/controls.
+    const playlistHTML = `<ytd-compact-playlist-renderer><a href="/watch?v=${ids.current}&list=PL_learning_123"><img src="https://i.ytimg.com/vi/${ids.current}/hqdefault.jpg"></a><h3 id="video-title">Build distributed systems: complete course</h3><div id="channel-name">Systems teacher</div><div id="description-text">Lectures and exercises #ComputerScience</div></ytd-compact-playlist-renderer><ytd-compact-radio-renderer><a href="/watch?v=${ids.current}&list=RD${ids.current}"></a><h3 id="video-title">Mix: software engineering talks</h3></ytd-compact-radio-renderer><yt-lockup-view-model><a href="/playlist?list=PL_modern_course"><h3>Modern mathematics playlist</h3></a></yt-lockup-view-model>`;
+    await page.locator('#primary').evaluate((primary, html) => primary.innerHTML = html, playlistHTML + legacy(ids.current) + legacy(ids.legacy));
+    const playlists = await page.evaluate(current => {const nodes = new Map();const items = IntentRecommendations.read(document.querySelector('#primary'), current, {nodes});return {items,nodeTags:items.map(v=>nodes.get(v.id).localName)};}, ids.current);
+    assert.deepEqual(playlists.items.map(v=>v.id), ['playlist:PL_learning_123','playlist:RD'+ids.current,'playlist:PL_modern_course',ids.legacy]);
+    assert.deepEqual(playlists.items.slice(0,3).map(v=>[v.type,v.playlistId,v.videoId]), [['playlist','PL_learning_123',ids.current],['playlist','RD'+ids.current,ids.current],['playlist','PL_modern_course','']]);
+    assert.deepEqual(playlists.nodeTags.slice(0,3), ['ytd-compact-playlist-renderer','ytd-compact-radio-renderer','yt-lockup-view-model']);
+    assert.deepEqual(playlists.items[0].hashtags, ['Computer Science']);
+    assert.equal(playlists.items[2].thumbnail, '', 'a playlist-only link never fabricates a video thumbnail URL');
+    console.log('PASS playlists/mixes are independently keyed recommendations, including when their first item is the current video');
 
     // A long-lived homepage can already hold several continuation batches. Scan
     // beyond the default batch without re-admitting unchanged native elements.

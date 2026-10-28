@@ -44,6 +44,20 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.notEqual(IntentTimerTopic.estimate(result.study[2],{...IntentCore.defaults(),mode:'study'}).status,'unrelated','an educational candidate remains exempt even when the estimate is uncertain');
   const clearLesson=await page.evaluate(settings=>runModel([{id:'L0000000000',title:'Academic lessons, university lectures and studying for exams.',description:'Learning mathematics, physics, chemistry, biology and other sciences.'}],settings),{...IntentCore.defaults(),mode:'study'});
   assert.equal(IntentTimerTopic.estimate(clearLesson[0],{...IntentCore.defaults(),mode:'study'}).status,'matching','a confidently matched lesson stays exempt');
+  const topicVideos=[
+   {id:'BDqvzFY72mg',title:'Lecture 1: Introduction to Power and Politics in Today’s World',channel:'YaleCourses',description:'Professor Ian Shapiro introduces the class Power and Politics in Today’s World. The course examines political dynamics and institutions over the past quarter century: the decline of trade unions, enlarged role of business, inequality, authoritarianism and a unipolar international order.'},
+   {id:'N0000000000',title:'Breaking: Parliament passes new bill today',channel:'Field Notes',description:'A live news bulletin reporting the latest vote and reactions from politicians, with updates from reporters on the scene.'},
+   {id:'P0000000000',title:'Python programming tutorial: Build your first web application',channel:'Field Notes',description:'A complete beginner software development lesson with coding, debugging and deploying a useful web application.'}
+  ];
+  const topicSettings={...IntentCore.defaults(),mode:'study'};
+  const topicDecisions=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:topicVideos,settings:topicSettings});
+  const topicEstimates=topicDecisions.map(decision=>IntentTimerTopic.estimate(decision,topicSettings));
+  assert.equal(topicEstimates[0].categoryId,'study','the public Yale political-science lecture has a supported Study category');
+  assert.equal(topicEstimates[0].status,'matching','academic political-science evidence meets the unchanged strict timer matching gate');
+  assert.equal(topicDecisions[1].accepted,false,'a breaking political-news bulletin is not automatically an academic lesson');
+  assert.deepEqual(new Set(topicEstimates[2].categoryIds),new Set(['study','work']),'a clear programming lesson retains both strong overlapping topic labels');
+  assert.equal(topicEstimates[2].categoryId,null);assert.equal(topicEstimates[2].status,'uncertain','displaying two strong topics does not relax timer relation thresholds');
+  await fs.writeFile(path.join(root,'test-results/topic-model-regressions.json'),JSON.stringify(topicVideos.map((video,i)=>({video,decision:topicDecisions[i],estimate:topicEstimates[i]})),null,2));
   assert.equal(result.music[0].accepted,false,'app building excluded from music');
   const focusedExamples=[
    {title:'Convert an extra pawn into a win',channel:'Board Lessons',description:'King and pawn endgame techniques, opposition and promotion in chess.'},

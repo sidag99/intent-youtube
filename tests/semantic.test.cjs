@@ -29,6 +29,11 @@ test('every intent uses an independent similarity threshold without a competing-
   assert.equal(S.decide(vector, {...modeVectors, 'custom-law': [[.29, 0]]}, 'custom-law', true).accepted, false);
   assert.equal(S.decide(vector, {work: [[.5, 0]]}, 'work').accepted, true);
 });
+test('category display candidates preserve the two strongest topics without changing their relation decision',()=>{
+  const decision=S.decide([1],{study:[[.410]],work:[[.385]],music:[[.18]]},'study');
+  assert.deepEqual(decision.categoryCandidates,[{id:'study',similarity:.410},{id:'work',similarity:.385}]);
+  assert.equal(decision.accepted,true);assert.equal(decision.uncertain,true);assert.equal(decision.categoryId,'study');
+});
 
 test('initial semantic profiles exclude Leisure and installed templates use their own focused descriptions', () => {
   assert.equal(S.PROFILES.leisure, undefined); assert.deepEqual(Object.keys(S.profiles(C.defaults())), ['work', 'study', 'music']);

@@ -19,7 +19,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.evaluate(() => {
       window.topicSettings = IntentCore.defaults(); window.topicPaused = false; window.checks = []; window.listeners = []; window.timerStates = []; window.pendingChecks = []; window.deferIds = new Set(); window.failIds = new Set(); window.topicStatuses = {};
       window.snapshot = () => ({ok: true, settings: structuredClone(topicSettings), tabPaused: topicPaused, blocked: false, timerRunning: false, tabCounting: false, timerDay: '2026-10-25', timerUpdatedAt: Date.now(), remainingMs: 3600000});
-      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: topicStatuses[message.video.id]?.categoryId || topicSettings.mode}});
+      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: topicStatuses[message.video.id]?.categoryId || topicSettings.mode, ...(topicStatuses[message.video.id]?.categoryIds ? {categoryIds: topicStatuses[message.video.id].categoryIds} : {})}});
       window.chrome = {runtime: {getURL: name => 'https://extension.test/' + name, onMessage: {addListener: listener => listeners.push(listener)}, sendMessage: async message => {
         if (message.type !== 'CHECK_TIMER_VIDEO') return snapshot();
         checks.push(structuredClone(message));
@@ -137,15 +137,25 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     const unsure = 'ggggggggggg';
     await page.evaluate(id => {topicStatuses[id] = {status: 'uncertain', categoryId: 'work'}; navigateVideo(id, 'A topic with an uncertain relation');}, unsure);
     await page.locator('#intent-video-topic[data-video-id="' + unsure + '"][data-state="uncertain"]').waitFor();
-    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely Work · uncertain', 'a supported category estimate remains visible when its relation to the chosen intent is uncertain');
+    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely Work', 'the category label is separate from uncertainty about its timer relation');
     assert.match(await page.locator('#intent-video-topic').getAttribute('title'), /relation to <b>Study<\/b> is uncertain/);
+    const overlap = 'hhhhhhhhhhh';
+    await page.evaluate(id => {topicStatuses[id] = {status: 'uncertain', categoryIds: ['study','work']}; navigateVideo(id, 'A computer science and software lesson');}, overlap);
+    await page.locator('#intent-video-topic[data-video-id="' + overlap + '"][data-state="uncertain"]').waitFor();
+    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely <b>Study</b> · Work');assert.equal(await page.locator('#intent-video-topic b').count(),0);
+    assert.match(await page.locator('#intent-video-topic').getAttribute('title'),/Several configured topics overlap/);
 
     const failed = 'eeeeeeeeeee';
     await page.evaluate(id => {failIds.add(id); navigateVideo(id);}, failed);
-    await page.locator('#intent-video-topic[data-state="uncertain"]').waitFor();
-    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Topic uncertain');
+    await page.locator('#intent-video-topic[data-state="unavailable"]').waitFor();
+    assert.match(await page.locator('#intent-video-topic').textContent(), /^Topic unavailable/);
+    const failedChecks = await page.evaluate(id=>checks.filter(item=>item.video.id===id).length,failed);
     await page.waitForTimeout(600);
-    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Topic uncertain', 'a local inference error stays uncertain instead of looping or claiming a match');
+    assert.equal(await page.evaluate(id=>checks.filter(item=>item.video.id===id).length,failed),failedChecks,'an inference error is operational unavailability and never an automatic retry loop');
+    await page.evaluate(id=>failIds.delete(id),failed);
+    await page.getByRole('button',{name:'Retry topic check',exact:true}).click();
+    await page.locator('#intent-video-topic[data-video-id="'+failed+'"][data-state="matching"]').waitFor();
+    assert.equal(await page.evaluate(id=>checks.filter(item=>item.video.id===id).length,failed),failedChecks+1);assert.equal(await page.getByRole('button',{name:'Retry topic check',exact:true}).count(),0,'successful explicit retry replaces the unavailable state');
 
     const shortId = 'fffffffffff';
     await page.evaluate(id => {
@@ -164,7 +174,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.evaluate(() => {document.dispatchEvent(new Event('yt-navigate-start')); history.pushState({}, '', '/results?search_query=topic'); document.dispatchEvent(new Event('yt-navigate-finish'));});
     assert.equal(await page.locator('#intent-video-topic').count(), 0, 'other pages never retain the prior topic tag');
     assert.deepEqual(network, [], 'topic checks require no page fetches or model downloads'); assert.deepEqual(errors, []);
-    console.log('PASS current-video topic metadata and native-title badge, bounded/no-network checks, no render loop, SPA/settings/Pause/Off stale protection, error uncertainty and allowed Shorts');
+    console.log('PASS current-video topic metadata and native-title badge, separate overlap display/timer relation, bounded/no-network checks, unavailable/retry recovery, no render loop, SPA/settings/Pause/Off stale protection and allowed Shorts');
     await context.close();
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

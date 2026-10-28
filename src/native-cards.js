@@ -9,12 +9,12 @@
       const mark=node=>{for(let current=node;current&&current!==this.host;current=current.parentNode){const entry=this.byNode.get(current);if(entry){if(this.entries.get(entry.video.id)===entry)this.dirty.add(entry);break;}}};
       for(const record of records){mark(record.target);for(const node of record.addedNodes)mark(node);for(const node of record.removedNodes)mark(node);}
       if(!this.dirty.size||this.frame!=null)return;
-      this.frame=requestAnimationFrame(()=>{this.frame=null;for(const entry of this.dirty){const healthy=entry.node.parentNode===this.host&&entry.node.querySelector('a[href*="watch"]')&&entry.node.querySelector('#video-title,h3');if(healthy)this.reveal(entry);else this.fallback(entry);}this.dirty.clear();});
+      this.frame=requestAnimationFrame(()=>{this.frame=null;for(const entry of this.dirty){const healthy=entry.node.parentNode===this.host&&entry.node.querySelector('a[href*="watch"],a[href*="/playlist?"]')&&entry.node.querySelector('#video-title,h3');if(healthy)this.reveal(entry);else this.fallback(entry);}this.dirty.clear();});
     }
     fallback(entry){entry.card.removeAttribute('data-native-card-ready');entry.slot.hidden=true;for(const child of entry.card.children)if(child!==entry.slot)child.hidden=false;}
     supported(tag){return (document.documentElement?.getAttribute('data-intent-native-components')||'').split(',').includes(tag);}
     get(video,source){const entry=this.entries.get(video.id);if(!entry)return null;if(source&&!entry.original)this.upgrade(entry,source);return entry.card;}
-    enhance(card,video,source){if(video.shorts)return;const slot=document.createElement('slot');slot.name=`intent-card-${this.surface}-${++this.sequence}`;const node=document.createElement('div');node.slot=slot.name;node.setAttribute('data-intent-native-card','');node.style.cssText='display:block;width:100%;min-width:0';const entry={card,video,node,slot,source};this.entries.set(video.id,entry);this.byNode.set(node,entry);card.append(slot);this.host.append(node);this.upgrade(entry,source);}
+    enhance(card,video,source){if(video.shorts||video.type==='playlist'&&!source)return;const slot=document.createElement('slot');slot.name=`intent-card-${this.surface}-${++this.sequence}`;const node=document.createElement('div');node.slot=slot.name;node.setAttribute('data-intent-native-card','');node.style.cssText='display:block;width:100%;min-width:0';const entry={card,video,node,slot,source};this.entries.set(video.id,entry);this.byNode.set(node,entry);card.append(slot);this.host.append(node);this.upgrade(entry,source);}
     upgrade(entry,source=entry.source){
       if(!entry.card||!entry.node.isConnected)return;
       if(source&&source.isConnected&&!source.closest('#intent-home-feed,#intent-watch-feed')&&this.supported(source.localName)){
@@ -23,12 +23,23 @@
         entry.node.removeAttribute('data-intent-native-request');
         entry.original={node:source,placeholder,styles,hadStyle};entry.node.replaceChildren(source);this.reveal(entry);return;
       }
-      if(entry.original||entry.node.hasAttribute('data-intent-native-failed')||entry.node.hasAttribute('data-intent-native-rendered')||!this.supported(this.surface==='watch'?'ytd-compact-video-renderer':'ytd-rich-item-renderer'))return;
+      const modernWatch=this.surface==='watch'&&this.host.dataset.nativeWatchRenderer==='modern'&&(this.supported('ytd-rich-item-renderer')||this.supported('ytd-item-section-renderer'));
+      if(modernWatch&&entry.node.getAttribute('data-intent-native-variant')==='compact'&&!entry.original)entry.node.removeAttribute('data-intent-native-rendered');
+      const available=this.surface==='watch'?this.supported('ytd-compact-video-renderer')||this.host.dataset.nativeWatchRenderer==='modern'&&(this.supported('ytd-rich-item-renderer')||this.supported('ytd-item-section-renderer')):this.supported('ytd-rich-item-renderer');
+      if(entry.video.type==='playlist'||entry.original||entry.node.hasAttribute('data-intent-native-failed')||entry.node.hasAttribute('data-intent-native-rendered')||!available)return;
       entry.node.setAttribute('data-intent-native-request',JSON.stringify(entry.video));entry.node.dispatchEvent(new Event('intent-render-native-card',{bubbles:true}));
     }
     reveal(entry){entry.card.setAttribute('data-native-card-ready','');entry.slot.hidden=false;for(const child of entry.card.children)if(child!==entry.slot)child.hidden=true;}
     flush(){for(const entry of this.entries.values())this.upgrade(entry);}
-    reset(){this.observer.disconnect();if(this.frame!=null)cancelAnimationFrame(this.frame);this.frame=null;this.dirty.clear();for(const entry of this.entries.values()){const original=entry.original;if(original){for(const [name,[value,priority]]of original.styles){if(value)original.node.style.setProperty(name,value,priority);else original.node.style.removeProperty(name);}if(!original.hadStyle&&!original.node.getAttribute('style')?.trim())original.node.removeAttribute('style');if(original.placeholder.parentNode)original.placeholder.replaceWith(original.node);else original.node.remove();}entry.node.remove();}this.entries.clear();this.byNode=new WeakMap();if(!this.destroyed)this.observe();}
+    release(ids){
+      for(const id of ids){const entry=this.entries.get(id);if(!entry)continue;const original=entry.original;
+        entry.node.removeAttribute('data-intent-native-request');
+        if(original){for(const [name,[value,priority]]of original.styles){if(value)original.node.style.setProperty(name,value,priority);else original.node.style.removeProperty(name);}if(!original.hadStyle&&!original.node.getAttribute('style')?.trim())original.node.removeAttribute('style');if(original.placeholder.parentNode)original.placeholder.replaceWith(original.node);else original.node.remove();}
+        entry.node.remove();this.byNode.delete(entry.node);this.dirty.delete(entry);this.entries.delete(id);
+      }
+      if(!this.dirty.size&&this.frame!=null){cancelAnimationFrame(this.frame);this.frame=null;}
+    }
+    reset(){this.observer.disconnect();if(this.frame!=null)cancelAnimationFrame(this.frame);this.frame=null;this.dirty.clear();this.release([...this.entries.keys()]);this.byNode=new WeakMap();if(!this.destroyed)this.observe();}
     destroy(){this.destroyed=true;this.reset();document.removeEventListener('intent-native-components-ready',this.ready);this.host.removeEventListener('intent-native-card-ready',this.rendered);}
   }
   globalThis.IntentNativeCards=NativeCards;
