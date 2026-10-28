@@ -267,3 +267,15 @@ test('all allowed custom icon IDs have shared trusted outline markup without rem
   assert.equal(C.INTENT_ICON_PATHS.book, C.MODE_ICONS.study);
   assert.equal(C.INTENT_ICON_PATHS.music, C.MODE_ICONS.music);
 });
+
+test('channel rules preserve comma/quote names and exact matching with distraction precedence',()=>{
+ const names=['Science, "and" More','  Another Teacher  ','another teacher'];
+ const encoded=C.formatChannelTerms(names);assert.deepEqual(C.channelTerms(encoded),['science, "and" more','another teacher']);
+ assert.deepEqual(C.channelTerms('Creator one,Creator two\nCreator THREE'),['creator one','creator two','creator three']);
+ const settings={...C.defaults(),mode:'study',channels:{study:encoded}};
+ assert.equal(C.classify(video('A day out','Science, "and" More'),settings).visible,true);
+ assert.equal(C.classify(video('A day out','Science'),settings).visible,false,'a comma-containing creator is not split into partial names');
+ assert.equal(C.classify(video('A day out','Science, "and" More',true),settings).visible,false);
+ assert.equal(C.classify(video('You won’t believe it','Science, "and" More'),settings).visible,false);
+ assert.equal(C.classify(video('Blocked phrase','Science, "and" More'),{...settings,blockedTerms:'blocked phrase'}).visible,false);
+});

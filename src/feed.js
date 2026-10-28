@@ -28,7 +28,7 @@
     const description = s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description;
     const template = C.defaultTemplate(s, s.mode);
     const seeds = template ? template.searches : description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
-    const all = [...new Set([...C.terms(s.customTopics[s.mode]), ...C.terms(s.channels[s.mode]), ...seeds].map(q => q.slice(0, 160)))].slice(0, 24);
+    const all = [...new Set([...C.terms(s.customTopics[s.mode]), ...C.channelTerms(s.channels[s.mode]), ...seeds].map(q => q.slice(0, 160)))].slice(0, 24);
     const start = (Math.max(0, Math.trunc(Number(round) || 0)) * 2) % all.length;
     return [...all.slice(start), ...all.slice(0, start)];
   }
@@ -329,7 +329,7 @@
         const inspected = candidates.map((video, i) => {
           const policy = C.classify(video, {...s, mode: 'off'});
           const accepted = policy.visible && decisions[i]?.accepted === true;
-          const channel = C.terms(s.channels[s.mode]).includes(C.normalize(video.channel));
+          const channel = C.channelTerms(s.channels[s.mode]).includes(C.normalize(video.channel));
           return {video, accepted, reason: !policy.visible ? policy.reason : accepted ? channel ? 'Included channel' : 'Matches intent' : 'Outside intent'};
         });
         const previewItems = [...inspected.filter(item => item.accepted).slice(0, 8), ...inspected.filter(item => !item.accepted).slice(0, 4)];

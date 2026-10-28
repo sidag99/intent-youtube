@@ -1347,3 +1347,29 @@ test('returning focus repairs only the active YouTube tab in that Chrome window'
   assert.deepEqual(h.calls.files.map(call=>call.target.tabId),[1,1]);
   assert.equal(h.calls.reload,0);assert.equal(h.calls.update,0);
 });
+
+test('watch channel shortcut merges exact memberships without changing tab mode or other preferences', async () => {
+  const h = harness({settings:{...IntentCore.defaults(),channels:{work:'Existing creator',study:'Other teacher'},customIntents:{'custom-notes':{name:'Notes',description:'Learning computer science'}}}});
+  const url='https://www.youtube.com/watch?v=A0000000001';h.setTabs([{id:1,url}]);
+  const from={url:'https://www.youtube.com/',tab:{id:1},frameId:0};
+  const base={type:'SET_CHANNEL_INTENTS',pageURL:url,videoId:'A0000000001',channel:'Science, "and" More',intentIds:['study','custom-notes']};
+  const added=await h.send(base,from);assert.equal(added.ok,true);assert.equal(added.settings.mode,'work');assert.equal(added.settings.dailyMinutes,60);
+  assert.deepEqual(IntentCore.channelTerms(added.settings.channels.study),['other teacher','science, "and" more']);
+  assert.equal(added.settings.channels.work,'Existing creator');assert.deepEqual(IntentCore.channelTerms(added.settings.channels['custom-notes']),['science, "and" more']);
+  await h.send({type:'UPDATE_SETTINGS',patch:{channels:{study:added.settings.channels.study+'\nNew teacher'}}});
+  const removed=await h.send({...base,intentIds:['work']},from);
+  assert.deepEqual(IntentCore.channelTerms(removed.settings.channels.study),['other teacher','new teacher'],'concurrent edits to unrelated channels survive');
+  assert.deepEqual(IntentCore.channelTerms(removed.settings.channels.work),['existing creator','science, "and" more']);
+  assert.equal(removed.settings.channels['custom-notes'],'');
+  const repeated=await h.send({...base,intentIds:['work']},from);assert.equal(repeated.settings.channels.work,removed.settings.channels.work,'repeated saves do not duplicate a rule');
+  const restarted=harness({settings:h.local.settings});assert.equal((await restarted.send({type:'GET_STATE'})).settings.channels.work,removed.settings.channels.work);
+});
+
+test('watch channel shortcut rejects stale/foreign/subframe requests and unrelated setting patches', async () => {
+ const h=harness();const url='https://www.youtube.com/watch?v=A0000000001';h.setTabs([{id:1,url}]);
+ const from={url,tab:{id:1},frameId:0},base={type:'SET_CHANNEL_INTENTS',pageURL:url,videoId:'A0000000001',channel:'Actual creator',intentIds:['study']};
+ for(const sender of [{...from,frameId:2},{...from,url:'https://evil.test/'},{...from,url:'https://music.youtube.com/watch?v=A0000000001'},{url:'chrome-extension://intent/settings.html'}])assert.equal((await h.send(base,sender)).ok,false);
+ for(const patch of [{pageURL:'https://www.youtube.com/'},{videoId:'B0000000002'},{intentIds:['off']},{intentIds:['__proto__']},{intentIds:'study'},{channel:''},{channel:'bad\nname'},{patch:{limitEnabled:false}},{targetTabId:1}])assert.equal((await h.send({...base,...patch},from)).ok,false,JSON.stringify(patch));
+ h.setTabs([{id:1,url:'https://www.youtube.com/watch?v=B0000000002'}]);assert.equal((await h.send(base,from)).ok,false);
+ assert.equal((await h.send({type:'GET_STATE'})).settings.channels.study,'');
+});

@@ -15,7 +15,7 @@
     if (disposed) return; disposed = true;
     observers.forEach(observer => observer.disconnect()); intervals.forEach(clearInterval); cleanups.splice(0).forEach(fn => fn());
     clearTimeout(pending); clearTimeout(topicTimer); clearTimeout(topicNavigationTimer); clearTimeout(homePendingTimer);
-    homeFeed?.destroy(); watchFeed?.destroy(); toolbar?.destroy(); clearVideoTopic(); restoreShortsGate();
+    homeFeed?.destroy(); watchFeed?.destroy(); toolbar?.destroy(); channelIncludes?.destroy(); clearVideoTopic(); restoreShortsGate();
     for (const [nodes, attribute] of [[markedHiddenElements, 'data-intent-hidden'], [markedShortShelves, 'data-intent-short-shelf'], [markedShortNav, 'data-intent-short-nav']]) {for (const node of nodes) node.removeAttribute(attribute); nodes.clear();}
     document.removeEventListener('intent-dispose-content', dispose); document.removeEventListener('intent-context-lost', dispose);
     try {chrome.runtime.onMessage.removeListener?.(messageListener);} catch { /* The old extension context may already be gone. */ }
@@ -27,6 +27,7 @@
   let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false, settingsRevision = 0;
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
+  const channelIncludes = globalThis.IntentChannelIncludes ? new IntentChannelIncludes(chrome.runtime, value => {settingsRevision++; applySettings(value); schedule();}) : null;
   const toolbar = window.top === window ? new IntentToolbar(chrome.runtime, {
     onSettings: value => { settingsRevision++; applySettings(value); schedule(); },
     onRefresh: () => Promise.all([homeFeed?.refreshFeed(), watchFeed?.refreshFeed()])
@@ -47,7 +48,7 @@
     topicBadge?.remove(); topicBadge = null;
   }
   function startTopicNavigation() {
-    topicNavigating = true; clearVideoTopic(); clearTimeout(topicNavigationTimer);
+    topicNavigating = true; clearVideoTopic(); channelIncludes?.destroy(); clearTimeout(topicNavigationTimer);
     // A cancelled YouTube navigation must not leave its previous title unlabelled forever.
     topicNavigationTimer = setTimeout(() => {topicNavigating = false; schedule();}, 5000);
   }
@@ -399,6 +400,13 @@
     syncTopicGuard();
     observeTheme();
     const home = isHome(), watch = isWatch();
+    if (channelIncludes) {
+      const id = !tabPaused && !topicNavigating && watch ? currentTopicVideoId() : '';
+      const current = id ? readTopicVideo(id) : null;
+      const root = current?.title.closest('ytd-watch-flexy');
+      const anchor = root?.querySelector('#owner #channel-name,#owner ytd-channel-name,ytd-video-owner-renderer #channel-name');
+      channelIncludes.sync(settings, current && anchor ? {videoId: id, channel: current.video.channel, anchor} : null);
+    }
     syncVideoTopic();
     if (tabPaused) {
       clearHomePending(); restoreShortsGate();

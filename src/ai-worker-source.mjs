@@ -36,7 +36,7 @@ async function classify(videos, inputSettings) {
   let offset = 0;
   const refs = Object.fromEntries(names.map(k => {const value = encoded.slice(offset, offset + descriptions[k].length); offset += descriptions[k].length; return [k, value];}));
   const visibleSettings = {...settings, mode: 'off'};
-  const channels = C.terms(settings.channels[settings.mode]);
+  const channels = C.channelTerms(settings.channels[settings.mode]);
   const customized = Boolean(settings.intentDescriptions?.[settings.mode]?.trim() || settings.customIntents?.[settings.mode]);
   return videos.map((video, i) => {
     if (!C.classify(video, visibleSettings).visible) return {accepted: false, uncertain: false};

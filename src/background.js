@@ -199,6 +199,22 @@ async function tick(message = {}, sender = {}) {
     if (!senderScoped || !C.isYouTube(url.href) || !['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) throw new Error('The intent mode can only be changed from the YouTube toolbar.');
     if (!validMode(message.mode)) throw new Error('Choose a valid intent mode.');
     patch = {mode: message.mode}; targetTabId = sender.tab.id;
+  } else if (message.type === 'SET_CHANNEL_INTENTS') {
+    const pageURL = requestPageURL(message, sender);
+    const live = tabs.find(tab => tab.id === sender.tab?.id);
+    if (!senderScoped || !pageURL || new URL(pageURL).pathname !== '/watch' || !/^[\w-]{11}$/.test(message.videoId || '') || T.videoId(pageURL) !== message.videoId || !live || (live.pendingUrl || live.url) !== pageURL) throw new Error('Channel intents can only be saved for the current YouTube video.');
+    if (Object.keys(message).some(key => !['type', 'pageURL', 'videoId', 'channel', 'intentIds'].includes(key))) throw new Error('This action can only change channel inclusions.');
+    if (typeof message.channel !== 'string' || !message.channel.trim() || message.channel.length > 200 || /[\r\n\x00-\x1f]/.test(message.channel)) throw new Error('The channel name is not available.');
+    const modes = C.modes(settings);
+    if (!Array.isArray(message.intentIds) || message.intentIds.length > Object.keys(modes).length || message.intentIds.some(id => typeof id !== 'string' || !Object.hasOwn(modes, id))) throw new Error('Choose saved intents for this channel.');
+    const selected = new Set(message.intentIds), channel = C.normalize(message.channel), channels = {...settings.channels};
+    for (const id of Object.keys(modes)) {
+      const existing = C.channelNames(channels[id]), included = existing.some(name => C.normalize(name) === channel);
+      if (selected.has(id) === included) continue;
+      channels[id] = C.formatChannelTerms(selected.has(id) ? [...existing, message.channel.trim()] : existing.filter(name => C.normalize(name) !== channel));
+      if (channels[id].length > 4000) throw new Error('This intent’s channel list is full. Remove a channel in settings first.');
+    }
+    patch = {channels};
   } else if (message.type === 'UPDATE_SETTINGS') {
     if (!extensionSender(sender)) throw new Error('Settings can only be changed in Intent.');
     patch = message.patch || {};
@@ -284,7 +300,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === 'GET_FEED') {
     feedRequest(message, sender).then(respond, error => respond({ok: false, error: error.message})); return true;
   }
-  if (!['HEARTBEAT', 'GET_STATE', 'UPDATE_SETTINGS', 'RESET_SETTINGS', 'SET_MODE', 'SET_TAB_PAUSED', 'OPEN_SETTINGS'].includes(message?.type)) return;
+  if (!['HEARTBEAT', 'GET_STATE', 'UPDATE_SETTINGS', 'RESET_SETTINGS', 'SET_MODE', 'SET_CHANNEL_INTENTS', 'SET_TAB_PAUSED', 'OPEN_SETTINGS'].includes(message?.type)) return;
   if (message.type === 'OPEN_SETTINGS') { chrome.runtime.openOptionsPage().then(() => respond({ok: true})); return true; }
   serial(() => tick(message, sender)).then(state => respond({ok: true, ...state}), error => respond({ok: false, error: error.message})); return true;
 });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Intent \u2014 YouTube with purpose",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "description": "A focused YouTube: customizable intents, local topic filtering, fewer distractions, and a daily time budget.",
   "minimum_chrome_version": "120",
   "permissions": [
@@ -51,6 +51,7 @@
         "src/native-filters.js",
         "src/home.js",
         "src/toolbar.js",
+        "src/channel-includes.js",
         "src/content.js"
       ],
       "css": [

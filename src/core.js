@@ -862,6 +862,22 @@
   }
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
   const terms = value => [...new Set(String(value || '').split(/[,\n]/).map(normalize).filter(Boolean))];
+  // Channel names may contain commas. Quoted CSV fields keep them as one name,
+  // while existing comma/newline-separated settings remain compatible.
+  function channelNames(value) {
+    const fields = []; let field = '', quoted = false;
+    const input = String(value || '');
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i];
+      if (char === '"' && (quoted || !field.trim())) {
+        if (quoted && input[i + 1] === '"') {field += '"'; i++;} else quoted = !quoted;
+      } else if (!quoted && (char === ',' || char === '\n' || char === '\r')) {fields.push(field.trim()); field = '';}
+      else field += char;
+    }
+    fields.push(field.trim()); const seen = new Set(); return fields.filter(name => {const key = normalize(name); if (!key || seen.has(key)) return false; seen.add(key); return true;});
+  }
+  const channelTerms = value => channelNames(value).map(normalize);
+  const formatChannelTerms = names => names.map(name => String(name).trim()).filter(Boolean).map(name => /[,"\r\n]/.test(name) ? '"' + name.replaceAll('"', '""') + '"' : name).join('\n');
   function matches(text, term) {
     const escaped = normalize(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'u').test(normalize(text));
@@ -878,7 +894,7 @@
     if (terms(settings.blockedTerms).some(t => matches(`${video.title} ${video.channel || ''}`, t))) return {visible: false, reason: 'blocked term'};
     if (settings.hideClickbait && clickbait(video.title)) return {visible: false, reason: 'clickbait'};
     if (settings.mode === 'off') return {visible: true, reason: 'unfiltered'};
-    if (terms(settings.channels[settings.mode]).includes(normalize(video.channel))) return {visible: true, reason: 'your channel'};
+    if (channelTerms(settings.channels[settings.mode]).includes(normalize(video.channel))) return {visible: true, reason: 'your channel'};
     const topics = [...(modes(settings)[settings.mode]?.topics || []), ...terms(settings.customTopics[settings.mode])];
     return topics.some(t => matches(`${video.title} ${video.description || ''}`, t)) ? {visible: true, reason: settings.mode} : {visible: false, reason: 'outside mode'};
   }
@@ -912,5 +928,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, channelNames, channelTerms, formatChannelTerms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();
