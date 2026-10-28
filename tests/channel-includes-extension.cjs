@@ -15,6 +15,8 @@ const html=`<!doctype html><html dark lang="en-GB"><meta charset="utf-8"><style>
  assert.equal((await read()).channels.study,'','opening the current-intent default is not itself a save');
  await dialog.getByRole('checkbox',{name:'Work',exact:true}).check();await dialog.getByRole('button',{name:'Save',exact:true}).click();await dialog.waitFor({state:'hidden'});
  await page.waitForFunction(()=>document.querySelector('#intent-channel-includes')?.shadowRoot?.querySelector('.trigger')?.dataset.saved==='true');
+ assert.equal(await host.evaluate(n=>n.previousElementSibling?.id==='subscribe'),true,'the channel action is immediately after Subscribe');
+ assert.equal(await host.getByRole('button',{name:'Manage channel intents'}).evaluate(n=>getComputedStyle(n).color),'rgb(156, 199, 171)','the channel action uses the dark Intent sage accent');
  assert.equal(await host.evaluate(n=>n.parentElement.id==='owner'&&!n.closest('ytd-video-owner-renderer')),true,'the action sits outside the native channel-name layout');
  const saved=await read();assert.equal(saved.mode,'study');assert.equal(saved.channels.study,'"Science, ""and"" More"');assert.equal(saved.channels.work,saved.channels.study);assert.equal(saved.channels.music,'');
  const proof=await worker.evaluate(async channel=>{const state=await tick({});const v={id:'N0000000001',title:'An ordinary day',channel};return{included:(await classifyLocally([v],{...state.settings,mode:'study'}))[0].accepted,blocked:(await classifyLocally([v],{...state.settings,mode:'study',blockedTerms:'ordinary day'}))[0].accepted};},channel);

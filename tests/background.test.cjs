@@ -1373,3 +1373,10 @@ test('watch channel shortcut rejects stale/foreign/subframe requests and unrelat
  h.setTabs([{id:1,url:'https://www.youtube.com/watch?v=B0000000002'}]);assert.equal((await h.send(base,from)).ok,false);
  assert.equal((await h.send({type:'GET_STATE'})).settings.channels.study,'');
 });
+
+
+test('topic display explains explicit channel inclusion without changing timer verdicts',async()=>{
+ const h=topicHarness(async()=>[{accepted:false,uncertain:true,similarity:.22,categoryId:null,categorySimilarity:.22,categoryMargin:0}],{channels:{music:'Independent creator'}});
+ const state=await checkTopic(h);assert.equal(state.videoTopic.includedChannel,true);assert.equal(state.videoTopic.matchesIntent,false);assert.equal(state.timerTopicState,'uncertain');assert.equal(state.timerExempt,true);
+ await h.send({type:'UPDATE_SETTINGS',patch:{channels:{music:''}}});const removed=await tabState(h,1);assert.equal(removed.videoTopic.includedChannel,false);assert.equal(removed.timerTopicState,'uncertain');
+});

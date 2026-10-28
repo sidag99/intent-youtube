@@ -19,7 +19,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.evaluate(() => {
       window.topicSettings = IntentCore.defaults(); window.topicPaused = false; window.checks = []; window.listeners = []; window.timerStates = []; window.pendingChecks = []; window.deferIds = new Set(); window.failIds = new Set(); window.topicStatuses = {};
       window.snapshot = () => ({ok: true, settings: structuredClone(topicSettings), tabPaused: topicPaused, blocked: false, timerRunning: false, tabCounting: false, timerDay: '2026-10-25', timerUpdatedAt: Date.now(), remainingMs: 3600000});
-      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: topicStatuses[message.video.id]?.categoryId || topicSettings.mode, ...(topicStatuses[message.video.id]?.categoryIds ? {categoryIds: topicStatuses[message.video.id].categoryIds} : {})}});
+      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: Object.hasOwn(topicStatuses[message.video.id] || {}, 'categoryId') ? topicStatuses[message.video.id].categoryId : topicSettings.mode, ...(topicStatuses[message.video.id]?.matchesIntent !== undefined ? {matchesIntent:topicStatuses[message.video.id].matchesIntent} : {}), ...(topicStatuses[message.video.id]?.includedChannel !== undefined ? {includedChannel:topicStatuses[message.video.id].includedChannel} : {}), ...(topicStatuses[message.video.id]?.categoryIds ? {categoryIds: topicStatuses[message.video.id].categoryIds} : {})}});
       window.chrome = {runtime: {getURL: name => 'https://extension.test/' + name, onMessage: {addListener: listener => listeners.push(listener)}, sendMessage: async message => {
         if (message.type !== 'CHECK_TIMER_VIDEO') return snapshot();
         checks.push(structuredClone(message));
@@ -144,6 +144,16 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.locator('#intent-video-topic[data-video-id="' + overlap + '"][data-state="uncertain"]').waitFor();
     assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely <b>Study</b> · Work');assert.equal(await page.locator('#intent-video-topic b').count(),0);
     assert.match(await page.locator('#intent-video-topic').getAttribute('title'),/Several configured topics overlap/);
+
+    const acceptedUncertain='jjjjjjjjjjj';
+    await page.evaluate(id=>{topicStatuses[id]={status:'uncertain',categoryId:null,categoryIds:[],matchesIntent:true};navigateVideo(id,'A corroborated academic lesson');},acceptedUncertain);
+    await page.locator('#intent-video-topic[data-video-id="'+acceptedUncertain+'"][data-state="uncertain"]').waitFor();
+    assert.equal(await page.locator('#intent-video-topic').textContent(),'Likely <b>Study</b>','a supported intent match is distinguished from an unknown strongest category');
+    const included='kkkkkkkkkkk';
+    await page.evaluate(id=>{topicStatuses[id]={status:'uncertain',categoryId:null,categoryIds:[],matchesIntent:false,includedChannel:true};navigateVideo(id,'An explicitly included channel video');},included);
+    await page.locator('#intent-video-topic[data-video-id="'+included+'"][data-state="uncertain"]').waitFor();
+    assert.equal(await page.locator('#intent-video-topic').textContent(),'Included channel · Topic uncertain');
+    assert.match(await page.locator('#intent-video-topic').getAttribute('title'),/always include this channel/,'channel overrides are explicit rather than implying a topic match');
 
     const failed = 'eeeeeeeeeee';
     await page.evaluate(id => {failIds.add(id); navigateVideo(id);}, failed);

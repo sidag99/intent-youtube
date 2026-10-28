@@ -121,9 +121,10 @@
     const modes = C.modes(settings), intent = modes[settings.mode]?.name || 'your intent';
     const categoryIds = [...new Set(Array.isArray(result?.categoryIds) ? result.categoryIds : [result?.categoryId])].filter(id => typeof id === 'string' && Object.hasOwn(modes, id)).slice(0, 2);
     const category = categoryIds.map(id => modes[id].name).join(' · ');
-    const label = status === 'checking' ? 'Checking topic…' : status === 'unavailable' ? 'Topic unavailable' : !category ? 'Topic uncertain' : status === 'uncertain' || categoryIds.length > 1 ? `Likely ${category}` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
+    const topicLabel = status === 'checking' ? 'Checking topic…' : status === 'unavailable' ? 'Topic unavailable' : !category ? result.matchesIntent === true ? `Likely ${intent}` : 'Topic uncertain' : status === 'uncertain' || categoryIds.length > 1 ? `Likely ${category}` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
+    const label = result.includedChannel === true ? `Included channel · ${topicLabel}` : topicLabel;
     const relation = status === 'checking' ? `Checking this video's metadata against ${intent}.` : status === 'unavailable' ? 'The local topic check could not run. Retry when ready; your timer rule is unchanged.' : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
-    const detail = relation + (categoryIds.length > 1 ? ' Several configured topics overlap.' : '') + ' Local metadata estimate; the video itself is not watched or listened to.';
+    const detail = (result.includedChannel === true ? `You chose to always include this channel in ${intent}; its videos can appear even when their topic differs. ` : '') + relation + (categoryIds.length > 1 ? ' Several configured topics overlap.' : '') + ' Local metadata estimate; the video itself is not watched or listened to.';
     if (status === 'unavailable') {
       if (topicBadge.dataset.state !== 'unavailable' || !topicBadge.querySelector('button')) {
         topicBadge.textContent = label;

@@ -4,8 +4,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
 const root=path.resolve(__dirname,'..');
 const lecture='Lecture 1: Introduction to Power and Politics in Today’s World';
 const clip='Awkward Introductions That Just Keep Getting Worse';
-const originals=[{id:'N0000000001',title:lecture,channel:'YaleCourses'},{id:'N0000000002',title:clip,channel:'The Big Bang Theory'}];
-const discoveries=[{id:'D0000000001',title:lecture,channel:'YaleCourses'},{id:'D0000000002',title:clip,channel:'The Big Bang Theory'}];
+const originals=[{id:'N0000000001',title:lecture,channel:'YaleCourses'},{id:'N0000000002',title:clip,channel:'The Big Bang Theory'},{id:'N0000000003',title:'I Tried Storm Camping in a Tiny Car',channel:'JPainter'},{id:'N0000000004',title:'The Divide YouTube',channel:'Kurz Erklärt Official'}];
+const discoveries=[{id:'D0000000001',title:lecture,channel:'YaleCourses'},{id:'D0000000002',title:clip,channel:'The Big Bang Theory'},{id:'D0000000003',title:'I Tried Storm Camping in a Tiny Car',channel:'JPainter'},{id:'D0000000004',title:'The Divide YouTube',channel:'Kurz Erklärt Official'}];
 const html=`<!doctype html><html lang="en-GB"><meta charset="utf-8"><style>
 html{--yt-spec-base-background:#fff;--yt-spec-text-primary:#0f0f0f}body{font:14px Arial;margin:0}ytd-masthead{display:flex;height:56px}#center{display:flex;flex:1}#search{flex:1}ytd-browse,ytd-rich-grid-renderer,ytd-rich-item-renderer,yt-lockup-view-model{display:block}#primary{margin:24px;width:1200px}#native-contents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}a{color:inherit}h3{font:500 16px/22px Arial;margin:8px 0}.ytLockupViewModelContentImage{display:block;aspect-ratio:16/9;background:#ddd}.ytContentMetadataViewModelMetadataRow{font:14px/20px Arial}</style>
 <ytd-masthead><div id="start">YouTube</div><div id="center"><form id="search"><input aria-label="Search"></form></div><div id="end">Account</div></ytd-masthead><ytd-browse page-subtype="home"><div id="primary"><ytd-rich-grid-renderer><div id="native-contents"></div></ytd-rich-grid-renderer></div></ytd-browse><script>
@@ -40,6 +40,8 @@ window.originalLecture=document.getElementById('N0000000001');
   await discovery.locator('[data-video-id="D0000000001"]').waitFor({timeout:90000});
   assert.equal(await recommended.locator('[data-video-id="N0000000002"]').count(),0,'the real model rejects the title-only sitcom despite its science-sounding creator');
   assert.equal(await discovery.locator('[data-video-id="D0000000002"]').count(),0,'public discovery applies the same content-evidence rule');
+  for(const id of ['N0000000003','N0000000004'])assert.equal(await recommended.locator('[data-video-id="'+id+'"]').count(),0,'weak camping/opaque videos do not enter native Study recommendations');
+  for(const id of ['D0000000003','D0000000004'])assert.equal(await discovery.locator('[data-video-id="'+id+'"]').count(),0,'discovery uses the same stricter Study policy');
   assert.equal(await host.locator('#N0000000001').count(),1,'accepted recommendations use the actual original card');
   await page.waitForFunction(()=>document.querySelector('#intent-home-feed')?.getAttribute('data-intent-native-home-layout')?.includes('"rows":2'));
   await page.waitForFunction(()=>document.querySelector('#intent-home-feed [data-intent-created-card]')?.querySelectorAll('.ytContentMetadataViewModelMetadataRow').length===2);
@@ -55,7 +57,7 @@ window.originalLecture=document.getElementById('N0000000001');
   assert.equal(await host.locator('[data-intent-created-card]').first().evaluate(n=>n.receivedData.content.lockupViewModel.contentId),generatedBefore);
   assert.equal(await recommended.locator('[data-video-id="N0000000002"]').count(),0);
   assert.equal(metadata,0);assert.deepEqual(errors,[]);
-  const proof={passed:true,model:'actual packaged MiniLM WASM',classification:'title-only sitcom rejected in original recommendations and discovery; academic lesson retained',layout:'native 2→1 rows adopted without new inference or network requests',before,after,uncaughtErrors:errors};
+  const proof={passed:true,model:'actual packaged MiniLM WASM',classification:'title-only sitcom, camping vlog and opaque title rejected in original recommendations and discovery; academic lesson retained',layout:'native 2→1 rows adopted without new inference or network requests',before,after,uncaughtErrors:errors};
   fs.mkdirSync(path.join(root,'test-results'),{recursive:true});fs.writeFileSync(path.join(root,'test-results/home-recommendations-installed.json'),JSON.stringify(proof,null,2));
   console.log('PASS installed Home: real-model sitcom rejection/lecture retention, original identity, late native metadata rows and no extra model/network work');
  }finally{await context?.close();fs.rmSync(profile,{recursive:true,force:true});}

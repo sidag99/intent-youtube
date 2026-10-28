@@ -16,9 +16,11 @@ async function embed(texts) {
   if (missing.length) {
     if (!extractorPromise) extractorPromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {dtype: 'q8', device: 'wasm', local_files_only: true}).catch(error => {extractorPromise = undefined; throw error;});
     const extractor = await extractorPromise;
-    // Small batches bound memory on ordinary laptops. Cached vectors serve repeated videos.
-    for (let i = 0; i < missing.length; i += 8) {
-      const chunk = missing.slice(i, i + 8);
+    // Dynamic q8 quantization can change a sentence's vector with its batch
+    // neighbors. Encode each unique text independently, then reuse its vector:
+    // the same metadata must get the same decision on Home and a watch page.
+    for (let i = 0; i < missing.length; i++) {
+      const chunk = missing.slice(i, i + 1);
       const output = await extractor(chunk, {pooling: 'mean', normalize: true, truncation: true, max_length: 256});
       const rows = output.tolist();
       chunk.forEach((t, j) => vectors.set(t, rows[j]));

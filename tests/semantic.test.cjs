@@ -21,7 +21,7 @@ test('custom intent profiles use their own description and extra topics, and dis
 });
 test('every intent uses an independent similarity threshold without a competing-profile veto', () => {
   const vector = [1, 0];
-  const modeVectors = {study: [[.36, 0]], work: [[.75, 0]], 'custom-law': [[.34, 0]]};
+  const modeVectors = {study: [[.36, 0],[.24,0]], work: [[.75, 0]], 'custom-law': [[.34, 0]]};
   assert.equal(S.decide(vector, modeVectors, 'study').accepted, true);
   assert.equal(S.decide(vector, {...modeVectors, study: [[.25,0]]}, 'study').accepted, false, 'a weak incidental relationship still fails its own threshold');
   assert.equal(S.decide(vector, modeVectors, 'study', true).accepted, true);
@@ -98,4 +98,23 @@ test('a creator name cannot supply the subject of a title-only recommendation',(
   const lesson={...clip,description:'A teacher explains conversation skills using examples.'};
   assert.match(S.text({...lesson,channel:'Language lessons'}),/Channel: Language lessons/,'a creator remains supporting context when video metadata supplies a subject');
   assert.match(S.text({...clip,channel:'Language lessons',hashtags:['German vocabulary']}),/Topics: German vocabulary/);
+});
+
+
+test('builtin Study requires corroboration for moderate matches without an alternative-category veto',()=>{
+ const judge=(scores,others={})=>S.decide([1],{study:scores.map(score=>[score]),...others},'study');
+ for(const scores of [[.27,.08],[.30,.16],[.27,.18],[.25,.17]])assert.equal(judge(scores).accepted,false,'a single broad documentary or coding association does not establish study relevance');
+ assert.equal(judge([.26,.21],{work:[[.8]]}).accepted,true,'a corroborated academic lesson qualifies despite a stronger Work match');
+ assert.equal(judge([.38,.35]).accepted,true,'algorithm demonstrations retain both educational signals');
+ assert.equal(judge([.42,.15]).accepted,true,'strong specific lessons do not require a second high score');
+ assert.equal(S.decide([1],{study:[[.34]]},'study',true).accepted,true,'an edited description keeps its own scope');
+});
+
+
+test('factory Study contains concrete academic profiles and no catch-all documentary or general-learning markers',()=>{
+ const profiles=S.profiles(C.defaults()).study;
+ for(const broad of ['Research, educational documentaries and classroom teaching.','Step by step instruction, learning a subject and understanding new ideas.','Educational explanations of history, philosophy, languages and how the world works.'])assert.ok(!profiles.includes(broad));
+ assert.ok(!C.MODES.study.topics.includes('documentary'));
+ const applied=C.sanitize({intentDescriptions:{study:C.ROLE_PRESETS['software-engineer'].studyDescription}});
+ assert.deepEqual(S.profiles(applied).study,[C.ROLE_PRESETS['software-engineer'].studyDescription]);
 });

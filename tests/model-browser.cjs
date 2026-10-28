@@ -61,6 +61,17 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.equal(result.music[0].accepted,false,'app building excluded from music');
   const homeRegressions=[
    {title:'Awkward Introductions That Just Keep Getting Worse',channel:'The Big Bang Theory',expected:false},
+   {title:'I Tried Storm Camping in a Tiny Car',channel:'JPainter',expected:false},
+   {title:'The Divide YouTube',channel:'Kurz Erklärt Official',expected:false},
+   {title:'I Solved Every Board Game',channel:'Mark Rober',expected:false},
+   {title:'Clean code challenge - Silicon Valley Season 5, Ep6',channel:'Short5ubject',expected:false},
+   {title:'Exploring the Most Remote Island on Earth (15 Days Just to Get There)',channel:'Ruhi Cenet Documentaries',expected:false},
+   {title:'I was told to stay away from this building, so I went in to investigate.',channel:'Shiey',expected:false},
+   {title:'I made 8 maze-solving algorithms compete in a tournament',channel:'Impossible Algorithms',expected:true},
+   {title:'How to Speak',channel:'MIT OpenCourseWare',expected:true},
+   {title:'The Ship of State - Purposes of College Education, Lecture 13',channel:'YaleCourses',expected:true},
+   {title:'Camping safety: a lesson in hypothermia and heat transfer',description:'An instructor explains body heat, insulation and cold exposure using scientific demonstrations.',expected:true},
+   {title:'Game theory: the mathematics of optimal board-game strategies',description:'A lecture on probability, combinatorics, game theory and optimal play with worked examples.',expected:true},
    {title:'Introduction to University Mathematics (2026), Lecture 5. First Year Student Lecture',channel:'Oxford Mathematics',expected:true},
    {title:'Nick Lane | The Gifford Lectures: Beyond the Series - Why is Life the way it is?',channel:'The University of Edinburgh',expected:true},
    {title:'Emotional Intelligence: From Theory to Everyday Practice',channel:'Yale University',expected:true},
@@ -71,6 +82,12 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   ];
   const homeDecisions=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:homeRegressions,settings:{...IntentCore.defaults(),mode:'study'}});
   for(let i=0;i<homeRegressions.length;i++)assert.equal(homeDecisions[i].accepted,homeRegressions[i].expected,'Home Study regression: '+homeRegressions[i].title);
+  // Fresh workers prove that cache warmup and neighboring video lengths cannot
+  // change the same text's q8 embedding/decision between feed and watch checks.
+  const stableVideos=homeRegressions.filter(video=>['I Tried Storm Camping in a Tiny Car','I made 8 maze-solving algorithms compete in a tournament','Introduction to University Mathematics (2026), Lecture 5. First Year Student Lecture'].includes(video.title));
+  const fresh=async videos=>page.evaluate(({videos,settings})=>new Promise((resolve,reject)=>{const worker=new Worker('/runtime/ai-worker.js',{type:'module'});worker.onmessage=({data})=>{worker.terminate();data.ok?resolve(data.decisions):reject(new Error(data.error));};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage({id:1,videos,settings});}),{videos,settings:{...IntentCore.defaults(),mode:'study'}});
+  const together=await fresh(stableVideos);
+  for(let i=0;i<stableVideos.length;i++){const alone=await fresh([stableVideos[i]]);assert.deepEqual(alone[0],together[i],'fresh-worker batch independence: '+stableVideos[i].title);}
   const channelOverride=await page.evaluate(({video,settings})=>runModel([video],settings),{video:homeRegressions[0],settings:{...IntentCore.defaults(),mode:'study',channels:{...IntentCore.defaults().channels,study:'The Big Bang Theory'}}});
   assert.equal(channelOverride[0].accepted,true,'an explicitly included creator still follows the user choice');
   await fs.writeFile(path.join(root,'test-results/home-study-regressions.json'),JSON.stringify(homeRegressions.map((video,i)=>({video,decision:homeDecisions[i]})),null,2));
@@ -129,7 +146,7 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
     assert.equal(decision.accepted,true,`a real-location game tour can qualify for ${mode}`);
   }
   assert.ok(requests.every(url=>url.startsWith(origin+'/')),'all inference requests stay on the packaged origin');
-  assert.equal(requests.filter(url=>url.endsWith('.onnx')).length,1,'model is loaded once and reused');
+  assert.equal(requests.filter(url=>url.endsWith('.onnx')).length,stableVideos.length+2,'the primary model is reused; only explicit fresh-worker diagnostics initialize additional models');
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({passed:true,elapsedMs:Date.now()-started,requests:requests.map(u=>u.slice(origin.length)),decisions:Object.fromEntries(Object.entries(result).map(([k,v])=>[k,v.map(d=>d.accepted)])),optionalDecisions},null,2));
  }finally{await browser.close();await new Promise(r=>server.close(r));}

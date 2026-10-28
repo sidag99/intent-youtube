@@ -15,7 +15,7 @@
   }
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([3, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
+    return JSON.stringify([4, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
   }
   function estimate(decision, settings) {
     if (!decision || typeof decision.accepted !== 'boolean' || typeof decision.uncertain !== 'boolean' || !Number.isFinite(decision.similarity)) return {status: 'unavailable', categoryId: null, categoryIds: []};
@@ -29,7 +29,7 @@
     // different category before turning an exemption into counted time.
     const unrelated = decision.accepted === false && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity <= .18 && categoryId && categoryId !== settings.mode && decision.categorySimilarity >= .40;
     const matching = decision.accepted === true && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity >= .30;
-    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId, categoryIds};
+    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId, categoryIds, matchesIntent: decision.accepted === true};
   }
   globalThis.IntentTimerTopic = {videoId, metadata, key, estimate};
 })();

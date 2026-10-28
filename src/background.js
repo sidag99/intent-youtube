@@ -121,7 +121,9 @@ function stateFor(tabId, now = Date.now()) {
   const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
   const timerExempt = tabPaused || !(Number.isInteger(tabId) ? countsTab(tabId) : countsMode(effective.mode));
   const review = Number.isInteger(tabId) && !tabPaused && effective.mode !== 'off' ? currentReview(tabId) : null;
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null, categoryIds: Array.isArray(review.categoryIds) ? review.categoryIds.slice(0, 2) : review.categoryId ? [review.categoryId] : []} : null,
+  let includedChannel = false;
+  if (review) {try {includedChannel = C.channelTerms(effective.channels[effective.mode]).includes(C.normalize(JSON.parse(review.metadataKey).channel));} catch { /* An older saved review may not have metadata. */ }}
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null, categoryIds: Array.isArray(review.categoryIds) ? review.categoryIds.slice(0, 2) : review.categoryId ? [review.categoryId] : [], matchesIntent: review.matchesIntent === true, includedChannel} : null,
     timerDay: C.dayKey(now), timerUpdatedAt: now, timerRunning: !base.blocked && tracker?.counting === true,
     tabCounting: !base.blocked && !timerExempt && tracker?.counting === true && (tracker.countingTabs || []).includes(tabId)};
 }
