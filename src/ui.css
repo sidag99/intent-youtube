@@ -59,5 +59,11 @@
 
 #intent-library .template-topics{margin-bottom:12px}#intent-library .template-topics summary{font-size:12px;line-height:18px;font-weight:400}
 
-/* Focus is a utility mode without an edit action. */
-.settings .focus-tile>.mode{padding-right:18px}
+/* Focus stays separate from editable topic intents. */
+.button.focus-mode-button{display:flex;width:100%;min-height:60px;margin-top:16px;padding:12px 14px;gap:12px;text-align:left;border:1px solid var(--accent);border-radius:12px;background:transparent;color:var(--accent)}
+.button.focus-mode-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.button.focus-mode-button[aria-pressed=true]{background:var(--accent);color:var(--paper)}
+.button.focus-mode-button[aria-pressed=true]:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 90%,var(--ink))}
+.focus-button-icon{display:flex;flex:0 0 24px}.focus-button-icon svg{width:24px;height:24px}.focus-button-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.focus-button-copy strong{font-size:14px;font-weight:500;line-height:20px}.focus-button-copy>span{font-size:12px;font-weight:400;line-height:17px}.focus-button-check{flex:0 0 18px;text-align:center}
+.focus-timer-policy{margin-top:24px}.focus-timer-policy h3{font-size:13px;font-weight:500;margin-bottom:10px}.focus-settings-panel .focus-mode-button{margin-top:20px}
+@media(forced-colors:active){.button.focus-mode-button{border-color:ButtonText}.button.focus-mode-button[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-3px}}

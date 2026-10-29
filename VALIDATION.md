@@ -1,4 +1,7 @@
-# Validation — 29 October 2026, version 2.3.0
+# Validation — 29 October 2026, version 2.3.1
+
+- Version 2.3.1 separates Focus from editable intents: a divided Browsing modes group in the YouTube listbox, a full-width sage popup button below the four-column topic grid, and a dedicated settings section containing its timer policy. The toolbar still displays Focus. Existing mode behavior, saved choices, new-tab defaults and playback rules are preserved.
+- Focus regressions verify placement, keyboard navigation across the utility divider, selected/idle button colors, full available popup width, narrow settings geometry and independent timer controls. Existing popup creation/library and intent ordering checks retain four topic columns and exclude the Focus utility.
 
 - Version 2.3.0 adds the Focus utility mode to the toolbar, popup, settings and new-tab defaults. It hides the native Home feed, related sidebar and player recommendation overlays, and cancels custom feeds. Search, the player, comments, playlist queue and live chat remain accessible. No permission changes or autoplay preference writes are introduced.
 - The installed Focus regression exercises real Manifest V3 messaging, CSS/SPA transitions, same-node native media decoding/time advancement, late suggestions hidden before rescanning, Off/Pause restoration, reload/new-tab defaults, independent tabs, shared SVG icons and saved timer policy. Direct feed/classifier requests also return empty without an offscreen host or extension recommendation search. Focus is counted by default and has an explicit exemption setting; it is excluded from semantic categories and channel-inclusion rules.

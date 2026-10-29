@@ -56,7 +56,7 @@ const root=path.resolve(__dirname,'..'),shots=path.resolve(process.env.INTENT_SC
      await read(`document.querySelector('[data-add-template="travel"]').click()`);await until(`document.querySelector('[data-add-template="travel"]')?.textContent==='Added'`);
      assert.equal(await worker.evaluate(()=>Object.values(settings.customIntents).some(v=>v.templateId==='travel')),true,'library installation persists from the actual popup');
      await read(`document.querySelector('#close-intent-library').click()`);await until(`!document.querySelector('#intent-library-dialog').open`);
-     assert.equal(await read(`document.querySelectorAll('.mode-grid .mode').length`),6);assert.equal(await read(`document.body.getBoundingClientRect().width`),400);
+     assert.equal(await read(`document.querySelectorAll('.mode-grid .mode').length`),5);assert.equal(await read(`document.body.getBoundingClientRect().width`),400);
      // Creation and library never route the user to another settings tab.
      assert.equal((await context.pages()).filter(page=>page.url().endsWith('/settings.html')).length,0);
      await read('window.scrollTo(0,0)');
