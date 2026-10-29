@@ -1380,3 +1380,27 @@ test('topic display explains explicit channel inclusion without changing timer v
  const state=await checkTopic(h);assert.equal(state.videoTopic.includedChannel,true);assert.equal(state.videoTopic.matchesIntent,false);assert.equal(state.timerTopicState,'uncertain');assert.equal(state.timerExempt,true);
  await h.send({type:'UPDATE_SETTINGS',patch:{channels:{music:''}}});const removed=await tabState(h,1);assert.equal(removed.videoTopic.includedChannel,false);assert.equal(removed.timerTopicState,'uncertain');
 });
+
+
+test('Focus rejects recommendation and topic work before any public search or local inference',async()=>{
+ let searches=0,modelCalls=0;
+ const h=harness({settings:{...IntentCore.defaults(),mode:'focus',limitEnabled:false}},undefined,async()=>{searches++;throw Error('No search in Focus');},async()=>{modelCalls++;throw Error('No inference in Focus');});
+ const sender={url:'https://www.youtube.com/',tab:{id:1},frameId:0};
+ const state=await h.send({type:'GET_STATE'},sender);assert.equal(state.settings.mode,'focus');assert.equal(state.timerExempt,false);
+ const key=IntentFeed.key(state.settings);
+ const feed=await h.send({type:'GET_FEED',key},sender);assert.equal(feed.focus,true);assert.equal(feed.items.length,0);
+ const rec=await h.send({type:'FILTER_RECOMMENDATIONS',key,videos:[{id:'A0000000001',title:'University lecture'}]},sender);assert.equal(rec.focus,true);assert.equal(rec.items.length,0);
+ h.setTabs([{id:1,url:'https://www.youtube.com/watch?v=A0000000001'}]);const current={...sender,url:'https://www.youtube.com/watch?v=A0000000001'};
+ const topic=await h.send({type:'CHECK_TIMER_VIDEO',video:{id:'A0000000001',title:'University lecture'}},current);assert.equal(topic.ok,true);assert.equal(topic.videoTopic,null);assert.equal(searches,0);assert.equal(modelCalls,0);
+ assert.ok(h.badges.some(item=>item.text==='F'));assert.ok(h.titles.some(item=>/Focus.*recommendations hidden/.test(item.title)));
+ await h.send({type:'UPDATE_SETTINGS',patch:{newTabMode:'focus',countModes:{focus:false}}});await h.createTab({id:2,windowId:1});const next=await h.send({type:'GET_STATE'},{...sender,tab:{id:2}});assert.equal(next.settings.mode,'focus');assert.equal(next.timerExempt,true);
+});
+
+test('Focus follows the shared daily limit and an explicit exemption stays accessible at the limit',async()=>{
+ const h=harness({settings:{...IntentCore.defaults(),mode:'focus',dailyMinutes:1}});
+ const sender={url:'https://www.youtube.com/',tab:{id:1},frameId:0};
+ await h.send({type:'HEARTBEAT',playing:false},sender);for(let i=0;i<6;i++){h.advance(10000);await h.send({type:'HEARTBEAT',playing:false},sender);}
+ const blocked=await h.send({type:'GET_STATE'},sender);assert.equal(blocked.usedMs,60000);assert.equal(blocked.blocked,true);assert.equal(blocked.timerExempt,false);assert.ok(h.redirects.some(r=>r.id===1&&r.url.endsWith('blocked.html')));
+ await h.send({type:'UPDATE_SETTINGS',patch:{countModes:{focus:false}}});
+ const exempt=await h.send({type:'GET_STATE'},sender);assert.equal(exempt.blocked,false);assert.equal(exempt.timerExempt,true);assert.equal(exempt.usedMs,60000);assert.equal(exempt.settings.mode,'focus');
+});

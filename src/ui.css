@@ -58,3 +58,6 @@
 .popup .mode-tile>.mode{padding-right:8px;min-height:96px}.popup .mode-icon{margin-bottom:16px}.popup .mode strong{min-height:36px}.popup-intent-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.popup-intent-actions .button{font-size:13px;padding:9px 10px}.popup #intent-library .section-head{flex-direction:column;align-items:stretch}.popup #intent-library .section-head h2{display:none}.popup #intent-library .section-head .button{width:100%}.popup #intent-library summary{font-size:14px}.popup .template-grid{grid-template-columns:1fr}.popup .intent-template{padding:14px}.template-scope-reference{margin-top:16px}.template-scope-reference summary{font-size:13px;cursor:pointer}.template-scope-reference .default-tags{display:flex;flex-wrap:wrap;gap:6px;list-style:none;padding:0}.template-topics{font-size:11px!important;line-height:1.5;color:var(--muted)}
 
 #intent-library .template-topics{margin-bottom:12px}#intent-library .template-topics summary{font-size:12px;line-height:18px;font-weight:400}
+
+/* Focus is a utility mode without an edit action. */
+.settings .focus-tile>.mode{padding-right:18px}

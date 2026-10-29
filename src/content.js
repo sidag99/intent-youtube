@@ -15,16 +15,16 @@
     if (disposed) return; disposed = true;
     observers.forEach(observer => observer.disconnect()); intervals.forEach(clearInterval); cleanups.splice(0).forEach(fn => fn());
     clearTimeout(pending); clearTimeout(topicTimer); clearTimeout(topicNavigationTimer); clearTimeout(homePendingTimer);
-    homeFeed?.destroy(); watchFeed?.destroy(); toolbar?.destroy(); channelIncludes?.destroy(); clearVideoTopic(); restoreShortsGate();
+    homeFeed?.destroy(); watchFeed?.destroy(); toolbar?.destroy(); channelIncludes?.destroy(); focusHome?.remove(); clearVideoTopic(); restoreShortsGate();
     for (const [nodes, attribute] of [[markedHiddenElements, 'data-intent-hidden'], [markedShortShelves, 'data-intent-short-shelf'], [markedShortNav, 'data-intent-short-nav']]) {for (const node of nodes) node.removeAttribute(attribute); nodes.clear();}
     document.removeEventListener('intent-dispose-content', dispose); document.removeEventListener('intent-context-lost', dispose);
     try {chrome.runtime.onMessage.removeListener?.(messageListener);} catch { /* The old extension context may already be gone. */ }
     // Keep topic protection briefly while a fresh context claims this document.
     // Disabling the extension, with no replacement, restores native content.
-    setTimeout(() => {if (document.documentElement?.getAttribute('data-intent-content-owner') === owner) {for (const attr of ['data-intent-content-owner','data-intent-topics','data-intent-home-route','data-intent-home-pending','data-intent-shorts']) document.documentElement.removeAttribute(attr);}}, 2000);
+    setTimeout(() => {if (document.documentElement?.getAttribute('data-intent-content-owner') === owner) {for (const attr of ['data-intent-content-owner','data-intent-topics','data-intent-home-route','data-intent-home-pending','data-intent-shorts','data-intent-focus']) document.documentElement.removeAttribute(attr);}}, 2000);
   }
   document.addEventListener('intent-dispose-content', dispose); document.addEventListener('intent-context-lost', dispose); claim();
-  let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false, settingsRevision = 0;
+  let settings, pending, lastURL = '', running = false, themeObserved = false, tabPaused = false, settingsRevision = 0, focusHome;
   const homeFeed = window.top === window ? new IntentHome() : null;
   const watchFeed = window.top === window ? new IntentHome(chrome.runtime, 'watch') : null;
   const channelIncludes = globalThis.IntentChannelIncludes ? new IntentChannelIncludes(chrome.runtime, value => {settingsRevision++; applySettings(value); schedule();}) : null;
@@ -151,7 +151,7 @@
   }
   function syncVideoTopic() {
     const id = currentTopicVideoId();
-    if (window.top !== window || !settings || settings.mode === 'off' || tabPaused || topicNavigating || !id || settings.hideShorts && location.pathname.startsWith('/shorts/')) {
+    if (window.top !== window || !settings || ['off','focus'].includes(settings.mode) || tabPaused || topicNavigating || !id || settings.hideShorts && location.pathname.startsWith('/shorts/')) {
       if (topicContext || topicBadge || topicTimer) clearVideoTopic();
       return;
     }
@@ -212,6 +212,23 @@
     const active = window.top === window && settings && settings.mode !== 'off' && !tabPaused && !location.hostname.startsWith('music.');
     root.toggleAttribute('data-intent-topics', Boolean(active));
     root.toggleAttribute('data-intent-home-route', Boolean(active && isHome()));
+    root.toggleAttribute('data-intent-focus', Boolean(active && settings.mode === 'focus'));
+  }
+  function syncFocusHome() {
+    if (settings.mode !== 'focus' || tabPaused || !isHome()) {focusHome?.remove(); return;}
+    const renderer = [...document.querySelectorAll('ytd-browse[page-subtype="home"],ytd-browse:not([page-subtype])')].find(node => !node.closest('[hidden]'));
+    const primary = renderer?.querySelector('#primary');
+    if (!primary) {focusHome?.remove(); return;}
+    if (!focusHome) {
+      focusHome = document.createElement('section'); focusHome.id = 'intent-focus-home'; focusHome.setAttribute('aria-label', 'Focus mode');
+      const root = focusHome.attachShadow({mode: 'open'}), style = document.createElement('style');
+      style.textContent = ':host{display:block;padding:48px 24px;color:var(--yt-spec-text-primary,#0f0f0f);font:14px/1.6 Roboto,Arial,sans-serif}:host([data-theme=dark]){color:var(--yt-spec-text-primary,#f1f1f1)}h1{font-size:22px;font-weight:500;margin:0 0 8px}p{margin:0;color:var(--yt-spec-text-secondary,#606060);max-width:480px}:host([data-theme=dark]) p{color:var(--yt-spec-text-secondary,#aaa)}';
+      const title = document.createElement('h1'); title.textContent = 'Focus is on';
+      const detail = document.createElement('p'); detail.textContent = 'Home and recommendations are hidden. Use search or your library to open a video.';
+      root.append(style, title, detail);
+    }
+    focusHome.dataset.theme = IntentHome.theme();
+    if (focusHome.parentElement !== primary) primary.prepend(focusHome);
   }
   function clearHomePending() {
     clearTimeout(homePendingTimer); homePendingTimer = null;
@@ -230,11 +247,12 @@
     settings = C.sanitize(value);
     if (previousTopic !== topicConfig() || settings.mode === 'off' || tabPaused || settings.hideShorts && location.pathname.startsWith('/shorts/')) clearVideoTopic();
     syncTopicGuard();
-    if (settings.mode === 'off' || tabPaused) {
+    if (['off','focus'].includes(settings.mode) || tabPaused) {
       clearHomePending();
-      if (settings.mode === 'off') {homeFeed?.destroy(); watchFeed?.destroy();}
+      if (['off','focus'].includes(settings.mode)) {homeFeed?.destroy(); watchFeed?.destroy();}
     }
     else if (isHome() && !homeFeed?.host?.isConnected) armHomePending();
+    if (settings.mode !== 'focus' || tabPaused) focusHome?.remove();
     document.documentElement?.toggleAttribute('data-intent-shorts', !tabPaused && settings.hideShorts);
     filterShortsNavigation();
     if (!settings.hideShorts) restoreShortsGate();
@@ -286,6 +304,7 @@
     tabPaused = paused;
     syncTopicGuard();
     if (paused) {
+      focusHome?.remove();
       clearVideoTopic();
       clearHomePending(); homeFeed?.destroy(); watchFeed?.destroy();
       for (const element of markedHiddenElements) element.removeAttribute('data-intent-hidden');
@@ -385,6 +404,7 @@
   function intentCoverage(home, watch) {
     if (tabPaused) return {state: 'paused', detail: 'Intent is paused on this tab. Filters and timer counting are off here. Your saved intent and other tabs are unchanged.'};
     if (settings.mode === 'off') return {state: 'off-here', detail: 'Intent filtering is off. Distraction filters and the daily timer still apply.'};
+    if (settings.mode === 'focus') return {state: 'active', detail: 'Home and recommendations are hidden. Search and video playback stay available.'};
     const name = C.modes(settings)[settings.mode]?.name || 'Your';
     if (location.pathname === '/results') return {state: 'off-here', detail: `Intent is off on search results. ${name} is saved for Home and video recommendations. Distraction filters and the daily timer still apply.`};
     const feed = home ? homeFeed : watch ? watchFeed : null;
@@ -401,8 +421,9 @@
     syncTopicGuard();
     observeTheme();
     const home = isHome(), watch = isWatch();
+    syncFocusHome();
     if (channelIncludes) {
-      const id = !tabPaused && !topicNavigating && watch ? currentTopicVideoId() : '';
+      const id = !tabPaused && !topicNavigating && settings.mode !== 'focus' && watch ? currentTopicVideoId() : '';
       channelIncludes.sync(settings, id ? IntentChannelIncludes.readCurrent(id) : null);
     }
     syncVideoTopic();
@@ -412,9 +433,9 @@
       return;
     }
     for (const element of markedHiddenElements) if (!element.isConnected) {element.removeAttribute('data-intent-hidden'); markedHiddenElements.delete(element);}
-    homeFeed?.sync(settings, home);
-    watchFeed?.sync(settings, watch);
-    if (settings.mode === 'off' || home && homeFeed?.host?.isConnected) clearHomePending();
+    homeFeed?.sync(settings, home && settings.mode !== 'focus');
+    watchFeed?.sync(settings, watch && settings.mode !== 'focus');
+    if (['off','focus'].includes(settings.mode) || home && homeFeed?.host?.isConnected) clearHomePending();
     toolbar?.sync(settings, !location.hostname.startsWith('music.'), intentCoverage(home, watch));
     document.documentElement.toggleAttribute('data-intent-shorts', settings.hideShorts);
     // Mode selection is handled by the filled feeds. Native shelves must not be

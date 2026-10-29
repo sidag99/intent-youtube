@@ -94,8 +94,8 @@ async function chooseTimerPolicy(page, mode, value, editor = false) {
     for (const [scheme, width] of [['light',1440],['dark',1440],['light',390],['dark',390]]) {
       await page.emulateMedia({colorScheme:scheme});await page.setViewportSize({width,height:1000});
       const panel=page.locator('.timer-modes-panel');await panel.scrollIntoViewIfNeeded();
-      assert.equal(await panel.getByRole('radiogroup').count(),4);
-      assert.equal(await panel.locator('input:checked').count(),4,'each intent has exactly one clear time-counting policy');
+      assert.equal(await panel.getByRole('radiogroup').count(),5);
+      assert.equal(await panel.locator('input:checked').count(),5,'each intent has exactly one clear time-counting policy');
       assert.equal(await panel.evaluate(element=>element.scrollWidth<=element.clientWidth),true,'time choices fit the panel without horizontal overflow');
       const targets=await panel.locator('.timer-policy-option').evaluateAll(labels=>labels.map(label=>({width:label.getBoundingClientRect().width,height:label.getBoundingClientRect().height})));
       assert.ok(targets.every(target=>target.width>=44&&target.height>=44),'all time policies have normal touch targets');

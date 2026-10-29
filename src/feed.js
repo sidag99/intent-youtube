@@ -24,7 +24,7 @@
   }
   function queries(settings, round = 0) {
     const s = C.sanitize(settings);
-    if (s.mode === 'off') return [];
+    if (s.mode === 'off' || s.mode === 'focus') return [];
     const description = s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description;
     const template = C.defaultTemplate(s, s.mode);
     const seeds = template ? template.searches : description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
@@ -296,6 +296,7 @@
       const preview = options.preview === true, locale = normalizeLocale(options.locale);
       const round = Math.max(0, Math.min(1000000, Math.trunc(Number(options.round) || 0)));
       const s = C.sanitize(preview ? {...settings, metadataLimit: 0} : settings), pool = queries(s, round);
+      if (s.mode === 'focus') return {key: key(s, locale), items: [], hasMore: false, focus: true, semantic: false};
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const context = JSON.stringify([key(s, locale), round]);
       const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);

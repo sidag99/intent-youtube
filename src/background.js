@@ -5,6 +5,7 @@ const reconnectService = IntentReconnect.create(chrome);
 let creatingAI;
 async function classifyLocally(videos, settings) {
   if (!videos.length) return [];
+  if (settings.mode === 'focus') return videos.map(() => ({accepted: false, uncertain: false}));
   const url = chrome.runtime.getURL('ai.html');
   const existing = await chrome.runtime.getContexts({contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url]});
   if (!existing.length) {
@@ -87,6 +88,7 @@ function tabAction(tab, exhausted) {
   const counted = countsTab(tab.id), blocked = exhausted && counted;
   const timer = counted ? 'timer counts toward your daily limit' : 'timer is exempt from your daily limit';
   if (blocked) return {text: 'END', title: `Intent — Daily limit reached on this tab; ${mode === 'off' ? 'topic filtering is off' : 'YouTube access is blocked'}`, color: '#9b4135'};
+  if (mode === 'focus') return {text: 'F', title: `Intent — Focus; Home and recommendations hidden; ${timer}`, active: true, color: '#365e4b'};
   if (mode === 'off') return {text: 'OFF', title: `Intent — Off on this tab; topic filtering is off; ${timer}`};
   const name = C.modes(settings)[mode]?.name || mode;
   return {text: badgeMode(mode), title: `Intent — ${name} intent on this tab; ${timer}`, active: true, color: '#365e4b'};
@@ -314,7 +316,7 @@ async function checkTimerVideo(message, sender) {
   const prepared = await serial(async () => {
     const state = await tick({}, sender);
     if (state.tabId !== sender.tab.id || currentPageURL(sender.tab.id) !== pageURL) return {skip: {ok: true, stale: true}};
-    if (state.blocked || state.tabPaused || state.settings.mode === 'off' || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
+    if (state.blocked || state.tabPaused || ['off','focus'].includes(state.settings.mode) || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
     const key = T.key(state.settings), metadataKey = JSON.stringify(video), cacheKey = JSON.stringify([key, metadataKey]);
     const previous = currentReview(sender.tab.id);
     if (previous?.metadataKey === metadataKey && !['checking', 'unavailable'].includes(previous.status)) return {skip: {ok: true, ...state}};
@@ -404,7 +406,7 @@ async function filterRecommendations(message, sender) {
     if (state.tabId !== sender.tab.id || currentPageURL(sender.tab.id) !== page.url) return {skip: {ok: true, stale: true}};
     if (state.tabPaused) return {skip: {ok: true, paused: true, tabPaused: true}};
     if (state.blocked) return {skip: {ok: true, blocked: true}};
-    if (state.settings.mode === 'off') return {skip: {ok: true, off: true, key: IntentFeed.key(state.settings, locale), items: [], semantic: true}};
+    if (['off','focus'].includes(state.settings.mode)) return {skip: {ok: true, off: state.settings.mode === 'off', focus: state.settings.mode === 'focus', key: IntentFeed.key(state.settings, locale), items: [], semantic: true}};
     if (message.key !== IntentFeed.key(state.settings, locale)) return {skip: {ok: true, stale: true}};
     const videos = recommendationVideos(message.videos, page.videoId).filter(video => C.classify(video, {...state.settings, mode: 'off'}).visible);
     return {settings: state.settings, videos, revision: feedRevision, tabRevision: tabFeedRevisions.get(sender.tab.id) || 0, key: message.key};
@@ -451,6 +453,7 @@ async function feedRequest(message, sender) {
   if (state.tabId !== sender.tab.id || !samePage()) return {ok: true, stale: true};
   if (state.tabPaused) return {ok: true, paused: true, tabPaused: true};
   if (state.blocked) return {ok: true, blocked: true};
+  if (state.settings.mode === 'focus') return {ok: true, focus: true, key: IntentFeed.key(state.settings, locale), items: [], hasMore: false};
   if (message.key !== IntentFeed.key(state.settings, locale)) return {ok: true, stale: true};
   const revision = feedRevision;
   const tabRevision = tabFeedRevisions.get(sender.tab.id) || 0;

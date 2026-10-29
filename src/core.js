@@ -5,7 +5,9 @@
     study: {name: 'Study', symbol: '↗', description: 'Make room for a new idea.', topics: ['lecture', 'lesson', 'course', 'tutorial', 'math', 'calculus', 'physics', 'chemistry', 'biology', 'history', 'science', 'language', 'university', 'exam', 'study', 'algebra', 'statistics', 'philosophy', "astronomy", "geography", "economics", "psychology", "sociology", "archaeology", "linguistics", "literature", "computer science", "algorithms", "data structures", "geometry", "trigonometry", "probability", "neuroscience", "anatomy", "medicine", "ecology", "earth science", "political science", "law", "worked example", "problem solving", "revision", "practice problems", "proof", "experiment", "derivation", "fundamentals", "how it works", "crash course", "seminar"]},
     music: {name: 'Music', symbol: '♫', description: 'Find your rhythm.', topics: ['music', 'song', 'album', 'playlist', 'lofi', 'lo-fi', 'jazz', 'piano', 'guitar', 'ambient', 'soundtrack', 'symphony', 'concert', 'orchestra', 'acoustic', 'beats', 'chillhop', 'classical', 'dj set', 'live set', 'lyrics', 'official audio', 'official video', 'synth', 'bossa nova', "vocals", "instrumental", "singing", "singer", "band", "performance", "cover", "remix", "mashup", "medley", "mixtape", "rap", "hip hop", "r&b", "soul", "funk", "blues", "rock", "metal", "pop", "indie", "folk", "country", "reggae", "electronic", "techno", "house music", "trance", "edm", "drum and bass", "synthwave", "choral", "opera", "bollywood", "k-pop", "afrobeats", "unplugged", "karaoke", "listening session", "music production", "music theory"]},
   };
+  const FOCUS = Object.freeze({name: 'Focus', symbol: '◎', description: 'Hide Home and recommendations. Search and video playback stay available.'});
   const MODE_ICONS = Object.freeze({
+    focus: '<path d="M8 3H4a1 1 0 0 0-1 1v4M16 3h4a1 1 0 0 1 1 1v4M21 16v4a1 1 0 0 1-1 1h-4M8 21H4a1 1 0 0 1-1-1v-4"/><circle cx="12" cy="12" r="3"/>',
     work: '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 12c5 3 11 3 16 0M12 12v3"/>',
     study: '<path d="M12 6C9 3 5 3 2 4v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-3-1-7-1-10 2v14"/>',
     music: '<path d="M5 13v-2a7 7 0 0 1 14 0v2"/><rect x="3" y="11" width="4" height="9" rx="2"/><rect x="17" y="11" width="4" height="9" rx="2"/>',
@@ -811,7 +813,7 @@
     const record = settings.customIntents?.[id], template = record && INTENT_TEMPLATES[record.templateId];
     return template && !settings.intentDescriptions?.[id]?.trim() && record.description?.trim() === template.description ? template : null;
   }
-  const validMode = (mode, settings = {}) => Object.hasOwn(MODES, mode) || mode === 'off' || Object.hasOwn(customRecords(settings.customIntents), mode);
+  const validMode = (mode, settings = {}) => Object.hasOwn(MODES, mode) || mode === 'off' || mode === 'focus' || Object.hasOwn(customRecords(settings.customIntents), mode);
   function orderIds(ids, input) {
     return [...new Set([...(Array.isArray(input) ? input.filter(id => typeof id === 'string' && ids.includes(id)) : []), ...ids])];
   }
@@ -829,7 +831,7 @@
     const definitions = {...builtins, ...custom};
     return Object.fromEntries(orderIds(Object.keys(definitions), settings.intentOrder).map(id => [id, definitions[id]]));
   }
-  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true}, matchOnlyModes: Object.fromEntries(Object.keys(MODES).map(id => [id, false])), hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
+  const defaults = () => ({mode: 'work', newTabMode: 'last', metadataLimit: 4, rolePresets: factoryRolePresets(), lastRolePreset: null, intentOrder: Object.keys(MODES), customIntents: {}, intentNames: Object.fromEntries(Object.entries(MODES).map(([id, mode]) => [id, mode.name])), intentDescriptions: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), countModes: {work: true, study: true, music: false, off: true, focus: true}, matchOnlyModes: Object.fromEntries(Object.keys(MODES).map(id => [id, false])), hideShorts: true, hideClickbait: true, limitEnabled: true, dailyMinutes: 60, countPlayback: true, customTopics: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), channels: Object.fromEntries(Object.keys(MODES).map(k => [k, ''])), blockedTerms: ''});
   function sanitize(input = {}) {
     const out = defaults();
     out.rolePresets = roleRecords(input.rolePresets);
@@ -842,7 +844,7 @@
     if (validMode(input.mode, out)) out.mode = input.mode;
     if (input.newTabMode === 'last' || validMode(input.newTabMode, out)) out.newTabMode = input.newTabMode;
     else if (input.newTabMode === 'leisure') out.newTabMode = 'work';
-    for (const mode of [...ids, 'off']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
+    for (const mode of [...ids, 'off', 'focus']) out.countModes[mode] = typeof input.countModes?.[mode] === 'boolean' ? input.countModes[mode] : mode !== 'music';
     out.matchOnlyModes = Object.fromEntries(ids.map(id => [id, input.matchOnlyModes?.[id] === true]));
     for (const key of ['hideShorts', 'hideClickbait', 'limitEnabled', 'countPlayback']) if (typeof input[key] === 'boolean') out[key] = input[key];
     if (Number.isFinite(Number(input.dailyMinutes))) out.dailyMinutes = Math.max(1, Math.min(1440, Math.round(Number(input.dailyMinutes))));
@@ -894,6 +896,7 @@
     if (terms(settings.blockedTerms).some(t => matches(`${video.title} ${video.channel || ''}`, t))) return {visible: false, reason: 'blocked term'};
     if (settings.hideClickbait && clickbait(video.title)) return {visible: false, reason: 'clickbait'};
     if (settings.mode === 'off') return {visible: true, reason: 'unfiltered'};
+    if (settings.mode === 'focus') return {visible: false, reason: 'focus mode'};
     if (channelTerms(settings.channels[settings.mode]).includes(normalize(video.channel))) return {visible: true, reason: 'your channel'};
     const topics = [...(modes(settings)[settings.mode]?.topics || []), ...terms(settings.customTopics[settings.mode])];
     return topics.some(t => matches(`${video.title} ${video.description || ''}`, t)) ? {visible: true, reason: settings.mode} : {visible: false, reason: 'outside mode'};
@@ -928,5 +931,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, channelNames, channelTerms, formatChannelTerms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, FOCUS, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, channelNames, channelTerms, formatChannelTerms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();

@@ -197,7 +197,7 @@
       try {await this.runtime.sendMessage({type: 'OPEN_SETTINGS'}); this.closeMenu(false);} catch (error) {this.handleError(error);}
     }
     updateOptions(settings) {
-      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['off', 'Intent off', '○']];
+      const options = [...Object.entries(IntentCore.modes(settings)).map(([id, item]) => [id, item.name, item.symbol || '◒', item.icon || null]), ['focus', IntentCore.FOCUS.name, IntentCore.FOCUS.symbol], ['off', 'Intent off', '○']];
       const signature = JSON.stringify(options);
       if (signature === this.optionSignature) return;
       const hadFocus = this.open && this.options?.includes(this.root.activeElement);
@@ -216,7 +216,7 @@
       if (hadFocus) this.focusOption(this.selectedIndex());
     }
     paintSelection() {
-      const mode = this.settings.mode, name = IntentCore.modes(this.settings)[mode]?.name || 'Off';
+      const mode = this.settings.mode, name = (mode === 'focus' ? IntentCore.FOCUS.name : IntentCore.modes(this.settings)[mode]?.name) || 'Off';
       this.trigger.dataset.mode = mode; this.trigger.value = mode; this.savedModeName = name; this.modeName.textContent = name;
       for (const option of this.options) option.setAttribute('aria-selected', String(option.dataset.mode === mode));
       this.paintCoverage();
@@ -255,10 +255,10 @@
         paused: 'Paused on this tab',
         off: `Topic filtering off · ${offExempt ? 'timer exempt' : 'timer rules apply'}`
       }[state];
-      this.coverageDetail.textContent = shortDetail; this.coverageDetail.title = detail;
+      this.coverageDetail.textContent = this.settings.mode === 'focus' && state !== 'paused' ? 'Home and recommendations hidden' : shortDetail; this.coverageDetail.title = detail;
       this.menuHeading.textContent = state === 'off' ? 'Intent is off' : state === 'paused' ? 'Intent paused' : 'Intent for this tab';
       this.trigger.title = state === 'off' ? `Intent is off. ${detail}` : `Saved intent: ${this.savedModeName}. ${detail}`;
-      this.menuRefreshButton.disabled = this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused';
+      this.menuRefreshButton.disabled = this.refreshButton.disabled = Boolean(this.refreshPending) || state === 'off-here' || state === 'off' || state === 'paused' || this.settings.mode === 'focus';
     }
     selectedIndex() { return Math.max(0, this.options.findIndex(option => option.dataset.mode === this.settings.mode)); }
     focusOption(index) {

@@ -10,6 +10,7 @@
     render() {
       const host = document.getElementById('intent-preview'); if (!host) return;
       const settings = this.getSettings(), key = F.key(settings), custom = Boolean(settings.customIntents[settings.mode]);
+      if (settings.mode === 'focus') {this.reset(); host.innerHTML = '<div class="section-head"><h2>Focus mode</h2></div><p class="section-copy">Home and video recommendations are hidden. Search, your library and video playback remain available. No recommendation searches or topic checks run in Focus.</p>'; return;}
       if (key !== this.key) {this.reset(); this.key = key;}
       host.innerHTML = `<div class="section-head"><div><p class="eyebrow">FILTER PREVIEW</p><h2>Try your filters</h2></div><div class="preview-actions"><button type="button" class="button" id="preview-intent" ${!this.live || this.busy || settings.mode === 'off' ? 'disabled' : ''}>${this.busy ? 'Checking examples…' : this.result ? 'Check examples again' : 'Preview my intent'}</button><button type="button" id="show-hidden" class="button secondary" aria-pressed="${this.showHidden}" ${custom && !this.result ? 'disabled' : ''}>${this.showHidden ? 'Hide filtered examples' : 'Show filtered examples'}</button></div></div><p class="section-copy">${this.result ? 'Real YouTube candidates checked by your local model, using titles and available search descriptions. Your main feed can also use fuller video checks.' : custom ? 'Preview real videos for your saved custom intent, including titles that match by meaning rather than exact words.' : 'Illustrative cards below demonstrate basic filters. Preview my intent checks real YouTube candidates with the local model.'}</p><p class="field-hint">${this.live ? 'Preview may make up to two public YouTube search requests; cached searches can be reused. Thumbnails load from YouTube. No extra video-page requests are made for preview.' : 'Load the extension to preview real videos. This demo does not run the model or make YouTube requests.'}</p><p id="preview-status" role="${this.error ? 'alert' : 'status'}" class="${this.error ? 'preview-error' : 'field-hint'}">${escape(this.busy ? 'Loading YouTube candidates and checking their meaning locally…' : this.error || (this.result ? `${this.result.filter(item => item.accepted).length} matching and ${this.result.filter(item => !item.accepted).length} filtered candidates in this preview. Titles are from real videos, not generated examples.` : ''))}</p><div id="sample-grid" class="sample-grid" aria-busy="${Boolean(this.busy)}"></div>`;
       const grid = host.querySelector('#sample-grid');
@@ -33,7 +34,7 @@
     }
     async load() {
       if (this.busy || !this.live) return;
-      const settings = this.getSettings(); if (settings.mode === 'off') return;
+      const settings = this.getSettings(); if (['off','focus'].includes(settings.mode)) return;
       const key = F.key(settings), generation = ++this.generation;
       this.busy = true; this.error = ''; this.render();
       try {

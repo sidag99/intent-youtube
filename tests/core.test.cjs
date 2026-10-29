@@ -50,7 +50,7 @@ test('fuller metadata checking has a bounded configurable cap without boolean or
 });
 test('mode accounting defaults exempt Music while counting every other intent', () => {
   const settings = C.defaults();
-  assert.deepEqual(settings.countModes, {work: true, study: true, music: false, off: true});
+  assert.deepEqual(settings.countModes, {work: true, study: true, music: false, off: true, focus: true});
   for (const mode of [...Object.keys(C.MODES), 'off']) assert.equal(C.countsMode(settings, mode), mode !== 'music');
   settings.mode = 'music'; assert.equal(C.countsMode(settings), false);
   assert.equal(C.countsMode({}, 'music'), false, 'older settings inherit Music exemption');
@@ -59,7 +59,7 @@ test('mode accounting defaults exempt Music while counting every other intent', 
 });
 test('per-mode counting settings accept booleans only and remain independent', () => {
   const settings = C.sanitize({countModes: {work: false, music: true, study: 'false', leisure: null, off: false, unknown: false}, countPlayback: false});
-  assert.deepEqual(settings.countModes, {work: false, study: true, music: true, off: false});
+  assert.deepEqual(settings.countModes, {work: false, study: true, music: true, off: false, focus: true});
   assert.equal(C.countsMode(settings, 'work'), false); assert.equal(C.countsMode(settings, 'music'), true);
   assert.equal(C.countsMode(settings, 'study'), true); assert.equal(settings.countPlayback, false);
   const defaults = C.defaults(); defaults.countModes.music = true;
@@ -278,4 +278,12 @@ test('channel rules preserve comma/quote names and exact matching with distracti
  assert.equal(C.classify(video('A day out','Science, "and" More',true),settings).visible,false);
  assert.equal(C.classify(video('You won’t believe it','Science, "and" More'),settings).visible,false);
  assert.equal(C.classify(video('Blocked phrase','Science, "and" More'),{...settings,blockedTerms:'blocked phrase'}).visible,false);
+});
+
+
+test('Focus is a persistent utility mode with no semantic category or channel exceptions',()=>{
+ const s=C.sanitize({mode:'focus',newTabMode:'focus',matchOnlyModes:{focus:true},channels:{focus:'Any creator'},countModes:{focus:false}});
+ assert.equal(s.mode,'focus');assert.equal(C.initialMode(s),'focus');assert.equal(C.validMode('focus'),true);assert.equal(C.countsMode(s,'focus'),false);assert.equal(C.countsMode(C.defaults(),'focus'),true);
+ assert.equal(C.modes(s).focus,undefined,'Focus cannot appear as an inferred video topic');assert.equal(s.matchOnlyModes.focus,undefined);assert.equal(s.channels.focus,undefined);
+ assert.equal(C.classify(video('A lesson','Any creator'),s).visible,false);
 });

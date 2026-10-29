@@ -11,6 +11,7 @@ async function refresh() {
     if (!state.ok) throw new Error(state.error);
     if (['light', 'dark'].includes(state.appearance)) document.documentElement.dataset.theme = state.appearance;
     const choices = Object.entries(IntentCore.modes(state.settings)).filter(([mode]) => !IntentCore.countsMode(state.settings, mode)).map(([mode, item]) => [mode, item.name]);
+    if (!IntentCore.countsMode(state.settings, 'focus')) choices.push(['focus', IntentCore.FOCUS.name]);
     if (!IntentCore.countsMode(state.settings, 'off')) choices.push(['off', 'Modes off']);
     const exemptions = document.querySelector('#exempt-modes');
     exemptions.hidden = !state.blocked || !choices.length;

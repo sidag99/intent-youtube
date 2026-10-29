@@ -32,7 +32,7 @@ async function embed(texts) {
 }
 async function classify(videos, inputSettings) {
   const settings = C.sanitize(inputSettings);
-  if (settings.mode === 'off') return videos.map(v => ({accepted: C.classify(v, settings).visible, uncertain: false}));
+  if (settings.mode === 'off' || settings.mode === 'focus') return videos.map(v => ({accepted: C.classify(v, settings).visible, uncertain: false}));
   const descriptions = S.profiles(settings), names = Object.keys(descriptions), all = names.flatMap(k => descriptions[k]);
   const encoded = await embed([...all, ...videos.map(S.text)]);
   let offset = 0;

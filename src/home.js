@@ -26,7 +26,7 @@
       if (this.host && this.host.dataset.theme !== theme) this.host.dataset.theme = theme;
     }
     sync(settings, active) {
-      if (!active || settings.mode === 'off') { this.destroy(); return; }
+      if (!active || ['off','focus'].includes(settings.mode)) { this.destroy(); return; }
       this.settings = settings;
       const renderers = [...document.querySelectorAll(this.surface === 'watch' ? 'ytd-watch-flexy' : 'ytd-browse')]
         .filter(node => !node.closest('[hidden]') && getComputedStyle(node).display !== 'none');
