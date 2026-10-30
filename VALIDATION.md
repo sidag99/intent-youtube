@@ -1,4 +1,7 @@
-# Validation — 30 October 2026, version 2.4.0
+# Validation — 30 October 2026, version 2.4.1
+
+- Version 2.4.1 moves the channel-action spacing from the light-DOM host margin onto the shadow button. A page-level span reset reproduced the reported zero-pixel gap before the fix. The regression measures at least 12px on each side beside the complete Subscribe/bell component in dark/light themes and LTR/RTL layouts, while preserving vertical alignment and native controls. The installed real-model video-label regression also applies that page-level reset before checking the gap.
+- Version 2.4.1 passes 200 unit tests, 5 build checks, syntax, the complete browser suite and the installed channel-inclusion/video-label regressions. The full installed suite and model/Music suite passed immediately before this spacing change; classifier, timer and playback logic are unchanged.
 
 - Revalidation after signing the history: 200 unit tests, 5 build tests, syntax/runtime build, the complete browser suite, bundled model/Music checks and the full installed-extension suite pass. An installed tooltip check initially raced the deliberately dismissing resize event. The test now opens the tooltip before resizing, waits for dismissal, and uses a fresh keyboard focus to verify reopening and viewport bounds. Event-order instrumentation reproduced the original race; 20 settled resize/focus cycles and the corrected standalone/full-suite runs passed. Runtime code is unchanged. The earlier preview-branch CI timeout waiting for a Home card did not recur locally; main's CI passed, so that older timeout is not considered a diagnosed runtime defect. These remain fixture-based regressions rather than validation of every live YouTube experiment.
 
