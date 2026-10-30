@@ -44,7 +44,9 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.addStyleTag({path: root + '/src/content.css'}); await page.addScriptTag({path: root + '/src/content.js'});
     await page.locator('#intent-video-topic[data-state="matching"]').waitFor();
     assert.equal(await page.locator('#intent-video-topic').textContent(), 'Topic: Work');
-    assert.equal(await page.locator('#intent-video-topic').evaluate(node => node.nextElementSibling.tagName), 'H1');
+    assert.equal(await page.locator('#intent-video-topic').evaluate(node => node.previousElementSibling.id), 'title');
+    const topicLayout=await page.locator('#intent-video-topic').evaluate(node=>{const title=document.querySelector('h1'),a=node.getBoundingClientRect(),b=title.getBoundingClientRect();return{below:a.top>=b.bottom,left:Math.abs(a.left-b.left)<1,nativeDisplay:getComputedStyle(title).display,headingText:title.textContent};});
+    assert.deepEqual(topicLayout,{below:true,left:true,nativeDisplay:'block',headingText:'A quiet way to build useful things'});
     assert.equal(await page.locator('ytd-player #intent-video-topic').count(), 0, 'the badge never overlays playback controls');
     assert.equal(await page.locator('#intent-video-topic').evaluate(node => getComputedStyle(node).position), 'static');
     assert.match(await page.locator('#intent-video-topic').getAttribute('title'), /match Work.*Local metadata estimate/);
@@ -150,6 +152,8 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     const matches=page.getByRole('button',{name:'Matches 4 intents',exact:true}),tooltip=page.getByRole('tooltip');
     await matches.hover();await tooltip.waitFor({state:'visible'});for(const name of ['<b>Study</b>','Work','Music','Research'])assert.equal(await tooltip.getByText(name,{exact:true}).count(),1);
     await matches.focus();await matches.press('Escape');await tooltip.waitFor({state:'hidden'});await matches.blur();await matches.focus();await tooltip.waitFor({state:'visible'});
+    await page.evaluate(()=>{const button=document.querySelector('.intent-topic-matches');button.blur();button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));});
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));assert.equal(await tooltip.isVisible(),false,'Escape cancels a queued keyboard tooltip opening');
     await page.evaluate(()=>pauseTopic(true));assert.equal(await page.locator('#intent-video-topic').count(),0);assert.equal(await page.getByRole('tooltip').count(),0,'Pause disposes the open tooltip');await page.evaluate(()=>pauseTopic(false));
 
     // All configured matches stay reachable even in a short, zoom-like viewport.

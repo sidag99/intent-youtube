@@ -268,7 +268,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.match(await yt.locator('#intent-video-topic').innerText(),/Music/);
   assert.equal(await yt.locator('#intent-video-topic').getAttribute('role'),'note');
   assert.equal(await yt.locator('#intent-video-topic').getByRole('button').count(),0,'the video topic label is informational');
-  assert.equal(await yt.locator('#intent-video-topic').evaluate(el=>el.nextElementSibling?.tagName),'H1','the current-video label precedes its native title');
+  assert.equal(await yt.locator('#intent-video-topic').evaluate(el=>el.previousElementSibling?.tagName),'H1','the current-video label follows its native title');
   assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   assert.equal(await watchFeed.locator('.meta').first().innerText(),'3.9M views · 2 years ago');
   await yt.evaluate(()=>{document.querySelector('ytd-watch-flexy').style.gridTemplateColumns='minmax(0,1fr) 330px';document.querySelector('#secondary').style.width='330px';});

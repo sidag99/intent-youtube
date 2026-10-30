@@ -57,14 +57,15 @@ html[data-intent-shorts] [data-intent-short-nav],
 [data-intent-shorts-player-hidden] { display: none !important; }
 #intent-shorts-gate { position: relative !important; inset: auto !important; z-index: auto !important; min-width: 0; }
 
-/* A metadata note beside the native title, never a layer over player controls. */
+/* A compact metadata row below the native title, above the channel controls. */
 #intent-video-topic {
   box-sizing: border-box;
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   position: static !important;
   max-width: 100%;
-  margin: 0 8px 0 0;
+  margin: 6px 0 0;
   padding: 3px 9px;
   border: 1px solid var(--yt-spec-10-percent-layer, #dedede);
   border-radius: 14px;
@@ -83,9 +84,8 @@ html[data-intent-shorts] [data-intent-short-nav],
 #intent-video-topic[data-state="matching"] { color: var(--yt-spec-text-primary, #365e4b); }
 #intent-video-topic[data-theme="dark"][data-state="matching"] { color: var(--yt-spec-text-primary, #9cc7ab); }
 
-/* Preserve the native heading and title text while placing the badge first. */
-[data-intent-topic-title] { display:inline!important; }
-#intent-video-topic { gap:4px;align-self:baseline; }
+/* The native heading keeps its full width and original display. */
+#intent-video-topic { gap:4px;align-self:flex-start; }
 #intent-video-topic .intent-topic-matches { display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:24px;min-height:24px;padding:3px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer; }
 #intent-video-topic .intent-topic-matches:hover { background:var(--yt-spec-10-percent-layer,#8882); }
 #intent-video-topic .intent-topic-matches svg { width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }

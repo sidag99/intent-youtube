@@ -45,7 +45,7 @@
   }
   function clearVideoTopic() {
     clearTimeout(topicTimer); topicTimer = null; topicGeneration++; topicSignature = '';
-    topicContext?.title?.removeAttribute('data-intent-topic-title'); topicContext = null;
+    topicContext = null;
     topicBadge?._disposeTooltip?.(); topicBadge?.remove(); topicBadge = null;
   }
   function startTopicNavigation() {
@@ -140,8 +140,8 @@
         const heading = document.createElement('strong'); heading.textContent = 'Matches these intents'; tooltip.append(heading);
         for (const name of names) {const item = document.createElement('span'); item.textContent = name; tooltip.append(item);}
         const note = document.createElement('small'); note.textContent = 'Estimated from available video metadata.'; tooltip.append(note);
-        let hideTimer;
-        const hide = () => {clearTimeout(hideTimer); if (tooltip.isConnected && tooltip.matches(':popover-open')) tooltip.hidePopover(); button.setAttribute('aria-expanded', 'false');};
+        let hideTimer, focusFrame;
+        const hide = () => {clearTimeout(hideTimer); cancelAnimationFrame(focusFrame); focusFrame = null; if (tooltip.isConnected && tooltip.matches(':popover-open')) tooltip.hidePopover(); button.setAttribute('aria-expanded', 'false');};
         const show = () => {
           clearTimeout(hideTimer); if (!tooltip.isConnected) return;
           if (!tooltip.matches(':popover-open')) tooltip.showPopover(); button.setAttribute('aria-expanded', 'true');
@@ -150,11 +150,14 @@
           tooltip.style.top = `${Math.max(gap, Math.min(rect.bottom + gap, innerHeight - box.height - gap))}px`;
         };
         const leave = () => {clearTimeout(hideTimer); hideTimer = setTimeout(() => {if (document.activeElement !== button) hide();}, 120);};
-        button.addEventListener('pointerenter', show); button.addEventListener('pointerleave', leave); button.addEventListener('focus', show); button.addEventListener('blur', hide); button.addEventListener('click', show);
+        button.addEventListener('pointerenter', show); button.addEventListener('pointerleave', leave);
+        // Keyboard focus can scroll a wrapped title into view; position after that scroll has settled.
+        button.addEventListener('focus', () => {cancelAnimationFrame(focusFrame); focusFrame = requestAnimationFrame(() => {focusFrame = null; if (button.isConnected && document.activeElement === button) show();});});
+        button.addEventListener('blur', hide); button.addEventListener('click', show);
         button.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); event.stopPropagation(); hide();}});
         tooltip.addEventListener('pointerenter', () => clearTimeout(hideTimer)); tooltip.addEventListener('pointerleave', leave);
         const outside = event => {if (!event.composedPath().includes(button) && !event.composedPath().includes(tooltip)) hide();};
-        const scroll = event => {if (event.target !== tooltip) hide();};
+        const scroll = event => {if (event.target !== tooltip && !focusFrame) hide();};
         document.addEventListener('pointerdown', outside, true); window.addEventListener('scroll', scroll, true); window.addEventListener('resize', hide);
         topicBadge._disposeTooltip = () => {hide(); document.removeEventListener('pointerdown', outside, true); window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', hide);};
         topicBadge.append(button, tooltip);
@@ -168,8 +171,8 @@
     if (topicBadge.getAttribute('aria-label') !== label + '. ' + detail) topicBadge.setAttribute('aria-label', label + '. ' + detail);
     topicBadge.dataset.state = status; topicBadge.dataset.videoId = topicContext.video.id; topicBadge.dataset.theme = IntentHome.theme();
     const tooltip = topicBadge.querySelector('.intent-topic-tooltip'); if (tooltip && tooltip.dataset.theme !== IntentHome.theme()) tooltip.dataset.theme = IntentHome.theme();
-    topicContext.title.setAttribute('data-intent-topic-title', '');
-    if (topicBadge.nextElementSibling !== topicContext.title) topicContext.title.insertAdjacentElement('beforebegin', topicBadge);
+    const titleBlock = topicContext.title.closest('#title') || topicContext.title;
+    if (topicBadge.previousElementSibling !== titleBlock) titleBlock.insertAdjacentElement('afterend', topicBadge);
   }
   function acceptVideoTopic(state) {
     const result = state?.videoTopic;
@@ -192,7 +195,6 @@
     const config = topicConfig(), signature = JSON.stringify([config, current.video]);
     if (signature === topicSignature) {
       const previousResult = topicContext?.result;
-      if (topicContext?.title !== current.title) topicContext?.title?.removeAttribute('data-intent-topic-title');
       topicContext = current; topicContext.result = previousResult;
       const cached = topicResults.get(signature);
       renderVideoTopic(cached?.result || topicContext.result || {status: 'checking'});
