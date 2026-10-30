@@ -112,6 +112,8 @@ const file = name => 'file://' + path.join(root, name);
     assert.deepEqual(errors, [], 'closing during a delayed save never produces a missing-element exception');
     console.log('PASS saving freezes intent edits and closing; failure restores controls and keeps the retryable draft');
 
+    await settings.locator('#new-intent').click();await settings.locator('#intent-name').fill('Test quality');await settings.locator('#intent-description').fill('Interesting stuff to learn.');
+    assert.match(await settings.locator('#intent-description-quality').innerText(),/too vague/);await settings.locator('#intent-description').fill('Beginner German grammar lessons.');assert.equal(await settings.locator('#intent-description-quality').isVisible(),false);await settings.locator('#cancel-editor').click();
     const blocked = await context.newPage();
     await blocked.addInitScript(() => {
       window.blockedNow = true; window.removedTabs = [];

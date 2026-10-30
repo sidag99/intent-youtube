@@ -26,6 +26,7 @@
     const s = C.sanitize(settings);
     if (s.mode === 'off' || s.mode === 'focus') return [];
     const description = s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description;
+    if (C.descriptionIssue(description) && C.descriptionIssue(`${description} ${s.customTopics[s.mode] || ''}`) && !C.channelTerms(s.channels[s.mode]).length) return [];
     const template = C.defaultTemplate(s, s.mode);
     const seeds = template ? template.searches : description ? description.split(/[,\n;]+/).map(t => t.trim()).filter(Boolean) : SEEDS[s.mode];
     const all = [...new Set([...C.terms(s.customTopics[s.mode]), ...C.channelTerms(s.channels[s.mode]), ...seeds].map(q => q.slice(0, 160)))].slice(0, 24);
@@ -265,7 +266,7 @@
           if (context.gl) url.searchParams.set('gl', context.gl);
         }
         const response = await fetcher(url.href, options);
-        if (!response.ok) throw new Error(`YouTube search is unavailable (${response.status}). Try again shortly.`);
+        if (!response.ok) throw new Error(response.status === 403 ? 'YouTube declined this search (403). Try again later or open YouTube search.' : `YouTube search is unavailable (${response.status}). Try again shortly.`);
         if (response.url && new URL(response.url).origin !== 'https://www.youtube.com') throw new Error('YouTube redirected this search to a consent or sign-in page. Open YouTube search and try again.');
         const text = await response.text();
         if (typeof text !== 'string' || text.length > 8000000) throw new Error('YouTube returned an unreadable search page.');
@@ -297,6 +298,7 @@
       const round = Math.max(0, Math.min(1000000, Math.trunc(Number(options.round) || 0)));
       const s = C.sanitize(preview ? {...settings, metadataLimit: 0} : settings), pool = queries(s, round);
       if (s.mode === 'focus') return {key: key(s, locale), items: [], hasMore: false, focus: true, semantic: false};
+      if (!pool.length && C.descriptionIssue(s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description)) return {key: key(s, locale), items: [], previewItems: [], hasMore: false, nextCursor: 0, needsDescription: true, warning: C.descriptionIssue(s.intentDescriptions[s.mode] || s.customIntents[s.mode]?.description)};
       const cursor = Math.max(0, Math.min(pool.length, Math.trunc(Number(options.cursor) || 0)));
       const context = JSON.stringify([key(s, locale), round]);
       const excluded = new Set(Array.isArray(options.exclude) ? options.exclude.slice(0, 300).filter(id => /^[\w-]{11}$/.test(id)) : []);

@@ -148,6 +148,21 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
     const decision=(await page.evaluate(({video,settings})=>runModel([video],settings),{video:locationTour,settings:{...IntentCore.defaults(),mode,customIntents:installedBoth}}))[0];
     assert.equal(decision.accepted,true,`a real-location game tour can qualify for ${mode}`);
   }
+  const scopeFixture=require('./fixtures/custom-scope.cjs');
+  const scopeIntents=Object.fromEntries(Object.entries(scopeFixture.descriptions).map(([id,description])=>['custom-'+id,{name:'German '+id,description,icon:'language'}]));
+  const fit=IntentCore.INTENT_TEMPLATES.fitness;scopeIntents['custom-fitness']={name:fit.name,description:fit.description,templateId:'fitness',icon:fit.icon};
+  const scopeVideos=scopeFixture.videos.map((video,i)=>({...video,id:'Z'+String(i).padStart(10,'0')}));
+  const scopeSettings=IntentCore.sanitize({...IntentCore.defaults(),mode:'custom-detailed',hideClickbait:false,customIntents:scopeIntents});
+  const scopeDecisions=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:scopeVideos,settings:scopeSettings});
+  for(let i=0;i<scopeVideos.length;i++){
+   const video=scopeVideos[i],decision=scopeDecisions[i],matches=decision.matchedIntentIds;
+   if(['wrong','unknown'].includes(video.kind)){assert.equal(decision.accepted,false,video.title);for(const id of ['custom-detailed','custom-positive','custom-concise','custom-fitness'])assert.equal(matches.includes(id),false,video.title+' must not match '+id);assert.equal(IntentTimerTopic.estimate(decision,scopeSettings).status,'uncertain','missing subject evidence never revokes an exemption');}
+   if(video.kind==='german')for(const id of ['custom-detailed','custom-positive','custom-concise'])assert.equal(matches.includes(id),true,video.title+' retains '+id);
+   if(video.kind==='deutsch')assert.equal(matches.includes('custom-detailed'),true,'native German metadata remains supported');
+   if(video.kind==='fitness')assert.equal(matches.includes('custom-fitness'),true,video.title);
+  }
+  assert.equal(scopeDecisions[2].matchedIntentIds.includes('study'),false,'a teacher/essay skit is not factory Study');
+  await fs.writeFile(path.join(root,'test-results/custom-scope-model.json'),JSON.stringify(scopeVideos.map((video,i)=>({video,decision:scopeDecisions[i]})),null,2));
   assert.ok(requests.every(url=>url.startsWith(origin+'/')),'all inference requests stay on the packaged origin');
   assert.equal(requests.filter(url=>url.endsWith('.onnx')).length,stableVideos.length+2,'the primary model is reused; only explicit fresh-worker diagnostics initialize additional models');
   assert.deepEqual(errors,[]);

@@ -47,6 +47,7 @@
         if (!response?.ok) throw new Error(response?.error || 'The preview could not load. Try again.');
         if (response.blocked) throw new Error('This intent has reached the daily limit. Try a timer-exempt intent or adjust your budget.');
         if (response.stale || response.key !== key) throw new Error('Your intent changed while the preview was loading. Preview it again.');
+        if (response.needsDescription) throw new Error(response.warning || 'Add a subject to this intent before previewing.');
         if (!response.semantic || !Array.isArray(response.previewItems)) throw new Error('The local model did not return preview decisions. Try again.');
         this.result = response.previewItems.slice(0, 12).filter(item => item?.video && /^[\w-]{11}$/.test(item.video.id) && typeof item.video.title === 'string' && typeof item.accepted === 'boolean').map(item => ({...item, reason: String(item.reason || (item.accepted ? 'Matches intent' : 'Outside intent'))}));
       } catch (error) {

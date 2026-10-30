@@ -809,6 +809,11 @@
     }
     return records;
   }
+  const GENERIC_DESCRIPTION_WORDS = new Set('i me my want would like to watch see show some any all a an the and or of for with about that which is are be it this these those interesting good great cool useful new better things thing stuff something anything everything learn learning know knowledge videos video content help helps can'.split(' '));
+  function descriptionIssue(value) {
+    const words = String(value || '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+    return words.length && words.every(word => GENERIC_DESCRIPTION_WORDS.has(word)) ? 'Add a subject, such as beginner German lessons or strength workouts. This description is too vague to filter reliably.' : '';
+  }
   function defaultTemplate(settings, id) {
     const record = settings.customIntents?.[id], template = record && INTENT_TEMPLATES[record.templateId];
     return template && !settings.intentDescriptions?.[id]?.trim() && record.description?.trim() === template.description ? template : null;
@@ -931,5 +936,5 @@
     const usedMs = days[dayKey(now)] || 0;
     return {settings, usedMs, remainingMs: Math.max(0, settings.dailyMinutes * 60000 - usedMs), blocked: settings.limitEnabled && usedMs >= settings.dailyMinutes * 60000, day: dayKey(now), resetAt: nextMidnight(now)};
   }
-  globalThis.IntentCore = {MODES, FOCUS, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, channelNames, channelTerms, formatChannelTerms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
+  globalThis.IntentCore = {MODES, FOCUS, MODE_ICONS, ROLE_PRESETS, INTENT_TEMPLATES, INTENT_ICONS, INTENT_ICON_PATHS, MAX_CUSTOM_INTENTS, descriptionIssue, defaultTemplate, modes, validMode, defaults, sanitize, initialMode, countsMode, normalize, terms, channelNames, channelTerms, formatChannelTerms, matches, clickbait, classify, dayKey, nextMidnight, advanceUsage, isYouTube, snapshot};
 })();

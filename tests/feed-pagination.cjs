@@ -58,6 +58,7 @@ const root = path.resolve(__dirname, '..');
       if (mode === 'custom-cabinet') {
         await feed.getByRole('button', {name: 'Retry loading more', exact: true}).waitFor();
         assert.equal(await feed.locator('article.card').count(), 2, 'a continuation failure preserves existing cards');
+        assert.match(await feed.locator('.status').textContent(),/2 videos kept/);
         await feed.getByRole('button', {name: 'Retry loading more', exact: true}).click();
       }
       await page.waitForFunction(() => document.querySelector('#intent-home-feed')?.shadowRoot.querySelectorAll('article.card').length === 3 && !home.busy);
@@ -80,6 +81,13 @@ const root = path.resolve(__dirname, '..');
     assert.match(await feed.locator('.discovery-end').textContent(), /120 real videos loaded/); assert.equal(await feed.getByRole('link', {name: 'Search YouTube', exact: true}).isVisible(), true);
     assert.equal(await feed.getByRole('button', {name: 'Find more videos', exact: true}).isVisible(), false, 'the bounded feed explains its cap rather than hiding more without an end state');
     assert.ok(await page.evaluate(() => batches.every(count => count <= 2)), 'every user batch makes at most two public search-page requests');
+    const beforeVague=await page.evaluate(()=>fetches.length);
+    await page.evaluate(()=>{settings=IntentCore.sanitize({...settings,customIntents:{'custom-vague':{name:'Test Minimal',description:'stuff'}}});activate('custom-vague');});
+    await feed.getByRole('heading',{name:'Give this intent a subject',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>fetches.length),beforeVague,'an obviously vague intent makes no discovery searches');
+    assert.equal(await feed.locator('.status.error').count(),0);assert.equal(await feed.locator('.empty a').count(),0,'no undefined-topic search link');
+    assert.match(await feed.locator('.empty').textContent(),/Edit its description/);assert.equal(await feed.locator('.discovery-end').isVisible(),false,'guidance does not claim searches were exhausted');
+    await page.evaluate(()=>activate('work'));await page.waitForFunction(()=>!home.busy&&home.items.length>0);assert.equal(await feed.getByRole('heading',{name:'Give this intent a subject',exact:true}).count(),0,'switching back restores ordinary discovery');
     assert.deepEqual(errors, []);
     console.log('PASS all built-in/custom discovery feeds retain real continuation paging, opaque cursors, retry/restart, no duplicate cards, explicit exhaustion/cap and honest public-video source labels');
     await context.close();

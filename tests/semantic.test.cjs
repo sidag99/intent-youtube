@@ -3,6 +3,29 @@ const assert = require('node:assert/strict');
 require('../src/core.js'); require('../src/semantic.js');
 const C = IntentCore, S = IntentSemantic;
 
+test('specific language scopes reject generic practice and wrong languages without changing raw timer evidence',()=>{
+ const settings=C.sanitize({mode:'custom-german',customIntents:{'custom-german':{name:'German',description:'Beginner German lessons, pronunciation and listening practice.'}}});
+ const refs={'custom-german':[[.8]],study:[[.5],[.3]]};
+ for(const video of [{title:'English pronunciation practice'},{title:'Pronunciation practice',channel:'German lessons'},{title:'The first teacher to EVER read a ChatGPT essay must’ve been like'}]){
+  const d=S.decide([1],refs,'custom-german',true,video,settings);assert.equal(d.accepted,false);assert.equal(d.matchedIntentIds.includes('custom-german'),false);assert.equal(d.similarity,.8);assert.notEqual(d.categoryId,'custom-german');
+ }
+ for(const video of [{title:'German grammar explained in English'},{title:'Deutsch lernen A1: Aussprache'},{title:'Practice vowels',hashtags:['#LearnGerman']},{title:'Practice',keywords:['German grammar']}])assert.equal(S.decide([1],refs,'custom-german',true,video,settings).accepted,true,JSON.stringify(video));
+ const explained=C.sanitize({...settings,customIntents:{'custom-german':{name:'German',description:'German lessons taught in English for English speakers.'}}});assert.equal(S.decide([1],refs,'custom-german',true,{title:'English pronunciation lessons'},explained).accepted,false,'the explanation language is not an alternative target language');
+ const expanded=C.sanitize({...settings,customTopics:{'custom-german':'French lessons'}});
+ const french=S.decide([1],{'custom-german':[[.9],[.6]],study:[[.5],[.3]]},'custom-german',true,{title:'French grammar practice'},expanded);assert.equal(french.accepted,true,'an explicit extra topic expands the scope independently');
+});
+test('library Fitness requires physical context for language practice, while edited scopes and genuine overlap remain independent',()=>{
+ const t=C.INTENT_TEMPLATES.fitness,settings=C.sanitize({mode:'custom-fit',customIntents:{'custom-fit':{...t,templateId:'fitness'}}});const refs={'custom-fit':[[.7],[.6]],study:[[.9],[.8]]};
+ assert.equal(S.decide([1],refs,'custom-fit',true,{title:'Pronunciation practice',description:'English speaking training videos'},settings).accepted,false);
+ assert.equal(S.decide([1],refs,'custom-fit',true,{title:'English-language strength training',description:'A bodyweight workout with squats.'},settings).accepted,true);
+ const edited=C.sanitize({...settings,customIntents:{'custom-fit':{...settings.customIntents['custom-fit'],description:'Speech and pronunciation training.'}}});assert.equal(S.decide([1],refs,'custom-fit',true,{title:'Pronunciation practice'},edited).accepted,true);
+});
+test('obvious skits do not become factory Study solely through teacher or essay vocabulary',()=>{
+ const refs={study:[[.6],[.4]],music:[[.1]]},settings=C.defaults();
+ assert.equal(S.decide([1],refs,'study',false,{title:'The first teacher to read a ChatGPT essay must’ve been like'},settings).accepted,false);
+ assert.equal(S.decide([1],refs,'study',false,{title:'A university lecture: analysis of a parody',description:'Teaching literary concepts with worked examples.'},settings).accepted,true);
+});
+
 test('semantic profiles retain original defaults unless an intent description explicitly replaces them', () => {
   const defaults = S.profiles(C.defaults());
   assert.deepEqual(defaults.work, S.PROFILES.work);

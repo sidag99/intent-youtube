@@ -2,6 +2,17 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 require('../src/core.js'); require('../src/feed.js');
 const C = IntentCore, F = IntentFeed;
+test('generic-only custom descriptions request a subject without searching a publisher name or invoking the model',async()=>{
+ for(const description of ['stuff','Interesting stuff to learn.']){
+  const settings=C.sanitize({mode:'custom-vague',customIntents:{'custom-vague':{name:'Test',description}}});assert.ok(C.descriptionIssue(description));assert.deepEqual(F.queries(settings),[]);
+  const service=F.createService({fetcher:async()=>{throw Error('must not fetch');},judge:async()=>{throw Error('must not infer');}});const result=await service.get(settings);assert.equal(result.needsDescription,true);assert.deepEqual(result.items,[]);assert.equal(result.hasMore,false);assert.match(result.warning,/subject/);
+ }
+ for(const description of ['Chess','German','Python tutorials','Languages, culture and communication.'])assert.equal(C.descriptionIssue(description),'',description);
+});
+test('403 discovery failures are actionable and do not auto-retry or discard the existing page cursor',async()=>{
+ let requests=0;const service=F.createService({fetcher:async()=>{requests++;return{ok:false,status:403};}});
+ await assert.rejects(service.get(C.defaults()),/YouTube declined this search \(403\).*later.*YouTube search/);assert.equal(requests,2);
+});
 const renderer = (id, title, extra = {}) => ({videoRenderer: {videoId: id, title: {runs: [{text: title}]}, ownerText: {runs: [{text: 'Studio North'}]}, thumbnail: {thumbnails: [{url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`}]}, ...extra}});
 const page = entries => `<script>var ytInitialData = ${JSON.stringify({contents: {twoColumnSearchResultsRenderer: {primaryContents: {sectionListRenderer: {contents: [{itemSectionRenderer: {contents: entries}}]}}}}})};</script>`;
 const shortRenderer = (id, title, extra = {}) => ({shortsLockupViewModel: {onTap: {innertubeCommand: {reelWatchEndpoint: {videoId: id}, commandMetadata: {webCommandMetadata: {url: `/shorts/${id}`}}}}, accessibilityText: `${title}, 12 thousand views - play Short`, overlayMetadata: {primaryText: {content: title}, secondaryText: {content: '12K views'}}, thumbnailViewModel: {thumbnailViewModel: {image: {sources: [{url: `https://i.ytimg.com/vi/${id}/oardefault.jpg`, width: 405, height: 720}]}}}, ...extra}});

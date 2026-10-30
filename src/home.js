@@ -294,7 +294,7 @@
     async load(fresh, auto) {
       if (this.busy || !this.hasMore || this.items.length >= 120) return;
       const generation = this.generation, signature = this.signature, pageURL = location.href;
-      this.busy = true; this.more.disabled = true; this.loadFailed = false; this.more.textContent = 'Find more videos';
+      this.busy = true; this.more.disabled = true; this.loadFailed = false; this.needsDescription = false; this.more.textContent = 'Find more videos';
       this.setFeedState(this.items.length || this.recommendedItems?.length ? 'active' : 'loading');
       this.status.className = 'status'; this.status.textContent = (this.items.length ? 'Finding more videos for your intent…' : 'Finding videos and analysing topics locally…') + (this.settings.metadataLimit ? ` Up to ${this.settings.metadataLimit} extra video-page requests per batch.` : ' Fuller checks are off.');
       this.status.removeAttribute('title');
@@ -310,6 +310,12 @@
         if (!response?.ok) throw new Error(response?.error || 'The feed could not be loaded.');
         if (response.blocked) { location.replace(this.runtime.getURL('blocked.html')); return; }
         if (response.stale || response.key !== signature) throw new Error('Your mode changed while loading. Refresh the feed to try again.');
+        this.needsDescription = Boolean(response.needsDescription);
+        if (this.needsDescription) {
+          this.hasMore = false; this.status.textContent = 'This intent needs a clearer subject.';
+          this.empty('Give this intent a subject', response.warning + ' Edit its description in Intent settings.');
+          this.setFeedState('active'); return;
+        }
         const seen = new Set([...this.items.map(v => v.id), ...(this.recommendedItems || []).map(v => v.id), ...(this.videoId ? [this.videoId] : [])]);
         for (const video of response.items || []) if (this.items.length < 120 && /^[\w-]{11}$/.test(video.id) && !seen.has(video.id) && C.classify(video, response.semantic ? {...this.settings, mode: 'off'} : this.settings).visible) {
           seen.add(video.id); this.items.push(video);
@@ -337,7 +343,7 @@
         if (generation !== this.generation) return;
         this.loadFailed = true; this.restartRequired = /continuation.*expired|refresh discovery/i.test(error.message);
         if (/context invalidated/i.test(error.message || '')) {document.dispatchEvent(new Event('intent-context-lost')); return;}
-        this.status.className = 'status error'; this.status.textContent = error.message;
+        this.status.className = 'status error'; this.status.textContent = (this.items.length ? `${this.items.length} videos kept. More videos couldn’t load: ` : '') + error.message;
         this.setFeedState(this.items.length || this.recommendedItems?.length ? 'active' : 'unavailable');
         if (!this.items.length) this.empty('Your feed couldn’t load.', 'YouTube may be unavailable or asking for consent. Retry with Refresh feed, or open search below.');
       } finally {
@@ -349,6 +355,7 @@
       }
     }
     updateDiscoveryControls() {
+      if (this.needsDescription) {this.more.hidden = true; this.endState.hidden = true; return;}
       this.more.hidden = !this.loadFailed && (!this.hasMore || this.items.length >= 120);
       this.more.textContent = this.loadFailed ? this.restartRequired ? 'Restart discovery' : 'Retry loading more' : 'Find more videos';
       this.endState.hidden = this.loadFailed || this.hasMore && this.items.length < 120;
@@ -522,8 +529,9 @@
       const title = document.createElement('h2'); title.textContent = titleText;
       const p = document.createElement('p'); p.textContent = detail;
       const link = document.createElement('a'); link.className = 'search'; link.textContent = 'Open this topic on YouTube search ↗';
-      const url = new URL('https://www.youtube.com/results'); url.searchParams.set('search_query', F.queries(this.settings, this.round)[0]); link.href = url.href;
-      empty.append(title, p, link); this.grid.append(empty);
+      const query = F.queries(this.settings, this.round)[0];
+      const url = new URL('https://www.youtube.com/results'); if (query) {url.searchParams.set('search_query', query); link.href = url.href;}
+      empty.append(title, p); if (query) empty.append(link); this.grid.append(empty);
     }
     restoreNative() {
       // Keep references so even detached nodes are restored before YouTube reuses them.
