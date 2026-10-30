@@ -34,7 +34,7 @@ const html=`<!doctype html><html dark lang="en-GB"><meta charset="utf-8"><style>
  await page.evaluate(()=>spa('watch'));await visible('#related',false);await page.locator('#intent-focus-home').waitFor({state:'detached'});await playing();
  for(const selector of ['#player','#subscribe','ytd-comments','ytd-playlist-panel-renderer','ytd-live-chat-frame'])await visible(selector,true);
  for(const selector of ['.ytp-ce-element','.ytp-endscreen-content','.ytp-autonav-endscreen','.ytp-pause-overlay'])await visible(selector,false);
- assert.equal(await page.locator('#intent-video-topic,#intent-channel-includes,#intent-home-feed,#intent-watch-feed').count(),0);
+ await page.locator('#intent-video-topic').waitFor();await page.waitForFunction(()=>!['checking','unavailable'].includes(document.querySelector('#intent-video-topic')?.dataset.state));assert.equal(await page.locator('#intent-channel-includes,#intent-home-feed,#intent-watch-feed').count(),0);
  const player=await page.locator('#player').elementHandle();
  // Late native suggestions are hidden in the insertion task, before any rescan.
  assert.equal(await page.evaluate(()=>{const n=document.createElement('div');n.className='ytp-ce-element';n.id='late-card';n.textContent='Late suggestion';document.querySelector('.html5-video-player').append(n);return getComputedStyle(n).display;}),'none');
@@ -68,7 +68,7 @@ const html=`<!doctype html><html dark lang="en-GB"><meta charset="utf-8"><style>
  await popup.mouse.move(2,2);await popup.waitForFunction(()=>getComputedStyle(document.querySelector('.focus-mode-button')).backgroundColor==='rgba(0, 0, 0, 0)');
  const inactive=await popup.locator('.focus-mode-button').evaluate(n=>{const s=getComputedStyle(n);return{border:s.borderTopColor,background:s.backgroundColor};});assert.equal(inactive.border,'rgb(156, 199, 171)');assert.equal(inactive.background,'rgba(0, 0, 0, 0)');
  await popup.locator('[data-mode="focus"]').click();await focused();
- assert.equal((await worker.evaluate(()=>chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']}))).length,0);assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
- fs.writeFileSync(path.join(root,'test-results/focus-installed.json'),JSON.stringify({passed:true,realMV3:true,homeHidden:true,watchAndPlayerRecommendationsHidden:true,searchLibraryPlaylistChatPreserved:true,nativeMediaAdvanced:true,offPauseRestore:true,SPALateInsertion:true,perTabPersistence:true,settingsPopupTimer:true,extensionSearchRequests:requests.length,offscreenHosts:0,errors},null,2));
- console.log('PASS installed Focus: Home/player/related suggestions hidden, native media advances, search/playlists/chat remain, Off/Pause/SPA/reload restore, isolated tabs, settings/popup/timer and zero search/model initialization');
+ assert.equal((await worker.evaluate(()=>chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']}))).length,1,'only playing-video topics initialize the model in Focus');assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
+ fs.writeFileSync(path.join(root,'test-results/focus-installed.json'),JSON.stringify({passed:true,realMV3:true,homeHidden:true,watchAndPlayerRecommendationsHidden:true,searchLibraryPlaylistChatPreserved:true,nativeMediaAdvanced:true,offPauseRestore:true,SPALateInsertion:true,perTabPersistence:true,settingsPopupTimer:true,extensionSearchRequests:requests.length,offscreenHosts:1,playingVideoTopic:true,errors},null,2));
+ console.log('PASS installed Focus: Home/player/related suggestions hidden, native media advances, search/playlists/chat remain, Off/Pause/SPA/reload restore, isolated tabs, settings/popup/timer and zero recommendation searches with playing-video topics');
 }finally{await context?.close();fs.rmSync(profile,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1});

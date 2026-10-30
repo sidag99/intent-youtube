@@ -118,3 +118,11 @@ test('factory Study contains concrete academic profiles and no catch-all documen
  const applied=C.sanitize({intentDescriptions:{study:C.ROLE_PRESETS['software-engineer'].studyDescription}});
  assert.deepEqual(S.profiles(applied).study,[C.ROLE_PRESETS['software-engineer'].studyDescription]);
 });
+
+test('multi-intent matches use each configured scope and retain every qualifying intent independently',()=>{
+ const settings=IntentCore.sanitize({customIntents:{'custom-code':{name:'Code',description:'Programming lessons.'},'custom-art':{name:'Art',description:'Painting.'}}});
+ const refs={work:[[.6,0]],study:[[.45,0],[.3,0]],music:[[.5,0],[.25,0]],'custom-code':[[.31,0]],'custom-art':[[.2,0]]};
+ const result=IntentSemantic.decide([1,0],refs,'study',false,{},settings);
+ assert.deepEqual(result.matchedIntentIds,['work','music','study','custom-code']);assert.equal(result.accepted,true);assert.equal(result.categoryCandidates.length,2,'the strongest-topic timer evidence stays bounded separately');
+ const rain=IntentSemantic.decide([1,0],refs,'study',false,{title:'Rain and thunder with no music'},settings);assert.equal(rain.matchedIntentIds.includes('music'),false,'all matches retain intent-specific exclusions');
+});

@@ -27,3 +27,9 @@ test('metadata and model identity are bounded and all configured topic scopes in
   assert.notEqual(T.key(s),T.key({...s,customTopics:{...s.customTopics,music:'Baroque'}}));
   assert.equal(T.key(s),T.key({...s,dailyMinutes:5,matchOnlyModes:{study:true}}),'timer preferences do not rerun the model');
 });
+test('all independently matched intents reach display data without relaxing timer gates, including utility modes',()=>{
+ const definitions=C.sanitize({...s,customIntents:{'custom-code':{name:'Coding',description:'Software development lessons.'}}});
+ const decision={accepted:true,uncertain:true,similarity:.4,categoryId:'work',categorySimilarity:.5,categoryMargin:.1,matchedIntentIds:['work','study','custom-code','work','focus','off','fake']};
+ const estimate=T.estimate(decision,definitions);assert.deepEqual(estimate.matchedIntentIds,['work','study','custom-code']);assert.equal(estimate.status,'uncertain');
+ for(const mode of ['off','focus']){const utility=T.estimate({...decision,uncertain:false},C.sanitize({...definitions,mode}));assert.deepEqual(utility.matchedIntentIds,['work','study','custom-code']);assert.equal(utility.matchesIntent,false);assert.equal(utility.status,'uncertain');}
+});

@@ -56,6 +56,9 @@ const mime={'.js':'application/javascript','.mjs':'application/javascript','.was
   assert.equal(topicEstimates[0].status,'matching','academic political-science evidence meets the unchanged strict timer matching gate');
   assert.equal(topicDecisions[1].accepted,false,'a breaking political-news bulletin is not automatically an academic lesson');
   assert.deepEqual(new Set(topicEstimates[2].categoryIds),new Set(['study','work']),'a clear programming lesson retains both strong overlapping topic labels');
+  const multiSettings=IntentCore.sanitize({...topicSettings,customIntents:{'custom-code':{name:'Code',description:'Software development, coding applications and engineering computer systems.'},'custom-build':{name:'Build',description:'Software development, coding applications and engineering computer systems.'}}});
+  const multi=await page.evaluate(({videos,settings})=>runModel(videos,settings),{videos:[topicVideos[2]],settings:multiSettings});
+  assert.deepEqual(new Set(multi[0].matchedIntentIds),new Set(['work','study','custom-code','custom-build']),'the packaged model returns all independently valid intents beyond the top two scores');
   assert.equal(topicEstimates[2].categoryId,null);assert.equal(topicEstimates[2].status,'uncertain','displaying two strong topics does not relax timer relation thresholds');
   await fs.writeFile(path.join(root,'test-results/topic-model-regressions.json'),JSON.stringify(topicVideos.map((video,i)=>({video,decision:topicDecisions[i],estimate:topicEstimates[i]})),null,2));
   assert.equal(result.music[0].accepted,false,'app building excluded from music');

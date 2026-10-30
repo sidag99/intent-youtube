@@ -32,13 +32,9 @@
     const performance = /\b(?:a cappella|singing|sung|vocal performance|(?:piano|guitar|violin|cello|saxophone|drum) performance)\b/i.test(content);
     return excludesMusic && naturalSounds && !performance;
   }
-  function decide(vector, modeVectors, mode, customized = false, video) {
-    const similarities = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, refs.map(ref => dot(vector, ref)).sort((a, b) => b - a)]));
-    const scores = Object.fromEntries(Object.entries(similarities).map(([k, values]) => [k, values[0] || 0]));
-    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-    const selected = scores[mode] || 0;
-    const other = Math.max(0, ...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
+  function accepts(similarities, mode, customized, video) {
     // Similarities are not calibrated probabilities. Each intent qualifies independently; a higher score in another intent is not a veto.
+    const selected = similarities[mode]?.[0] || 0;
     let accepted = customized ? selected >= .30 : selected >= .26;
     // A generic documentary/"solving" association alone is not study evidence.
     // Moderate matches need a second educational reference; this still allows
@@ -48,7 +44,17 @@
     // "live". Require a second musical reference for moderate scores, while
     // retaining strong specific performances and cross-intent overlap.
     if (mode === 'music' && !customized) accepted = accepted && (selected >= .40 || (similarities.music?.[1] || 0) >= .24) && !nonMusicalAmbience(video);
-    return {accepted, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other, categoryId: ranked[0]?.[0] || null, categorySimilarity: ranked[0]?.[1] || 0, categoryMargin: (ranked[0]?.[1] || 0) - (ranked[1]?.[1] || 0), categoryCandidates: ranked.slice(0, 2).map(([id, similarity]) => ({id, similarity}))};
+    return accepted;
+  }
+  function decide(vector, modeVectors, mode, customized = false, video, settings) {
+    const similarities = Object.fromEntries(Object.entries(modeVectors).map(([k, refs]) => [k, refs.map(ref => dot(vector, ref)).sort((a, b) => b - a)]));
+    const scores = Object.fromEntries(Object.entries(similarities).map(([k, values]) => [k, values[0] || 0]));
+    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const selected = scores[mode] || 0;
+    const other = Math.max(0, ...Object.entries(scores).filter(([k]) => k !== mode).map(([, score]) => score));
+    const accepted = accepts(similarities, mode, customized, video);
+    const matchedIntentIds = settings ? ranked.filter(([id]) => accepts(similarities, id, Boolean(settings.intentDescriptions?.[id]?.trim() || settings.customIntents?.[id]), video)).map(([id]) => id) : null;
+    return {accepted, uncertain: selected > .18 && (selected < .40 || !customized && Math.abs(selected - other) < .07), similarity: selected, alternativeSimilarity: other, categoryId: ranked[0]?.[0] || null, categorySimilarity: ranked[0]?.[1] || 0, categoryMargin: (ranked[0]?.[1] || 0) - (ranked[1]?.[1] || 0), categoryCandidates: ranked.slice(0, 2).map(([id, similarity]) => ({id, similarity})), ...(matchedIntentIds ? {matchedIntentIds} : {})};
   }
   globalThis.IntentSemantic = {PROFILES, text, profiles, dot, decide};
 })();

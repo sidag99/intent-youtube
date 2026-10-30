@@ -998,21 +998,21 @@ test('topic metadata is bounded, uses descriptions and tags, and does not apply 
   assert.ok(Object.values(config.channels).every(value => value === ''), 'a channel allowlist is not evidence of the current video topic');
 });
 
-test('Off, paused tabs and hidden Shorts skip topic model work', async () => {
+test('Off checks the playing video topic while Pause and hidden Shorts skip inference', async () => {
   let calls = 0;
   const h = topicHarness(async () => {calls++; return [matchingTopic()];});
   await h.send({type: 'SET_MODE', mode: 'off'}, topicSender());
-  let state = await checkTopic(h); assert.equal(state.timerTopicState, 'off'); assert.equal(calls, 0);
+  let state = await checkTopic(h); assert.equal(state.timerTopicState, 'off'); assert.equal(state.videoTopic.videoId,topicID); assert.equal(calls, 1);
   await h.send({type: 'SET_MODE', mode: 'music'}, topicSender());
   await h.send({type: 'SET_TAB_PAUSED', paused: true}, topicSender());
-  state = await checkTopic(h); assert.equal(state.tabPaused, true); assert.equal(calls, 0);
+  state = await checkTopic(h); assert.equal(state.tabPaused, true); assert.equal(calls, 1);
   await h.send({type: 'SET_TAB_PAUSED', paused: false}, topicSender());
   const shortsURL = 'https://www.youtube.com/shorts/' + topicID;
   await h.updateTab(1, {url: shortsURL});
   const shortsSender = {...topicSender(), url: shortsURL, tab: {...topicSender().tab, url: shortsURL}};
-  await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 0);
+  await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 1);
   await h.send({type: 'UPDATE_SETTINGS', patch: {hideShorts: false}});
-  state = await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 1); assert.equal(state.videoTopic.status, 'matching');
+  state = await checkTopic(h, topicVideo(), shortsSender); assert.equal(calls, 2); assert.equal(state.videoTopic.status, 'matching');
 });
 
 test('concurrent topic checks share one model job and completed estimates survive a worker restart', async () => {
@@ -1382,16 +1382,16 @@ test('topic display explains explicit channel inclusion without changing timer v
 });
 
 
-test('Focus rejects recommendation and topic work before any public search or local inference',async()=>{
+test('Focus suppresses recommendation work but allows an explicit playing-video topic check',async()=>{
  let searches=0,modelCalls=0;
- const h=harness({settings:{...IntentCore.defaults(),mode:'focus',limitEnabled:false}},undefined,async()=>{searches++;throw Error('No search in Focus');},async()=>{modelCalls++;throw Error('No inference in Focus');});
+ const h=harness({settings:{...IntentCore.defaults(),mode:'focus',limitEnabled:false}},undefined,async()=>{searches++;throw Error('No search in Focus');},async()=>{modelCalls++;return [{...matchingTopic(),matchedIntentIds:['music']}];});
  const sender={url:'https://www.youtube.com/',tab:{id:1},frameId:0};
  const state=await h.send({type:'GET_STATE'},sender);assert.equal(state.settings.mode,'focus');assert.equal(state.timerExempt,false);
  const key=IntentFeed.key(state.settings);
  const feed=await h.send({type:'GET_FEED',key},sender);assert.equal(feed.focus,true);assert.equal(feed.items.length,0);
  const rec=await h.send({type:'FILTER_RECOMMENDATIONS',key,videos:[{id:'A0000000001',title:'University lecture'}]},sender);assert.equal(rec.focus,true);assert.equal(rec.items.length,0);
  h.setTabs([{id:1,url:'https://www.youtube.com/watch?v=A0000000001'}]);const current={...sender,url:'https://www.youtube.com/watch?v=A0000000001'};
- const topic=await h.send({type:'CHECK_TIMER_VIDEO',video:{id:'A0000000001',title:'University lecture'}},current);assert.equal(topic.ok,true);assert.equal(topic.videoTopic,null);assert.equal(searches,0);assert.equal(modelCalls,0);
+ const topic=await h.send({type:'CHECK_TIMER_VIDEO',video:{id:'A0000000001',title:'University lecture'}},current);assert.equal(topic.ok,true);assert.equal(topic.videoTopic.videoId,'A0000000001');assert.deepEqual(Array.from(topic.videoTopic.matchedIntentIds),['music']);assert.equal(topic.timerTopicState,'off');assert.equal(searches,0);assert.equal(modelCalls,1);
  assert.ok(h.badges.some(item=>item.text==='F'));assert.ok(h.titles.some(item=>/Focus.*recommendations hidden/.test(item.title)));
  await h.send({type:'UPDATE_SETTINGS',patch:{newTabMode:'focus',countModes:{focus:false}}});await h.createTab({id:2,windowId:1});const next=await h.send({type:'GET_STATE'},{...sender,tab:{id:2}});assert.equal(next.settings.mode,'focus');assert.equal(next.timerExempt,true);
 });

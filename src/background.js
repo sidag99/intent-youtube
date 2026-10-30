@@ -122,10 +122,10 @@ function stateFor(tabId, now = Date.now()) {
   const effective = effectiveSettings(tabId), base = C.snapshot(effective, days, now);
   const tabPaused = Number.isInteger(tabId) && pausedTabs[tabId] === true;
   const timerExempt = tabPaused || !(Number.isInteger(tabId) ? countsTab(tabId) : countsMode(effective.mode));
-  const review = Number.isInteger(tabId) && !tabPaused && effective.mode !== 'off' ? currentReview(tabId) : null;
+  const review = Number.isInteger(tabId) && !tabPaused ? currentReview(tabId) : null;
   let includedChannel = false;
   if (review) {try {includedChannel = C.channelTerms(effective.channels[effective.mode]).includes(C.normalize(JSON.parse(review.metadataKey).channel));} catch { /* An older saved review may not have metadata. */ }}
-  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null, categoryIds: Array.isArray(review.categoryIds) ? review.categoryIds.slice(0, 2) : review.categoryId ? [review.categoryId] : [], matchesIntent: review.matchesIntent === true, includedChannel} : null,
+  return {...base, blocked: base.blocked && !timerExempt, budgetExhausted: base.blocked, timerExempt, tabPaused, appearance, tabId, timerTopicState: Number.isInteger(tabId) && !tabPaused ? topicPolicy(tabId) : 'off', videoTopic: review ? {videoId: review.videoId, status: review.status, categoryId: review.categoryId || null, categoryIds: Array.isArray(review.categoryIds) ? review.categoryIds.slice(0, 2) : review.categoryId ? [review.categoryId] : [], matchesIntent: review.matchesIntent === true, includedChannel, ...(Array.isArray(review.matchedIntentIds) ? {matchedIntentIds: review.matchedIntentIds.filter(id => Object.hasOwn(C.modes(effective), id)).slice(0, Object.keys(C.modes(effective)).length)} : {})} : null,
     timerDay: C.dayKey(now), timerUpdatedAt: now, timerRunning: !base.blocked && tracker?.counting === true,
     tabCounting: !base.blocked && !timerExempt && tracker?.counting === true && (tracker.countingTabs || []).includes(tabId)};
 }
@@ -316,7 +316,7 @@ async function checkTimerVideo(message, sender) {
   const prepared = await serial(async () => {
     const state = await tick({}, sender);
     if (state.tabId !== sender.tab.id || currentPageURL(sender.tab.id) !== pageURL) return {skip: {ok: true, stale: true}};
-    if (state.blocked || state.tabPaused || ['off','focus'].includes(state.settings.mode) || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
+    if (state.blocked || state.tabPaused || state.settings.hideShorts && new URL(pageURL).pathname.startsWith('/shorts/')) return {skip: {ok: true, ...state}};
     const key = T.key(state.settings), metadataKey = JSON.stringify(video), cacheKey = JSON.stringify([key, metadataKey]);
     const previous = currentReview(sender.tab.id);
     if (previous?.metadataKey === metadataKey && !['checking', 'unavailable'].includes(previous.status)) return {skip: {ok: true, ...state}};
@@ -332,7 +332,7 @@ async function checkTimerVideo(message, sender) {
       if (timerTopicJobs.size >= 8) estimate = {status: 'unavailable', categoryId: null, categoryIds: []};
       else {
         // Topic estimation ignores recommendation-only distractions/channel rules.
-        const config = {...prepared.settings, hideShorts: false, hideClickbait: false, blockedTerms: '', channels: Object.fromEntries(Object.keys(C.modes(prepared.settings)).map(id => [id, '']))};
+        const config = {...prepared.settings, mode: Object.hasOwn(C.modes(prepared.settings), prepared.settings.mode) ? prepared.settings.mode : Object.keys(C.modes(prepared.settings))[0], hideShorts: false, hideClickbait: false, blockedTerms: '', channels: Object.fromEntries(Object.keys(C.modes(prepared.settings)).map(id => [id, '']))};
         job = classifyLocally([video], config).then(decisions => T.estimate(decisions[0], prepared.settings)).catch(() => ({status: 'unavailable', categoryId: null, categoryIds: []})).then(result => {
           if (result.status !== 'unavailable') timerTopicCache.set(prepared.cacheKey, result);
           while (timerTopicCache.size > 128) timerTopicCache.delete(timerTopicCache.keys().next().value);

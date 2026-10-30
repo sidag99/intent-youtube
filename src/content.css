@@ -64,7 +64,7 @@ html[data-intent-shorts] [data-intent-short-nav],
   align-items: center;
   position: static !important;
   max-width: 100%;
-  margin: 8px 0;
+  margin: 0 8px 0 0;
   padding: 3px 9px;
   border: 1px solid var(--yt-spec-10-percent-layer, #dedede);
   border-radius: 14px;
@@ -82,6 +82,22 @@ html[data-intent-shorts] [data-intent-short-nav],
 }
 #intent-video-topic[data-state="matching"] { color: var(--yt-spec-text-primary, #365e4b); }
 #intent-video-topic[data-theme="dark"][data-state="matching"] { color: var(--yt-spec-text-primary, #9cc7ab); }
+
+/* Preserve the native heading and title text while placing the badge first. */
+[data-intent-topic-title] { display:inline!important; }
+#intent-video-topic { gap:4px;align-self:baseline; }
+#intent-video-topic .intent-topic-matches { display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:24px;min-height:24px;padding:3px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer; }
+#intent-video-topic .intent-topic-matches:hover { background:var(--yt-spec-10-percent-layer,#8882); }
+#intent-video-topic .intent-topic-matches svg { width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }
+#intent-video-topic button:focus-visible { outline:2px solid #365e4b;outline-offset:2px; }
+#intent-video-topic[data-theme="dark"] button:focus-visible { outline-color:#9cc7ab; }
+#intent-video-topic .intent-topic-retry { margin-inline-start:6px;padding:0;border:0;background:transparent;color:inherit;text-decoration:underline;font:inherit;cursor:pointer; }
+#intent-video-topic .intent-topic-tooltip { position:fixed;inset:auto;margin:0;box-sizing:border-box;width:max-content;max-width:min(320px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:12px 14px;border:1px solid #dedede;border-radius:10px;background:#fff;color:#0f0f0f;box-shadow:0 4px 18px #0003;font:400 13px/20px Roboto,Arial,sans-serif;white-space:normal;overflow-wrap:anywhere; }
+#intent-video-topic .intent-topic-tooltip[data-theme="dark"] { border-color:#3f3f3f;background:#282828;color:#f1f1f1; }
+#intent-video-topic .intent-topic-tooltip>* { display:block; }
+#intent-video-topic .intent-topic-tooltip strong { font-weight:500;margin-bottom:6px; }
+#intent-video-topic .intent-topic-tooltip small { font-size:11px;line-height:16px;margin-top:8px; }
+@media(pointer:coarse) { #intent-video-topic .intent-topic-matches { min-width:44px;min-height:44px; } }
 
 /* Discovery uses the native compact renderer while retaining the current page's
    measured recommendation thumbnail size, which varies between YouTube layouts. */

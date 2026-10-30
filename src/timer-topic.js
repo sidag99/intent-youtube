@@ -15,7 +15,7 @@
   }
   function key(settings) {
     const s = C.sanitize(settings);
-    return JSON.stringify([4, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
+    return JSON.stringify([5, s.mode, s.intentDescriptions, s.customIntents, s.customTopics]);
   }
   function estimate(decision, settings) {
     if (!decision || typeof decision.accepted !== 'boolean' || typeof decision.uncertain !== 'boolean' || !Number.isFinite(decision.similarity)) return {status: 'unavailable', categoryId: null, categoryIds: []};
@@ -29,7 +29,9 @@
     // different category before turning an exemption into counted time.
     const unrelated = decision.accepted === false && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity <= .18 && categoryId && categoryId !== settings.mode && decision.categorySimilarity >= .40;
     const matching = decision.accepted === true && decision.uncertain === false && Number.isFinite(decision.similarity) && decision.similarity >= .30;
-    return {status: unrelated ? 'unrelated' : matching ? 'matching' : 'uncertain', categoryId, categoryIds, matchesIntent: decision.accepted === true};
+    const matchedIntentIds = Array.isArray(decision.matchedIntentIds) ? [...new Set(decision.matchedIntentIds)].filter(id => typeof id === 'string' && Object.hasOwn(definitions, id)).slice(0, Object.keys(definitions).length) : null;
+    const selected = Object.hasOwn(definitions, settings.mode);
+    return {status: selected && unrelated ? 'unrelated' : selected && matching ? 'matching' : 'uncertain', categoryId, categoryIds, matchesIntent: selected && decision.accepted === true, ...(matchedIntentIds ? {matchedIntentIds} : {})};
   }
   globalThis.IntentTimerTopic = {videoId, metadata, key, estimate};
 })();

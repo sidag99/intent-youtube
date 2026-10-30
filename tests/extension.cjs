@@ -268,7 +268,7 @@ async function chooseMode(toolbar, mode, customName) {
   assert.match(await yt.locator('#intent-video-topic').innerText(),/Music/);
   assert.equal(await yt.locator('#intent-video-topic').getAttribute('role'),'note');
   assert.equal(await yt.locator('#intent-video-topic').getByRole('button').count(),0,'the video topic label is informational');
-  assert.equal(await yt.locator('#intent-video-topic').evaluate(el=>el.previousElementSibling?.tagName),'H1','the current-video label follows its native title');
+  assert.equal(await yt.locator('#intent-video-topic').evaluate(el=>el.nextElementSibling?.tagName),'H1','the current-video label precedes its native title');
   assert.ok((await watchFeed.locator('.title').allTextContents()).every(t=>t.startsWith('Blue notes')));
   assert.equal(await watchFeed.locator('.meta').first().innerText(),'3.9M views · 2 years ago');
   await yt.evaluate(()=>{document.querySelector('ytd-watch-flexy').style.gridTemplateColumns='minmax(0,1fr) 330px';document.querySelector('#secondary').style.width='330px';});
@@ -325,7 +325,7 @@ async function chooseMode(toolbar, mode, customName) {
   currentTopic=await topicState();assert.equal(currentTopic.timerExempt,false);assert.equal(currentTopic.timerTopicState,'unrelated');
   const chargedFrom=currentTopic.usedMs;await yt.waitForTimeout(1100);
   assert.ok((await topicState()).usedMs>=chargedFrom+1000,'a real unrelated video contributes elapsed foreground usage');
-  assert.equal(await yt.locator('#intent-video-topic').getByRole('button').count(),0,'there is no per-video exemption control');
+  assert.equal(await yt.locator('#intent-video-topic').getByRole('button',{name:/exempt|timer override/i}).count(),0,'there is no per-video exemption control');
   const overrideReply=await settings.evaluate(async targetTabId=>{try{return await chrome.runtime.sendMessage({type:'SET_VIDEO_EXEMPT',targetTabId,videoId:'J0000000000',exempt:true});}catch{return null;}},workTabId);
   assert.ok(!overrideReply?.ok);assert.equal((await topicState()).timerExempt,false,'an unsupported per-video override message cannot change the saved policy');
   await yt.screenshot({path:path.join(shots,'intent-unrelated-video-label.png'),fullPage:true});

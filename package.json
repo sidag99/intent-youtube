@@ -1,6 +1,6 @@
 {
   "name": "intent-youtube",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "private": true,
   "description": "A local-first YouTube focus extension",
   "scripts": {
@@ -10,7 +10,7 @@
     "test:browser": "npm run test:build && node tests/browser.cjs && node tests/feed-pagination.cjs && node tests/preferences.cjs && node tests/ui-state.cjs && node tests/button-audit.cjs && node tests/popup-window.cjs && node tests/toolbar.cjs && node tests/shorts-dom.cjs && node tests/video-topic.cjs && node tests/home-spacing.cjs && node tests/preview.cjs && node tests/recommendations.cjs && node tests/native-cards.cjs && node tests/hybrid-feed.cjs && node tests/content-recovery.cjs && node tests/recommendation-layout.cjs && node tests/home-card-geometry.cjs && node tests/discovery-playback.cjs && node tests/playlist-recommendations.cjs && node tests/native-filters.cjs && node tests/channel-includes.cjs",
     "build": "node scripts/build.mjs",
     "test:model": "node tests/model-browser.cjs && node tests/music-model.cjs",
-    "test:extension": "node tests/extension.cjs && node tests/topic-recovery-extension.cjs && node tests/home-recommendations-extension.cjs && node tests/channel-includes-extension.cjs && node tests/focus-extension.cjs"
+    "test:extension": "node tests/extension.cjs && node tests/topic-recovery-extension.cjs && node tests/home-recommendations-extension.cjs && node tests/channel-includes-extension.cjs && node tests/focus-extension.cjs && node tests/video-label-extension.cjs"
   },
   "engines": {
     "node": ">=20"

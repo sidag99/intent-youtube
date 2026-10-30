@@ -44,8 +44,9 @@
     return JSON.stringify([settings?.mode, settings?.intentDescriptions, settings?.customIntents, settings?.customTopics, settings?.channels, settings?.intentNames, settings?.countModes, settings?.matchOnlyModes]);
   }
   function clearVideoTopic() {
-    clearTimeout(topicTimer); topicTimer = null; topicGeneration++; topicSignature = ''; topicContext = null;
-    topicBadge?.remove(); topicBadge = null;
+    clearTimeout(topicTimer); topicTimer = null; topicGeneration++; topicSignature = '';
+    topicContext?.title?.removeAttribute('data-intent-topic-title'); topicContext = null;
+    topicBadge?._disposeTooltip?.(); topicBadge?.remove(); topicBadge = null;
   }
   function startTopicNavigation() {
     topicNavigating = true; clearVideoTopic(); channelIncludes?.destroy(); clearTimeout(topicNavigationTimer);
@@ -118,30 +119,61 @@
       topicBadge = document.createElement('span'); topicBadge.id = 'intent-video-topic'; topicBadge.setAttribute('role', 'note');
     }
     const status = ['checking', 'matching', 'unrelated', 'uncertain', 'unavailable'].includes(result?.status) ? result.status : 'uncertain';
-    const modes = C.modes(settings), intent = modes[settings.mode]?.name || 'your intent';
-    const categoryIds = [...new Set(Array.isArray(result?.categoryIds) ? result.categoryIds : [result?.categoryId])].filter(id => typeof id === 'string' && Object.hasOwn(modes, id)).slice(0, 2);
-    const category = categoryIds.map(id => modes[id].name).join(' · ');
-    const topicLabel = status === 'checking' ? 'Checking topic…' : status === 'unavailable' ? 'Topic unavailable' : !category ? result.matchesIntent === true ? `Likely ${intent}` : 'Topic uncertain' : status === 'uncertain' || categoryIds.length > 1 ? `Likely ${category}` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
+    const modes = C.modes(settings), utility = !Object.hasOwn(modes, settings.mode), intent = modes[settings.mode]?.name || '';
+    const source = Array.isArray(result?.matchedIntentIds) ? result.matchedIntentIds : Array.isArray(result?.categoryIds) ? result.categoryIds : [result?.categoryId];
+    const ids = [...new Set(source)].filter(id => typeof id === 'string' && Object.hasOwn(modes, id)).slice(0, Object.keys(modes).length);
+    const category = ids.length ? modes[ids[0]].name : '';
+    const topicLabel = status === 'checking' ? 'Checking topic…' : status === 'unavailable' ? 'Topic unavailable' : !category ? !utility && result.matchesIntent === true ? `Likely ${intent}` : 'Topic uncertain' : utility ? `Topic: ${category}` : status === 'uncertain' ? `Likely ${category}` : status === 'unrelated' ? `${category} · Outside ${intent}` : `Topic: ${category}`;
     const label = result.includedChannel === true ? `Included channel · ${topicLabel}` : topicLabel;
-    const relation = status === 'checking' ? `Checking this video's metadata against ${intent}.` : status === 'unavailable' ? 'The local topic check could not run. Retry when ready; your timer rule is unchanged.' : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
-    const detail = (result.includedChannel === true ? `You chose to always include this channel in ${intent}; its videos can appear even when their topic differs. ` : '') + relation + (categoryIds.length > 1 ? ' Several configured topics overlap.' : '') + ' Local metadata estimate; the video itself is not watched or listened to.';
-    if (status === 'unavailable') {
-      if (topicBadge.dataset.state !== 'unavailable' || !topicBadge.querySelector('button')) {
-        topicBadge.textContent = label;
-        const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.setAttribute('aria-label', 'Retry topic check');
-        retry.style.cssText = 'margin-inline-start:8px;padding:0;border:0;background:transparent;color:inherit;text-decoration:underline;font:inherit;cursor:pointer';
-        retry.addEventListener('click', () => {if (!topicContext || tabPaused || settings?.mode === 'off') return; topicResults.delete(topicSignature); clearVideoTopic(); schedule();});
-        topicBadge.append(retry);
+    const relation = status === 'checking' ? 'Checking this video’s topic from available metadata.' : status === 'unavailable' ? 'The local topic check could not run. Retry when ready; your timer rule is unchanged.' : utility ? 'Estimated topic from this video’s available metadata.' : status === 'matching' ? `This video appears to match ${intent}.` : status === 'unrelated' ? `This video appears to be outside ${intent}.` : `This video's relation to ${intent} is uncertain.`;
+    const detail = (result.includedChannel === true ? `You chose to always include this channel in ${intent}; its videos can appear even when their topic differs. ` : '') + relation + ' Local metadata estimate; the video itself is not watched or listened to.';
+    const names = ids.map(id => modes[id].name), renderKey = JSON.stringify([status, label, names]);
+    if (topicBadge.dataset.renderKey !== renderKey) {
+      topicBadge._disposeTooltip?.(); topicBadge.replaceChildren(); topicBadge.dataset.renderKey = renderKey;
+      const text = document.createElement('span'); text.className = 'intent-topic-label'; text.textContent = label; topicBadge.append(text);
+      if (names.length > 1) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'intent-topic-matches';
+        button.title = ''; button.setAttribute('aria-label', `Matches ${names.length} intents`); button.setAttribute('aria-describedby', 'intent-topic-matches-tooltip'); button.setAttribute('aria-expanded', 'false');
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = '<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>'; button.append(icon);
+        const tooltip = document.createElement('span'); tooltip.id = 'intent-topic-matches-tooltip'; tooltip.className = 'intent-topic-tooltip'; tooltip.setAttribute('role', 'tooltip'); tooltip.setAttribute('popover', 'manual'); tooltip.title = ''; tooltip.dataset.theme = IntentHome.theme();
+        const heading = document.createElement('strong'); heading.textContent = 'Matches these intents'; tooltip.append(heading);
+        for (const name of names) {const item = document.createElement('span'); item.textContent = name; tooltip.append(item);}
+        const note = document.createElement('small'); note.textContent = 'Estimated from available video metadata.'; tooltip.append(note);
+        let hideTimer;
+        const hide = () => {clearTimeout(hideTimer); if (tooltip.isConnected && tooltip.matches(':popover-open')) tooltip.hidePopover(); button.setAttribute('aria-expanded', 'false');};
+        const show = () => {
+          clearTimeout(hideTimer); if (!tooltip.isConnected) return;
+          if (!tooltip.matches(':popover-open')) tooltip.showPopover(); button.setAttribute('aria-expanded', 'true');
+          const rect = button.getBoundingClientRect(), box = tooltip.getBoundingClientRect(), gap = 8;
+          tooltip.style.left = `${Math.max(gap, Math.min(rect.left, innerWidth - box.width - gap))}px`;
+          tooltip.style.top = `${Math.max(gap, Math.min(rect.bottom + gap, innerHeight - box.height - gap))}px`;
+        };
+        const leave = () => {clearTimeout(hideTimer); hideTimer = setTimeout(() => {if (document.activeElement !== button) hide();}, 120);};
+        button.addEventListener('pointerenter', show); button.addEventListener('pointerleave', leave); button.addEventListener('focus', show); button.addEventListener('blur', hide); button.addEventListener('click', show);
+        button.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); event.stopPropagation(); hide();}});
+        tooltip.addEventListener('pointerenter', () => clearTimeout(hideTimer)); tooltip.addEventListener('pointerleave', leave);
+        const outside = event => {if (!event.composedPath().includes(button) && !event.composedPath().includes(tooltip)) hide();};
+        const scroll = event => {if (event.target !== tooltip) hide();};
+        document.addEventListener('pointerdown', outside, true); window.addEventListener('scroll', scroll, true); window.addEventListener('resize', hide);
+        topicBadge._disposeTooltip = () => {hide(); document.removeEventListener('pointerdown', outside, true); window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', hide);};
+        topicBadge.append(button, tooltip);
+      } else topicBadge._disposeTooltip = null;
+      if (status === 'unavailable') {
+        const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'intent-topic-retry'; retry.textContent = 'Retry'; retry.setAttribute('aria-label', 'Retry topic check');
+        retry.addEventListener('click', () => {if (!topicContext || tabPaused) return; topicResults.delete(topicSignature); clearVideoTopic(); schedule();}); topicBadge.append(retry);
       }
-    } else if (topicBadge.textContent !== label) topicBadge.textContent = label;
+    }
     if (topicBadge.title !== detail) topicBadge.title = detail;
     if (topicBadge.getAttribute('aria-label') !== label + '. ' + detail) topicBadge.setAttribute('aria-label', label + '. ' + detail);
     topicBadge.dataset.state = status; topicBadge.dataset.videoId = topicContext.video.id; topicBadge.dataset.theme = IntentHome.theme();
-    if (topicBadge.previousElementSibling !== topicContext.title) topicContext.title.insertAdjacentElement('afterend', topicBadge);
+    const tooltip = topicBadge.querySelector('.intent-topic-tooltip'); if (tooltip && tooltip.dataset.theme !== IntentHome.theme()) tooltip.dataset.theme = IntentHome.theme();
+    topicContext.title.setAttribute('data-intent-topic-title', '');
+    if (topicBadge.nextElementSibling !== topicContext.title) topicContext.title.insertAdjacentElement('beforebegin', topicBadge);
   }
   function acceptVideoTopic(state) {
     const result = state?.videoTopic;
-    if (!topicContext || topicNavigating || tabPaused || settings?.mode === 'off' || result?.videoId !== topicContext.video.id || result.videoId !== currentTopicVideoId()) return;
+    if (!topicContext || topicNavigating || tabPaused || result?.videoId !== topicContext.video.id || result.videoId !== currentTopicVideoId()) return;
     if (!['checking', 'matching', 'unrelated', 'uncertain', 'unavailable'].includes(result.status)) return;
     topicContext.result = result; renderVideoTopic(result);
     if (!['checking', 'unavailable'].includes(result.status)) {
@@ -151,7 +183,7 @@
   }
   function syncVideoTopic() {
     const id = currentTopicVideoId();
-    if (window.top !== window || !settings || ['off','focus'].includes(settings.mode) || tabPaused || topicNavigating || !id || settings.hideShorts && location.pathname.startsWith('/shorts/')) {
+    if (window.top !== window || !settings || tabPaused || topicNavigating || !id || settings.hideShorts && location.pathname.startsWith('/shorts/')) {
       if (topicContext || topicBadge || topicTimer) clearVideoTopic();
       return;
     }
@@ -160,6 +192,7 @@
     const config = topicConfig(), signature = JSON.stringify([config, current.video]);
     if (signature === topicSignature) {
       const previousResult = topicContext?.result;
+      if (topicContext?.title !== current.title) topicContext?.title?.removeAttribute('data-intent-topic-title');
       topicContext = current; topicContext.result = previousResult;
       const cached = topicResults.get(signature);
       renderVideoTopic(cached?.result || topicContext.result || {status: 'checking'});
@@ -174,7 +207,7 @@
       const revision = settingsRevision;
       try {
         const state = await chrome.runtime.sendMessage({type: 'CHECK_TIMER_VIDEO', pageURL, video: current.video});
-        if (generation !== topicGeneration || signature !== topicSignature || config !== topicConfig() || id !== currentTopicVideoId() || topicNavigating || tabPaused || settings?.mode === 'off') return;
+        if (generation !== topicGeneration || signature !== topicSignature || config !== topicConfig() || id !== currentTopicVideoId() || topicNavigating || tabPaused) return;
         if (state?.paused || state?.tabPaused) {setTabPaused(true); clearVideoTopic(); return;}
         if (state?.stale) {clearVideoTopic(); if (state.settings && revision === settingsRevision) applySettings(state.settings); return;}
         if (!state?.ok) throw new Error('Topic check unavailable');
@@ -245,7 +278,7 @@
   function applySettings(value) {
     const previousTopic = topicConfig();
     settings = C.sanitize(value);
-    if (previousTopic !== topicConfig() || settings.mode === 'off' || tabPaused || settings.hideShorts && location.pathname.startsWith('/shorts/')) clearVideoTopic();
+    if (previousTopic !== topicConfig() || tabPaused || settings.hideShorts && location.pathname.startsWith('/shorts/')) clearVideoTopic();
     syncTopicGuard();
     if (['off','focus'].includes(settings.mode) || tabPaused) {
       clearHomePending();

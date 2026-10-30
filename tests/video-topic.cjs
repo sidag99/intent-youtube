@@ -19,7 +19,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.evaluate(() => {
       window.topicSettings = IntentCore.defaults(); window.topicPaused = false; window.checks = []; window.listeners = []; window.timerStates = []; window.pendingChecks = []; window.deferIds = new Set(); window.failIds = new Set(); window.topicStatuses = {};
       window.snapshot = () => ({ok: true, settings: structuredClone(topicSettings), tabPaused: topicPaused, blocked: false, timerRunning: false, tabCounting: false, timerDay: '2026-10-25', timerUpdatedAt: Date.now(), remainingMs: 3600000});
-      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: Object.hasOwn(topicStatuses[message.video.id] || {}, 'categoryId') ? topicStatuses[message.video.id].categoryId : topicSettings.mode, ...(topicStatuses[message.video.id]?.matchesIntent !== undefined ? {matchesIntent:topicStatuses[message.video.id].matchesIntent} : {}), ...(topicStatuses[message.video.id]?.includedChannel !== undefined ? {includedChannel:topicStatuses[message.video.id].includedChannel} : {}), ...(topicStatuses[message.video.id]?.categoryIds ? {categoryIds: topicStatuses[message.video.id].categoryIds} : {})}});
+      window.answer = message => ({...snapshot(), videoTopic: {videoId: message.video.id, status: topicStatuses[message.video.id]?.status || 'matching', categoryId: Object.hasOwn(topicStatuses[message.video.id] || {}, 'categoryId') ? topicStatuses[message.video.id].categoryId : (['off','focus'].includes(topicSettings.mode)?'work':topicSettings.mode), ...(topicStatuses[message.video.id]?.matchesIntent !== undefined ? {matchesIntent:topicStatuses[message.video.id].matchesIntent} : {}), ...(topicStatuses[message.video.id]?.includedChannel !== undefined ? {includedChannel:topicStatuses[message.video.id].includedChannel} : {}), ...(topicStatuses[message.video.id]?.categoryIds ? {categoryIds: topicStatuses[message.video.id].categoryIds} : {}), ...(topicStatuses[message.video.id]?.matchedIntentIds ? {matchedIntentIds: topicStatuses[message.video.id].matchedIntentIds} : {})}});
       window.chrome = {runtime: {getURL: name => 'https://extension.test/' + name, onMessage: {addListener: listener => listeners.push(listener)}, sendMessage: async message => {
         if (message.type !== 'CHECK_TIMER_VIDEO') return snapshot();
         checks.push(structuredClone(message));
@@ -44,7 +44,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     await page.addStyleTag({path: root + '/src/content.css'}); await page.addScriptTag({path: root + '/src/content.js'});
     await page.locator('#intent-video-topic[data-state="matching"]').waitFor();
     assert.equal(await page.locator('#intent-video-topic').textContent(), 'Topic: Work');
-    assert.equal(await page.locator('#intent-video-topic').evaluate(node => node.previousElementSibling.tagName), 'H1');
+    assert.equal(await page.locator('#intent-video-topic').evaluate(node => node.nextElementSibling.tagName), 'H1');
     assert.equal(await page.locator('ytd-player #intent-video-topic').count(), 0, 'the badge never overlays playback controls');
     assert.equal(await page.locator('#intent-video-topic').evaluate(node => getComputedStyle(node).position), 'static');
     assert.match(await page.locator('#intent-video-topic').getAttribute('title'), /match Work.*Local metadata estimate/);
@@ -121,9 +121,13 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     assert.equal(await page.locator('#intent-video-topic').count(), 0);
     await page.evaluate(id => resolveCheck(id), pausedId); await page.waitForTimeout(180);
     assert.equal(await page.locator('#intent-video-topic').count(), 0, 'a check completed after Pause remains hidden');
-    await page.evaluate(() => {pauseTopic(false); changeSettings({mode: 'off'});});
-    const offCount = await page.evaluate(() => checks.length); await page.waitForTimeout(600);
-    assert.equal(await page.locator('#intent-video-topic').count(), 0); assert.equal(await page.evaluate(() => checks.length), offCount, 'Off does not launch topic inference');
+    assert.equal(await page.locator('[data-intent-topic-title]').count(),0,'Pause restores the native heading display');
+    const offCount = await page.evaluate(() => checks.length);
+    await page.evaluate(id => {deferIds.delete(id);pauseTopic(false); changeSettings({mode: 'off'});},pausedId);
+    await page.waitForFunction(n=>checks.length>n,offCount);await page.locator('#intent-video-topic[data-state="matching"]').waitFor();
+    assert.equal(await page.locator('#intent-video-topic .intent-topic-label').textContent(),'Topic: Work','Off still labels the video without an active-intent comparison');
+
+    assert.equal(await page.evaluate(()=>{const link=document.createElement('a');link.href='/';link.textContent='Home';link.addEventListener('click',e=>e.preventDefault());document.body.append(link);link.click();link.remove();return document.documentElement.hasAttribute('data-intent-home-pending');}),false,'Off navigation never arms a feed-hiding guard');
 
     const changed = 'ddddddddddd';
     await page.evaluate(id => {changeSettings({mode: 'work'}); deferIds.add(id); navigateVideo(id);}, changed);
@@ -140,10 +144,21 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"></head><body><
     assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely Work', 'the category label is separate from uncertainty about its timer relation');
     assert.match(await page.locator('#intent-video-topic').getAttribute('title'), /relation to <b>Study<\/b> is uncertain/);
     const overlap = 'hhhhhhhhhhh';
-    await page.evaluate(id => {topicStatuses[id] = {status: 'uncertain', categoryIds: ['study','work']}; navigateVideo(id, 'A computer science and software lesson');}, overlap);
+    await page.evaluate(id => {changeSettings({customIntents:{'custom-extra':{name:'Research',description:'Research and learning'}}});topicStatuses[id] = {status: 'uncertain', categoryIds: ['study','work'],matchedIntentIds:['study','work','music','custom-extra']}; navigateVideo(id, 'A computer science and software lesson');}, overlap);
     await page.locator('#intent-video-topic[data-video-id="' + overlap + '"][data-state="uncertain"]').waitFor();
-    assert.equal(await page.locator('#intent-video-topic').textContent(), 'Likely <b>Study</b> · Work');assert.equal(await page.locator('#intent-video-topic b').count(),0);
-    assert.match(await page.locator('#intent-video-topic').getAttribute('title'),/Several configured topics overlap/);
+    assert.equal(await page.locator('#intent-video-topic .intent-topic-label').textContent(), 'Likely <b>Study</b>');assert.equal(await page.locator('#intent-video-topic b').count(),0);
+    const matches=page.getByRole('button',{name:'Matches 4 intents',exact:true}),tooltip=page.getByRole('tooltip');
+    await matches.hover();await tooltip.waitFor({state:'visible'});for(const name of ['<b>Study</b>','Work','Music','Research'])assert.equal(await tooltip.getByText(name,{exact:true}).count(),1);
+    await matches.focus();await matches.press('Escape');await tooltip.waitFor({state:'hidden'});await matches.blur();await matches.focus();await tooltip.waitFor({state:'visible'});
+    await page.evaluate(()=>pauseTopic(true));assert.equal(await page.locator('#intent-video-topic').count(),0);assert.equal(await page.getByRole('tooltip').count(),0,'Pause disposes the open tooltip');await page.evaluate(()=>pauseTopic(false));
+
+    // All configured matches stay reachable even in a short, zoom-like viewport.
+    await page.setViewportSize({width:390,height:320});
+    await page.evaluate(id=>{const customIntents=Object.fromEntries(Array.from({length:24},(_,i)=>['custom-match-'+i,{name:'A long research intent '+i,description:'Academic research and learning.'}]));changeSettings({customIntents});topicStatuses[id]={status:'uncertain',matchedIntentIds:['study','work','music',...Object.keys(customIntents)]};navigateVideo(id,'A lesson matching several configured subjects');},'mmmmmmmmmmm');
+    const allMatches=page.getByRole('button',{name:'Matches 27 intents',exact:true});await allMatches.waitFor();await allMatches.focus();await page.getByRole('tooltip').waitFor({state:'visible'});
+    const scrollable=await page.getByRole('tooltip').evaluate(n=>{n.scrollTop=n.scrollHeight;return n.scrollHeight>n.clientHeight;});assert.equal(scrollable,true);
+    await page.waitForFunction(()=>document.querySelector('#intent-topic-matches-tooltip')?.matches(':popover-open')&&document.querySelector('#intent-topic-matches-tooltip').scrollTop>0);
+    assert.equal(await page.getByRole('tooltip').getByText('A long research intent 23',{exact:true}).count(),1);await allMatches.press('Escape');await page.setViewportSize({width:1280,height:900});
 
     const acceptedUncertain='jjjjjjjjjjj';
     await page.evaluate(id=>{topicStatuses[id]={status:'uncertain',categoryId:null,categoryIds:[],matchesIntent:true};navigateVideo(id,'A corroborated academic lesson');},acceptedUncertain);
